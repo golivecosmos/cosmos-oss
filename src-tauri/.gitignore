@@ -1,0 +1,17 @@
+# Database files
+*.db
+*.db-shm
+*.db-wal
+desktop-docs.db*
+
+# Build artifacts
+/target/
+**/*.rs.bk
+
+# IDE files
+.idea/
+.vscode/
+
+# System files
+.DS_Store
+Thumbs.db 

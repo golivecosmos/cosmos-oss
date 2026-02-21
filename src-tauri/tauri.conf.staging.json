@@ -1,0 +1,205 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/schema.json",
+  "build": {
+    "beforeDevCommand": "vite",
+    "beforeBuildCommand": "npm run build",
+    "devPath": "http://localhost:1420",
+    "distDir": "../dist"
+  },
+  "package": {
+    "productName": "Cosmos OSS",
+    "version": "0.1.0"
+  },
+  "tauri": {
+    "allowlist": {
+      "all": false,
+      "shell": {
+        "all": false,
+        "open": true,
+        "execute": true,
+        "sidecar": false,
+        "scope": [
+          {
+            "name": "open-file-manager",
+            "cmd": "open",
+            "args": [
+              "-R",
+              {
+                "validator": "\\S+"
+              }
+            ]
+          },
+          {
+            "name": "open-file-manager-windows",
+            "cmd": "explorer",
+            "args": [
+              "/select,",
+              {
+                "validator": "\\S+"
+              }
+            ]
+          },
+          {
+            "name": "open-file-manager-linux",
+            "cmd": "nautilus",
+            "args": [
+              "--select",
+              {
+                "validator": "\\S+"
+              }
+            ]
+          },
+          {
+            "name": "open-file-manager-linux-dolphin",
+            "cmd": "dolphin",
+            "args": [
+              "--select",
+              {
+                "validator": "\\S+"
+              }
+            ]
+          },
+          {
+            "name": "open-file-manager-linux-thunar",
+            "cmd": "thunar",
+            "args": [
+              {
+                "validator": "\\S+"
+              }
+            ]
+          },
+          {
+            "name": "open-file-manager-linux-xdg",
+            "cmd": "xdg-open",
+            "args": [
+              {
+                "validator": "\\S+"
+              }
+            ]
+          },
+          {
+            "name": "open-with-default",
+            "cmd": "open",
+            "args": [
+              {
+                "validator": "\\S+"
+              }
+            ]
+          },
+          {
+            "name": "open-with-default-windows",
+            "cmd": "cmd",
+            "args": [
+              "/C",
+              "start",
+              "",
+              {
+                "validator": "\\S+"
+              }
+            ]
+          },
+          {
+            "name": "open-with-default-linux",
+            "cmd": "xdg-open",
+            "args": [
+              {
+                "validator": "\\S+"
+              }
+            ]
+          }
+        ]
+      },
+      "dialog": {
+        "all": false,
+        "open": true,
+        "save": false,
+        "message": true
+      },
+      "fs": {
+        "all": false,
+        "readFile": true,
+        "writeFile": false,
+        "readDir": true,
+        "copyFile": false,
+        "createDir": false,
+        "removeDir": false,
+        "removeFile": false,
+        "renameFile": false,
+        "exists": true,
+        "scope": [
+          "$APPDATA/**",
+          "$DOCUMENT/**",
+          "$PICTURE/**",
+          "$VIDEO/**",
+          "$MUSIC/**",
+          "$DOWNLOAD/**",
+          "$DESKTOP/**",
+          "/Volumes/**"
+        ]
+      },
+      "path": {
+        "all": true
+      },
+      "protocol": {
+        "all": true,
+        "asset": true,
+        "assetScope": {
+          "allow": [
+            "**"
+          ]
+        }
+      },
+      "http": {
+        "all": false,
+        "request": false,
+        "scope": []
+      },
+      "process": {
+        "relaunch": true
+      }
+    },
+    "bundle": {
+      "active": true,
+      "targets": "all",
+      "identifier": "com.cosmos.oss",
+      "macOS": {
+        "signingIdentity": "",
+        "frameworks": [],
+        "entitlements": "entitlements.plist",
+        "exceptionDomain": "",
+        "minimumSystemVersion": "10.13"
+      },
+      "icon": [
+        "icons/icon_32x32.png",
+        "icons/icon_128x128.png",
+        "icons/icon_128x128@2x.png",
+        "icons/icon.icns",
+        "icons/icon.ico"
+      ],
+      "resources": [],
+      "copyright": "",
+      "category": "Productivity",
+      "shortDescription": "A desktop application for managing and searching documents",
+      "longDescription": "Cosmos helps users organize, search, and manage their digital documents and images using advanced vector search capabilities."
+    },
+    "security": {
+      "csp": null
+    },
+    "windows": [
+      {
+        "fullscreen": false,
+        "height": 800,
+        "resizable": true,
+        "title": "Cosmos",
+        "width": 1200,
+        "minWidth": 800,
+        "minHeight": 800
+      }
+    ],
+    "updater": {
+      "active": false,
+      "endpoints": [],
+      "dialog": false
+    }
+  }
+}

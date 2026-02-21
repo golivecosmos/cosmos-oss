@@ -1,0 +1,133 @@
+@import url("https://fonts.googleapis.com/css2?family=Jockey+One&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --blue: 181 204 216;
+    --blueHighlight: 219 245 245;
+    --blueShadow: 117 135 163;
+    --bg: 250 253 253;
+    --bgShadow: 240 242 242;
+    --darkBg: 39 45 60;
+    --darkBgMid: 59 66 86;
+    --darkBgHighlight: 87 97 117;
+    --white: 250 253 253;
+    --grey: 153 175 186;
+    --greenShadow: 80 164 142;
+    --green: 146 216 152;
+    --greenHighlight: 215 245 193;
+    --purple: 206 181 216;
+    --redShadow: 189 95 85;
+    --red: 212 165 140;
+    --redHighlight: 222 188 163;
+    --yellowShadow: 161 134 94;
+    --yellow: 216 201 146;
+    --yellowHighlight: 242 238 192;
+    --text: 39 45 60;
+    --toast-bg: white;
+    --brandPurple: 93 95 239;
+    --brandPurpleBg: 248 249 255;
+    --brandPurpleBgForeground: 255 255 255;
+    --brandPurpleText: 30 32 84;
+    --brandPurpleHighlight: 139 92 246;
+    --brandPurpleBorder: 226 232 240;
+  }
+
+  .dark {
+    --text: 250 253 253;
+    --toast-bg: rgb(39, 45, 60);
+    /* Add any other dark mode overrides here, e.g.:
+    --bg: 39 45 60;
+    --bgShadow: 59 66 86;
+    --white: 39 45 60;
+    --grey: 153 175 186;
+    ...etc
+    */
+    --brandPurple: 93 95 239;
+    --brandPurpleBg: var(--darkBg);
+    --brandPurpleBgForeground: var(--darkBgMid);
+    --brandPurpleText: var(--text);
+    --brandPurpleHighlight: 139 92 246;
+    --brandPurpleBorder: 51 65 85;
+  }
+
+  body {
+    @apply text-text;
+  }
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+  z-index: 2;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: lightgray;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dark *::-webkit-scrollbar-thumb {
+  background: rgb(var(--grey));
+}
+.dark *::-webkit-scrollbar-track {
+  background: rgba(var(--darkBg));
+}
+
+@keyframes drawCheck {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.animate-drawCheck path {
+  stroke-dasharray: 24;
+  stroke-dashoffset: 24;
+  animation: drawCheck 0.5s ease-out forwards;
+  animation-delay: 0.5s;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -1000px 0;
+  }
+  100% {
+    background-position: 1000px 0;
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 2s infinite linear;
+  background-size: 1000px 100%;
+}
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+  width: 0px;
+  background: transparent;
+}
+
+.no-scrollbar::-webkit-scrollbar-thumb {
+  display: none;
+}
+
+.no-scrollbar::-webkit-scrollbar-track {
+  display: none;
+}
+
+/* Hide scrollbar for IE, Edge and Firefox */
+.no-scrollbar {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+  overflow: -moz-scrollbars-none; /* Firefox older versions */
+}
