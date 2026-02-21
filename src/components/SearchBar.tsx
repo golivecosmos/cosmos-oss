@@ -3,7 +3,7 @@ import { Search, Image, Clock, X, Bug, RefreshCw, Settings, ChevronDown, Target 
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
-import { invoke } from '@tauri-apps/api/tauri'
+import { invoke } from '@tauri-apps/api/core'
 import { debug } from '../utils/debug'
 import { ReferenceImagePanel } from './ReferenceImagePanel'
 

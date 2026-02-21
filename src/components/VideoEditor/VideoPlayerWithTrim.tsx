@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, useImperativeHandle, f
 import { cn } from '../../lib/utils';
 import { Button } from '../ui/button';
 import { Play, Pause, SkipBack, SkipForward, Scissors, Download, X, Monitor, Expand } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/tauri';
+import { invoke } from '@tauri-apps/api/core';
 
 interface VideoPlayerWithTrimProps {
   src: string;

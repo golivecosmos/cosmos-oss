@@ -5,8 +5,8 @@ import React, {
 } from "react";
 import { MediaFile } from "./MediaPreview/types";
 import { PreviewContainer, PreviewActions } from "./MediaPreview/PreviewContainer";
-import { invoke } from "@tauri-apps/api/tauri";
-import { convertFileSrc } from "@tauri-apps/api/tauri";
+import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { FileItem } from "./FileTree";
 import { cn } from "../lib/utils";

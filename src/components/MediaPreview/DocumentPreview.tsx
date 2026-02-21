@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { MediaFile } from './types';
 import { FileText, AlertCircle } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/tauri';
-import { convertFileSrc } from '@tauri-apps/api/tauri';
+import { invoke } from '@tauri-apps/api/core';
+import { convertFileSrc } from '@tauri-apps/api/core';
 
 interface DocumentPreviewProps {
   file: MediaFile;

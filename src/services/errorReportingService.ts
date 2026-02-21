@@ -1,4 +1,5 @@
-import { invoke } from '@tauri-apps/api/tauri'
+import { invoke } from '@tauri-apps/api/core'
+import { openPath } from '@tauri-apps/plugin-opener'
 
 export interface SystemInfo {
   os: string
@@ -227,10 +228,9 @@ class ErrorReportingService {
    */
   async openLogsDirectory(): Promise<void> {
     try {
-      const { shell } = await import('@tauri-apps/api')
       const logPath = await invoke<string>('get_log_file_path')
       const logDir = logPath.substring(0, logPath.lastIndexOf('/'))
-      await shell.open(logDir)
+      await openPath(logDir)
     } catch (error) {
       console.error('❌ Failed to open logs directory:', error)
       throw new Error(`Failed to open logs directory: ${error}`)

@@ -13,7 +13,7 @@ import { TooltipProvider } from "./ui/tooltip";
 import { Download, AlertCircle } from "lucide-react";
 import { Button } from "./ui/button";
 import { useAppLayout } from "../contexts/AppLayoutContext";
-import { invoke } from "@tauri-apps/api/tauri";
+import { invoke } from "@tauri-apps/api/core";
 import { useIndexingJobs } from "../contexts/IndexingJobsContext";
 
 export const AppLayout = () => {

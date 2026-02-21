@@ -4,7 +4,7 @@ import { useAppLayout } from "../../../contexts/AppLayoutContext";
 import { JsonPromptModal } from "./JsonPromptModal";
 import { VideoGenerationPanel } from "./VideoGenerationPanel";
 import { PanelToggle } from "./PanelToggle";
-import { invoke, convertFileSrc } from "@tauri-apps/api/tauri";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { VideoGeneration } from "./types";
 

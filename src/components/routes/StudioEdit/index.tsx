@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useLoaderData, useNavigate, useSearchParams } from "react-router-dom";
 import { Camera, CircleMinus, CirclePlus, ImageMinus, Info, Mic, Loader2 } from "lucide-react";
-import { convertFileSrc, invoke } from "@tauri-apps/api/tauri";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { formatDistanceToNow } from 'date-fns';
 
 import { Button } from "../../ui/button"

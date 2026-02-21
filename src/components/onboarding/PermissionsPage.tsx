@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Button } from "../ui/button"
 import { Check, Folder, Plus, LucideIcon, Download } from "lucide-react"
-import { open } from '@tauri-apps/api/dialog'
+import { open } from '@tauri-apps/plugin-dialog'
 import { homeDir, desktopDir, downloadDir } from '@tauri-apps/api/path'
 import { permissionManager } from '../../utils/permissionManager'
 import { toast } from 'sonner'

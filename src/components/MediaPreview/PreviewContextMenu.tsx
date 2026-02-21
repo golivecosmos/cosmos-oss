@@ -16,7 +16,7 @@ import {
   BookOpen,
   Video
 } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/tauri';
+import { invoke } from '@tauri-apps/api/core';
 import { normalizeFilePath } from '../../lib/utils';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';

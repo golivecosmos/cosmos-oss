@@ -4,7 +4,7 @@ import { useNavigate, useOutletContext } from "react-router-dom";
 import { EmptyState } from "./EmptyState";
 import { VideoGrid } from "./VideoGrid";
 import { GenerationsHistory } from "./GenerationsHistory";
-import { convertFileSrc } from "@tauri-apps/api/tauri";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { VideoGeneration } from "./types";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../ui/tabs";
 

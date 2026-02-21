@@ -26,12 +26,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"
 import { Badge } from "./ui/badge"
 import { Progress } from "./ui/progress"
-import { invoke } from '@tauri-apps/api/tauri'
+import { invoke } from '@tauri-apps/api/core'
 import { UpdateChecker } from './UpdateNotification'
 import { useAppVersion } from '../hooks/useAppVersion'
 import { homeDir } from '@tauri-apps/api/path'
 
-import { open } from '@tauri-apps/api/dialog'
+import { open } from '@tauri-apps/plugin-dialog'
 import { toast } from 'sonner'
 import { useAppLayout } from '../contexts/AppLayoutContext'
 import { Input } from "./ui/input"

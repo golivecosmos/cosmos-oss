@@ -5,7 +5,7 @@ import { cn } from '../../lib/utils';
 import { TranscriptionDisplay } from '../TranscriptionDisplay';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
-import { invoke } from '@tauri-apps/api/tauri';
+import { invoke } from '@tauri-apps/api/core';
 
 interface AudioPreviewProps {
   file: MediaFile;

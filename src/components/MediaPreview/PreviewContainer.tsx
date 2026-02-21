@@ -6,7 +6,7 @@ import { List, LayoutGrid, FolderSearch } from 'lucide-react';
 import { GridView } from './GridView';
 import { ListView } from './ListView';
 
-import { invoke } from '@tauri-apps/api/tauri';
+import { invoke } from '@tauri-apps/api/core';
 import { resolve } from '@tauri-apps/api/path';
 import { ReferenceImageData } from '../SearchBar';
 import {

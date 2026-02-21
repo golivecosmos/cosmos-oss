@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { invoke } from '@tauri-apps/api/tauri';
+import { invoke } from '@tauri-apps/api/core';
 import { FolderClosed, File, ChevronRight, ChevronDown } from 'lucide-react';
 import { cn } from '../lib/utils';
 

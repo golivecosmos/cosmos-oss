@@ -3,7 +3,7 @@ import { X, FolderPlus, AlertCircle, CheckCircle2, FileText, ChevronDown, Chevro
 import { Button } from './ui/button'
 import { formatDistanceToNow } from 'date-fns'
 import ErrorReporting from './ErrorReporting'
-import { invoke } from '@tauri-apps/api/tauri'
+import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { useIndexingJobs } from '../contexts/IndexingJobsContext'
 
