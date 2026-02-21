@@ -11,7 +11,7 @@ use crate::services::video_service::VideoService;
 use crate::services::drive_service::DriveService;
 use crate::services::audio_service::AudioService;
 use crate::models::embedding::{ImageVectorDataResponse, VideoFrameMetadata};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter};
 use crate::{app_log_info, app_log_error, app_log_debug};
 use crate::commands::{FailedFileInfo, BulkIndexProgress, VideoProgressInfo, categorize_error};
 use crate::services::vector_service::ImageVectorBulkData;
@@ -21,7 +21,6 @@ use crate::services::vector_service::ImageVectorBulkData;
 pub struct BatchIndexResult {
     pub successful: usize,
     pub failed: usize,
-    pub errors: Vec<String>,
     pub failed_details: Vec<(String, String)>, // (file_path, error_message)
 }
 
@@ -337,7 +336,7 @@ impl EmbeddingService {
                 tauri::async_runtime::spawn(async move {
                     const MAX_RETRIES: u32 = 3;
                     for attempt in 0..MAX_RETRIES {
-                        match app_handle_for_emit.emit_all("bulk_index_progress", &bulk_progress) {
+                        match app_handle_for_emit.emit("bulk_index_progress", &bulk_progress) {
                             Ok(_) => break,
                             Err(e) if attempt < MAX_RETRIES - 1 => {
                                 app_log_error!(
@@ -624,7 +623,6 @@ impl EmbeddingService {
             return Ok(BatchIndexResult {
                 successful: 0,
                 failed: 0,
-                errors: Vec::new(),
                 failed_details: Vec::new(),
             });
         }
@@ -632,7 +630,6 @@ impl EmbeddingService {
         app_log_info!("🚀 BATCH INDEX: Processing batch of {} files", file_paths.len());
         
         let mut batch_data = Vec::new();
-        let mut errors = Vec::new();
         let mut failed_files = Vec::new();
         let mut failed_details: Vec<(String, String)> = Vec::new();
         
@@ -645,7 +642,6 @@ impl EmbeddingService {
                 Err(e) => {
                     let error_msg = format!("Failed to process {}: {}", file_path, e);
                     app_log_error!("❌ BATCH INDEX: {}", error_msg);
-                    errors.push(error_msg);
                     failed_details.push((file_path.clone(), e.to_string()));
                     
                     let file_name = std::path::Path::new(&file_path)
@@ -679,12 +675,10 @@ impl EmbeddingService {
                             successful_embeddings, stored_count
                         );
                         app_log_error!("❌ BATCH INDEX: {}", mismatch_error);
-                        errors.push(mismatch_error);
 
                         return Ok(BatchIndexResult {
                             successful: stored_count,
                             failed: failed_files.len() + shortfall,
-                            errors,
                             failed_details,
                         });
                     }
@@ -692,8 +686,6 @@ impl EmbeddingService {
                 Err(e) => {
                     app_log_error!("❌ BATCH INDEX: Failed to bulk store embeddings: {}", e);
                     // Fall back to individual storage to avoid losing generated embeddings.
-                    let bulk_error = format!("Bulk storage failed, falling back to individual writes: {}", e);
-                    errors.push(bulk_error);
 
                     let mut individually_stored = 0usize;
                     for item in batch_data {
@@ -715,7 +707,6 @@ impl EmbeddingService {
                                 let store_error_msg =
                                     format!("Failed to store {} after bulk failure: {}", item_file_path, store_err);
                                 app_log_error!("❌ BATCH INDEX: {}", store_error_msg);
-                                errors.push(store_error_msg);
                                 failed_details.push((item_file_path, store_err.to_string()));
                             }
                         }
@@ -724,7 +715,6 @@ impl EmbeddingService {
                     return Ok(BatchIndexResult {
                         successful: individually_stored,
                         failed: failed_files.len() + (successful_embeddings - individually_stored),
-                        errors,
                         failed_details,
                     });
                 }
@@ -737,7 +727,6 @@ impl EmbeddingService {
         Ok(BatchIndexResult {
             successful: successful_embeddings,
             failed: failed_files.len(),
-            errors,
             failed_details,
         })
     }

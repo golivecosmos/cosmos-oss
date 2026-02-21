@@ -1,6 +1,6 @@
 use serde_json::json;
 use std::sync::Arc;
-use tauri::{App, Manager};
+use tauri::{App, Emitter, Manager};
 
 use crate::services::{
     audio_service::AudioService,
@@ -330,7 +330,7 @@ impl StartupManager {
         download_service: &Arc<DownloadService>,
     ) -> Result<(), String> {
         let download_service_clone = download_service.clone();
-        let app_handle = app.handle();
+        let app_handle = app.handle().clone();
 
         tokio::spawn(async move {
             app_log_info!("🔍 Background: Checking for required models in simplified structure...");
@@ -365,7 +365,7 @@ impl StartupManager {
                     }
 
                     // Emit progress event to frontend
-                    if let Err(e) = app_handle.emit_all("download_progress", &progress) {
+                    if let Err(e) = app_handle.emit("download_progress", &progress) {
                         app_log_error!("Failed to emit download progress to frontend: {}", e);
                     }
                 };
@@ -402,7 +402,7 @@ impl StartupManager {
         app: &App,
         sqlite_service: &Arc<SqliteVectorService>,
     ) -> Result<(), String> {
-        let app_handle = app.handle();
+        let app_handle = app.app_handle().clone();
         let sqlite_service_clone = sqlite_service.clone();
 
         tokio::spawn(async move {
@@ -411,7 +411,7 @@ impl StartupManager {
                     app_log_info!("📋 STARTUP: Database schema status checked");
 
                     // Emit schema status to frontend
-                    if let Err(e) = app_handle.emit_all("database_schema_status", &schema_info) {
+                    if let Err(e) = app_handle.emit("database_schema_status", &schema_info) {
                         app_log_error!("Failed to emit schema status: {}", e);
                     }
 
@@ -441,7 +441,7 @@ impl StartupManager {
                                                 });
 
                                                 if let Err(e) = app_handle
-                                                    .emit_all("startup_notification", &notification)
+                                                    .emit("startup_notification", &notification)
                                                 {
                                                     app_log_error!("Failed to emit recreation notification: {}", e);
                                                 }
@@ -485,7 +485,7 @@ impl StartupManager {
                         "timestamp": chrono::Utc::now().to_rfc3339()
                     });
 
-                    if let Err(e) = app_handle.emit_all("startup_notification", &notification) {
+                    if let Err(e) = app_handle.emit("startup_notification", &notification) {
                         app_log_error!("Failed to emit error notification: {}", e);
                     }
                 }
@@ -543,7 +543,7 @@ impl StartupManager {
         app_log_info!("🚀 STARTUP: Setting up drive monitoring");
 
         let drive_service_clone = drive_service.clone();
-        let app_handle = app.handle();
+        let app_handle = app.handle().clone();
 
         tokio::spawn(async move {
             if let Err(e) = drive_service_clone.start_monitoring(app_handle).await {
@@ -561,7 +561,9 @@ impl StartupManager {
         #[cfg(not(debug_assertions))]
         {
             // Disable right-click context menu in production
-            let window = _app.get_window("main").ok_or("Main window not found")?;
+            let window = _app
+                .get_webview_window("main")
+                .ok_or("Main window not found")?;
             window.eval(r#"
                 document.addEventListener('contextmenu', function(e) {
                     e.preventDefault();
@@ -594,7 +596,9 @@ impl StartupManager {
         // Development mode: Enable devtools (only if feature is available)
         #[cfg(all(debug_assertions, feature = "dev-tools"))]
         {
-            let window = _app.get_window("main").ok_or("Main window not found")?;
+            let window = _app
+                .get_webview_window("main")
+                .ok_or("Main window not found")?;
             window.open_devtools();
         }
 

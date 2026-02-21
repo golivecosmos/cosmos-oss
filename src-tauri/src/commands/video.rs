@@ -1,14 +1,11 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use tauri::State;
 use crate::services::startup::AppState;
-use crate::services::app_installation_service::{AppInstallationService, InstalledApp};
+use crate::services::app_installation_service::AppInstallationService;
 use crate::services::generations_service::GenerationsService;
 use std::path::{Path, PathBuf};
 use std::fs;
 use std::io::Write;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use anyhow;
 
 // Custom deserializer to handle null values in JSON
@@ -281,7 +278,6 @@ async fn google_api_error_from_response(
 async fn get_veo3_api_key(app_state: &AppState) -> Result<String, String> {
     let app_service = AppInstallationService::new(
         app_state.sqlite_service.get_database_service(),
-        app_state.sqlite_service.get_schema_service(),
     );
 
     // Get all installed apps and find Veo3 app in one blocking operation

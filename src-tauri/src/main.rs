@@ -71,8 +71,15 @@ async fn main() {
 
     // Launch Tauri application
     let mut builder = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_opener::init())
         .manage(app_state)
         .setup(move |app| {
+            #[cfg(desktop)]
+            app.handle()
+                .plugin(tauri_plugin_updater::Builder::new().build())?;
+
             // Setup background tasks using the startup manager
             if let Err(e) = startup_manager.setup_background_tasks(app) {
                 eprintln!("Failed to setup background tasks: {}", e);

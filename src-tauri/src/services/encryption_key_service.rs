@@ -1,10 +1,8 @@
 use anyhow::{anyhow, Result};
-use rand::{Rng, rngs::OsRng};
 use std::path::PathBuf;
 use std::fs;
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
-use serde_json::json;
-use crate::{app_log_info, app_log_warn, app_log_error};
+use crate::app_log_info;
 #[cfg(test)]
 use tempfile;
 
@@ -61,15 +59,6 @@ impl EncryptionKeyService {
     /// Check if a key exists in app storage
     pub fn has_key(&self) -> bool {
         self.has_key_in_app_storage()
-    }
-
-    /// Generate a cryptographically secure key
-    pub fn generate_key() -> Result<String> {
-        let mut rng = OsRng;
-        let key: String = (0..64)
-            .map(|_| rng.sample(rand::distributions::Alphanumeric) as char)
-            .collect();
-        Ok(key)
     }
 
     /// Remove a key from app storage
@@ -146,32 +135,5 @@ impl EncryptionKeyService {
 
         String::from_utf8(decoded)
             .map_err(|e| anyhow!("Failed to convert key to string: {}", e))
-    }
-
-    /// Get storage method currently being used
-    pub fn get_storage_method(&self) -> serde_json::Value {
-        let app_storage_available = self.has_key_in_app_storage();
-
-        json!({
-            "primary_method": "app_storage",
-            "app_storage_available": app_storage_available,
-            "has_key": app_storage_available
-        })
-    }
-
-    /// Emergency key recovery - try to recover key from app storage
-    pub fn emergency_key_recovery(&self) -> Result<String> {
-        app_log_warn!("🚨 Attempting emergency key recovery...");
-
-        match self.get_key_from_app_storage() {
-            Ok(key) => {
-                app_log_info!("✅ Emergency recovery: Found key in app storage");
-                Ok(key)
-            }
-            Err(e) => {
-                app_log_error!("❌ Emergency recovery: App storage failed: {}", e);
-                Err(anyhow!("Emergency key recovery failed - no key found in app storage"))
-            }
-        }
     }
 }

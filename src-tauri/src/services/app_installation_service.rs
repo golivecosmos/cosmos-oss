@@ -3,14 +3,12 @@ use rusqlite::{Connection, params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use crate::services::database_service::DatabaseService;
-use crate::services::schema_service::SchemaService;
 use crate::services::api_key_encryption_service::ApiKeyEncryptionService;
 use crate::{app_log_info, app_log_warn};
 
 /// App installation service for managing installed apps and their configurations
 pub struct AppInstallationService {
     db_service: Arc<DatabaseService>,
-    schema_service: Arc<SchemaService>,
 }
 
 /// Request to install an app
@@ -44,13 +42,9 @@ pub struct InstalledApp {
 
 impl AppInstallationService {
     /// Create a new AppInstallationService instance
-    pub fn new(
-        db_service: Arc<DatabaseService>,
-        schema_service: Arc<SchemaService>,
-    ) -> Self {
+    pub fn new(db_service: Arc<DatabaseService>) -> Self {
         Self {
             db_service,
-            schema_service,
         }
     }
 
@@ -224,58 +218,6 @@ impl AppInstallationService {
         Ok(())
     }
 
-    /// Clean up duplicate and orphaned API key records
-    pub fn cleanup_api_key_records(&self) -> Result<()> {
-        let connection = self.db_service.get_connection();
-        let mut db = connection.lock().unwrap();
-
-        // Start transaction
-        let tx = db.transaction()?;
-
-        // Delete orphaned API key records (app_id IS NULL)
-        let orphaned_count = tx.execute(
-            "DELETE FROM app_settings WHERE setting_key = 'api_key' AND app_id IS NULL",
-            params![],
-        )?;
-        println!("🧹 CLEANUP: Deleted {} orphaned API key records", orphaned_count);
-
-        // For each app, keep only the most recent API key record
-        let app_ids: Vec<i64> = {
-            let mut stmt = tx.prepare(
-                "SELECT DISTINCT app_id FROM app_settings WHERE setting_key = 'api_key' AND app_id IS NOT NULL"
-            )?;
-            
-            let app_ids = stmt.query_map([], |row| row.get::<_, i64>(0))?;
-            app_ids.collect::<Result<Vec<_>, _>>()?
-        };
-
-        for app_id in app_ids {
-            // Get all API key records for this app
-            let api_key_ids: Vec<i64> = {
-                let mut api_key_stmt = tx.prepare(
-                    "SELECT id FROM app_settings WHERE setting_key = 'api_key' AND app_id = ? ORDER BY id DESC"
-                )?;
-
-                let api_key_ids = api_key_stmt.query_map(params![app_id], |row| row.get::<_, i64>(0))?;
-                api_key_ids.collect::<Result<Vec<_>, _>>()?
-            };
-
-            // Keep only the most recent one (highest ID)
-            if api_key_ids.len() > 1 {
-                let ids_to_delete = &api_key_ids[1..]; // All except the first (most recent)
-                for id_to_delete in ids_to_delete {
-                    tx.execute("DELETE FROM app_settings WHERE id = ?", params![id_to_delete])?;
-                }
-                println!("🧹 CLEANUP: Deleted {} duplicate API key records for app_id {}", 
-                        ids_to_delete.len(), app_id);
-            }
-        }
-
-        tx.commit()?;
-        println!("🧹 CLEANUP: API key cleanup completed");
-        Ok(())
-    }
-
     /// Get all installed apps
     pub fn get_installed_apps(&self) -> Result<Vec<InstalledApp>> {
         let connection = self.db_service.get_connection();
@@ -359,13 +301,13 @@ impl AppInstallationService {
         let tx = db.transaction()?;
 
         // Delete app settings - clean up both app_id specific and any orphaned records
-        let deleted_count = tx.execute(
+        let _deleted_count = tx.execute(
             "DELETE FROM app_settings WHERE app_id = ?",
             params![app_id],
         )?;
 
         // This is a safety measure to prevent accumulation of orphaned records
-        let orphaned_count = tx.execute(
+        let _orphaned_count = tx.execute(
             "DELETE FROM app_settings WHERE setting_key = 'api_key' AND app_id IS NULL",
             params![],
         )?;

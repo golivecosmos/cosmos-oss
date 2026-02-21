@@ -1,4 +1,4 @@
-use tauri::{State, AppHandle, Manager};
+use tauri::{AppHandle, Emitter, State};
 use crate::services::startup::AppState;
 use crate::{app_log_info, app_log_error, app_log_warn};
 use crate::commands::indexing::{is_queue_processing_paused, set_queue_processing_paused};
@@ -104,7 +104,7 @@ pub async fn manage_job_queue(
         "stop" => {
             app_log_warn!("⏸️ QUEUE: Stop requested via manage_job_queue");
             set_queue_processing_paused(true);
-            if let Err(e) = app_handle.emit_all("queue_processing_changed", serde_json::json!({
+            if let Err(e) = app_handle.emit("queue_processing_changed", serde_json::json!({
                 "paused": true,
                 "timestamp": chrono::Utc::now().to_rfc3339()
             })) {
@@ -118,7 +118,7 @@ pub async fn manage_job_queue(
         "resume" => {
             app_log_info!("▶️ QUEUE: Resume requested via manage_job_queue");
             set_queue_processing_paused(false);
-            if let Err(e) = app_handle.emit_all("queue_processing_changed", serde_json::json!({
+            if let Err(e) = app_handle.emit("queue_processing_changed", serde_json::json!({
                 "paused": false,
                 "timestamp": chrono::Utc::now().to_rfc3339()
             })) {
@@ -160,13 +160,13 @@ pub async fn manage_job_queue(
                     app_log_info!("✅ CLEAR QUEUE: Successfully cleared {} jobs", deleted_count);
                     
                     // Emit event to notify frontend that jobs were cleared
-                    if let Err(e) = app_handle.emit_all("jobs_cleared", serde_json::json!({
+                    if let Err(e) = app_handle.emit("jobs_cleared", serde_json::json!({
                         "deleted_count": deleted_count,
                         "timestamp": chrono::Utc::now().to_rfc3339()
                     })) {
                         app_log_error!("Failed to emit jobs_cleared event: {}", e);
                     }
-                    if let Err(e) = app_handle.emit_all("queue_processing_changed", serde_json::json!({
+                    if let Err(e) = app_handle.emit("queue_processing_changed", serde_json::json!({
                         "paused": true,
                         "timestamp": chrono::Utc::now().to_rfc3339()
                     })) {
@@ -192,14 +192,14 @@ pub async fn manage_job_queue(
                 Ok(deleted_count) => {
                     app_log_info!("✅ CLEAR ALL JOBS: Successfully deleted {} jobs", deleted_count);
 
-                    if let Err(e) = app_handle.emit_all("jobs_cleared", serde_json::json!({
+                    if let Err(e) = app_handle.emit("jobs_cleared", serde_json::json!({
                         "deleted_count": deleted_count,
                         "scope": "all",
                         "timestamp": chrono::Utc::now().to_rfc3339()
                     })) {
                         app_log_error!("Failed to emit jobs_cleared event: {}", e);
                     }
-                    if let Err(e) = app_handle.emit_all("queue_processing_changed", serde_json::json!({
+                    if let Err(e) = app_handle.emit("queue_processing_changed", serde_json::json!({
                         "paused": true,
                         "timestamp": chrono::Utc::now().to_rfc3339()
                     })) {
@@ -237,7 +237,7 @@ pub async fn manage_job_queue(
                     
                     // Emit job cancelled event
                     if let Ok(job_data) = state.sqlite_service.get_job_by_id(&job_id) {
-                        if let Err(e) = app_handle.emit_all("job_updated", &job_data) {
+                        if let Err(e) = app_handle.emit("job_updated", &job_data) {
                             app_log_error!("Failed to emit job cancellation event: {}", e);
                         }
                     }
@@ -264,7 +264,7 @@ pub async fn manage_job_queue(
                     
                     // Emit job updated event
                     if let Ok(job_data) = state.sqlite_service.get_job_by_id(&job_id) {
-                        if let Err(e) = app_handle.emit_all("job_updated", &job_data) {
+                        if let Err(e) = app_handle.emit("job_updated", &job_data) {
                             app_log_error!("Failed to emit job retry event: {}", e);
                         }
                     }
@@ -296,7 +296,7 @@ pub async fn set_queue_processing(
     }
 
     set_queue_processing_paused(paused);
-    if let Err(e) = app_handle.emit_all("queue_processing_changed", serde_json::json!({
+    if let Err(e) = app_handle.emit("queue_processing_changed", serde_json::json!({
         "paused": paused,
         "timestamp": chrono::Utc::now().to_rfc3339()
     })) {
@@ -318,13 +318,13 @@ pub async fn stop_and_clear_queue(
 
     match state.sqlite_service.clear_jobs_queue() {
         Ok(deleted_count) => {
-            if let Err(e) = app_handle.emit_all("jobs_cleared", serde_json::json!({
+            if let Err(e) = app_handle.emit("jobs_cleared", serde_json::json!({
                 "deleted_count": deleted_count,
                 "timestamp": chrono::Utc::now().to_rfc3339()
             })) {
                 app_log_error!("Failed to emit jobs_cleared event: {}", e);
             }
-            if let Err(e) = app_handle.emit_all("queue_processing_changed", serde_json::json!({
+            if let Err(e) = app_handle.emit("queue_processing_changed", serde_json::json!({
                 "paused": true,
                 "timestamp": chrono::Utc::now().to_rfc3339()
             })) {
@@ -357,7 +357,7 @@ pub async fn retry_job(
             
             // Emit job updated event
             if let Ok(job_data) = state.sqlite_service.get_job_by_id(&job_id) {
-                if let Err(e) = app_handle.emit_all("job_updated", &job_data) {
+                if let Err(e) = app_handle.emit("job_updated", &job_data) {
                     app_log_error!("Failed to emit job retry event: {}", e);
                 }
             }

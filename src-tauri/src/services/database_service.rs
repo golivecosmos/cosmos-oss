@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use rusqlite::{Connection, ffi::sqlite3_auto_extension};
 use sqlite_vec::sqlite3_vec_init;
 use std::path::PathBuf;
@@ -10,33 +10,6 @@ use crate::{app_log_debug, app_log_info, app_log_warn, app_log_error};
 use crate::services::config_service::ConfigService;
 use crate::services::database_encryption_service::DatabaseEncryptionService;
 use zerocopy::AsBytes;
-use thiserror::Error;
-
-/// Database-specific error types for comprehensive error handling
-#[derive(Debug, Error)]
-pub enum DatabaseError {
-    #[error("Database encryption failed: {0}")]
-    EncryptionError(String),
-
-
-
-    #[error("App storage access failed: {0}")]
-    AppStorageError(String),
-
-    #[error("Database connection failed: {0}")]
-    ConnectionError(String),
-
-    #[error("Database verification failed: {0}")]
-    VerificationError(String),
-
-
-
-    #[error("Database recovery failed: {0}")]
-    RecoveryError(String),
-
-    #[error("Database initialization failed: {0}")]
-    InitializationError(String),
-}
 
 /// Core database management service
 /// Handles database connection, initialization, and path management
@@ -183,7 +156,7 @@ impl DatabaseService {
             // Close the current database connection to ensure all WAL files are flushed
             app_log_info!("🔧 DB_SET_PATH: Closing current database connection");
             {
-                let mut db = self.db.lock().unwrap();
+                let db = self.db.lock().unwrap();
                 drop(db); // This will close the connection and flush WAL files
             }
 
@@ -384,27 +357,6 @@ impl DatabaseService {
         self.db.clone()
     }
 
-    /// Update the encryption state
-    pub fn update_encryption_state(&mut self) -> Result<()> {
-        let is_actually_encrypted = self.is_database_encrypted();
-
-        if is_actually_encrypted != self.is_encrypted {
-            app_log_info!("🔐 Updating encryption state from {} to {}", self.is_encrypted, is_actually_encrypted);
-            self.is_encrypted = is_actually_encrypted;
-
-            // Update the connection to use encryption
-            let new_connection = self.get_encrypted_connection();
-
-            if let Ok(conn) = new_connection {
-                let mut db = self.db.lock().unwrap();
-                *db = conn;
-                app_log_info!("✅ Successfully updated connection after encryption state change");
-            }
-        }
-
-        Ok(())
-    }
-
     /// Get the config service
     pub fn get_config_service(&self) -> Arc<Mutex<ConfigService>> {
         self.config_service.clone()
@@ -501,7 +453,7 @@ impl DatabaseService {
             }
         }
 
-        let mut connection = Connection::open(&db_path)?;
+        let connection = Connection::open(&db_path)?;
 
         // Configure SQLCipher
         connection.execute_batch(&format!("PRAGMA key = '{}'", db_key))?;
@@ -524,30 +476,12 @@ impl DatabaseService {
         true
     }
 
-    /// Check if database is encrypted and key is available
-    pub fn is_database_encrypted_with_key(&self) -> bool {
-        // First check if we have a key in app storage
-        if self.encryption_service.has_database_key() {
-            app_log_info!("🔑 Encryption key found in app storage");
-            return true;
-        }
-
-        // Then try to open as encrypted
-        if let Ok(conn) = self.get_encrypted_connection() {
-            return true;
-        }
-
-        false
-    }
-
-
-
     /// Get encrypted database connection
     fn get_encrypted_connection(&self) -> Result<Connection> {
         let db_key = self.encryption_service.get_database_key()?;
         let db_path = self.db_path.read().unwrap().clone();
 
-        let mut connection = Connection::open(&db_path)?;
+        let connection = Connection::open(&db_path)?;
         app_log_info!("✅ Successfully opened database file");
 
         // Configure SQLCipher
@@ -570,218 +504,6 @@ impl DatabaseService {
 
         Ok(connection)
     }
-
-
-
-
-
-    /// Set encryption status
-    pub fn set_encrypted(&mut self, encrypted: bool) {
-        self.is_encrypted = encrypted;
-    }
-
-
-
-    /// Get encryption status
-    pub fn get_encryption_status(&self) -> serde_json::Value {
-        let is_encrypted = self.is_database_encrypted();
-        let has_key = self.encryption_service.has_database_key();
-        let is_encrypted_with_key = self.is_database_encrypted_with_key();
-
-        serde_json::json!({
-            "is_encrypted": is_encrypted,
-            "has_encryption_key": has_key,
-            "is_encrypted_with_key": is_encrypted_with_key,
-            "encryption_status": if is_encrypted_with_key {
-                "secure"
-            } else if is_encrypted && !has_key {
-                "encrypted_no_key"
-            } else {
-                "unencrypted"
-            }
-        })
-    }
-
-    // ===== ERROR HANDLING AND RECOVERY METHODS =====
-
-    /// Handle database errors with recovery options
-    pub fn handle_database_error(&self, error: &anyhow::Error) -> Result<()> {
-        app_log_error!("🚨 Database error encountered: {}", error);
-
-        // Try to downcast to our specific error types
-        if let Some(db_error) = error.downcast_ref::<DatabaseError>() {
-            match db_error {
-                DatabaseError::EncryptionError(msg) => {
-                    app_log_error!("🔐 Database encryption error: {}", msg);
-                    self.recover_from_encryption_error()
-                }
-
-                DatabaseError::AppStorageError(msg) => {
-                    app_log_error!("🔑 App storage error: {}", msg);
-                    self.recover_from_app_storage_error()
-                }
-                DatabaseError::ConnectionError(msg) => {
-                    app_log_error!("🔌 Database connection error: {}", msg);
-                    self.recover_from_connection_error()
-                }
-                DatabaseError::VerificationError(msg) => {
-                    app_log_error!("✅ Database verification error: {}", msg);
-                    self.recover_from_verification_error()
-                }
-
-                DatabaseError::RecoveryError(msg) => {
-                    app_log_error!("🔄 Database recovery error: {}", msg);
-                    self.recover_from_recovery_error()
-                }
-                DatabaseError::InitializationError(msg) => {
-                    app_log_error!("🚀 Database initialization error: {}", msg);
-                    self.recover_from_initialization_error()
-                }
-            }
-        } else {
-            // Generic error handling
-            app_log_error!("❓ Unknown database error: {}", error);
-            self.recover_from_generic_error(error)
-        }
-    }
-
-    /// Recover from encryption errors
-    fn recover_from_encryption_error(&self) -> Result<()> {
-        app_log_info!("🔧 Attempting to recover from encryption error");
-
-        // Try to reinitialize encryption
-        let encryption_service = DatabaseEncryptionService::new();
-
-        if !encryption_service.has_database_key() {
-            app_log_info!("🔑 No encryption key found, generating new key");
-            // Generate new key
-            let new_key = DatabaseEncryptionService::generate_database_key()?;
-            encryption_service.store_database_key(&new_key)?;
-            app_log_info!("✅ New encryption key generated and stored");
-        } else {
-            app_log_info!("🔑 Encryption key found in keychain");
-        }
-
-        // Try to reinitialize the database
-        self.try_reinitialize_database()
-    }
-
-
-
-    /// Recover from app storage errors
-    fn recover_from_app_storage_error(&self) -> Result<()> {
-        app_log_info!("🔧 Attempting to recover from app storage error");
-
-        // Try to reinitialize app storage
-        let new_key = DatabaseEncryptionService::generate_database_key()
-            .map_err(|e| anyhow!("Failed to generate new key during recovery: {}", e))?;
-
-        self.encryption_service.store_database_key(&new_key)
-            .map_err(|e| anyhow!("Failed to store new key during recovery: {}", e))?;
-
-        app_log_info!("✅ New encryption key stored in app storage");
-
-        Ok(())
-    }
-
-    /// Recover from connection errors
-    fn recover_from_connection_error(&self) -> Result<()> {
-        app_log_info!("🔧 Attempting to recover from connection error");
-
-        // Try to close and reopen the connection
-        self.try_reinitialize_database()
-    }
-
-    /// Recover from verification errors
-    fn recover_from_verification_error(&self) -> Result<()> {
-        app_log_info!("🔧 Attempting to recover from verification error");
-
-        // Try to reinitialize the database
-        self.try_reinitialize_database()
-    }
-
-    /// Recover from backup errors
-    fn recover_from_backup_error(&self) -> Result<()> {
-        app_log_info!("🔧 Attempting to recover from backup error");
-
-        // Try to create a new backup
-        let db_path = self.db_path.read().unwrap().clone();
-        let backup_path = db_path.with_extension("backup");
-
-        if db_path.exists() {
-            fs::copy(&db_path, &backup_path)?;
-            app_log_info!("✅ New backup created successfully");
-        }
-
-        Ok(())
-    }
-
-    /// Recover from recovery errors
-    fn recover_from_recovery_error(&self) -> Result<()> {
-        app_log_info!("🔧 Attempting to recover from recovery error");
-
-        // Try to reinitialize the database
-        self.try_reinitialize_database()
-    }
-
-    /// Recover from initialization errors
-    fn recover_from_initialization_error(&self) -> Result<()> {
-        app_log_info!("🔧 Attempting to recover from initialization error");
-
-        // Try to reinitialize the database
-        self.try_reinitialize_database()
-    }
-
-    /// Recover from generic errors
-    fn recover_from_generic_error(&self, error: &anyhow::Error) -> Result<()> {
-        app_log_info!("🔧 Attempting to recover from generic error");
-
-        // Try to reinitialize the database
-        self.try_reinitialize_database()
-    }
-
-    /// Try to reinitialize the database
-    fn try_reinitialize_database(&self) -> Result<()> {
-        app_log_info!("🔄 Attempting to reinitialize database");
-
-        // This is a simplified reinitialization
-        // In a full implementation, you might want to:
-        // 1. Close existing connections
-        // 2. Clear any cached state
-        // 3. Reopen connections
-        // 4. Verify database integrity
-
-        app_log_info!("✅ Database reinitialization completed");
-        Ok(())
-    }
-
-    /// Create emergency backup
-    pub fn create_emergency_backup(&self) -> Result<PathBuf> {
-        let db_path = self.db_path.read().unwrap().clone();
-        let backup_path = db_path.with_extension("emergency_backup");
-
-        if db_path.exists() {
-            fs::copy(&db_path, &backup_path)?;
-            app_log_info!("💾 Emergency backup created at: {}", backup_path.display());
-            Ok(backup_path)
-        } else {
-            Err(anyhow!("Database file does not exist"))
-        }
-    }
-
-    /// Restore from backup
-    pub fn restore_from_backup(&self, backup_path: &PathBuf) -> Result<()> {
-        let db_path = self.db_path.read().unwrap().clone();
-
-        if backup_path.exists() {
-            fs::copy(backup_path, &db_path)?;
-            app_log_info!("✅ Database restored from backup: {}", backup_path.display());
-            Ok(())
-        } else {
-            Err(anyhow!("Backup file does not exist: {}", backup_path.display()))
-        }
-    }
-
     /// Migrate custom vector_search.db to .cosmos.db
     fn migrate_custom_vector_db(config_service: &mut ConfigService) -> Result<()> {
         let custom_path_str = config_service.get_custom_db_path();
@@ -818,85 +540,5 @@ impl DatabaseService {
         }
 
         Ok(())
-    }
-
-    /// Get database health status
-    pub fn get_database_health(&self) -> Result<serde_json::Value> {
-        let db_path = self.db_path.read().unwrap().clone();
-        let exists = db_path.exists();
-        let is_encrypted = self.is_database_encrypted();
-        let has_key = self.encryption_service.has_database_key();
-        let can_connect = self.get_encrypted_connection().is_ok();
-
-        let health_status = if !exists {
-            "missing"
-        } else if !can_connect {
-            "corrupted"
-        } else if is_encrypted && !has_key {
-            "encrypted_no_key"
-        } else if is_encrypted && has_key {
-            "healthy"
-        } else {
-            "unencrypted"
-        };
-
-        let health = serde_json::json!({
-            "database_path": db_path.to_string_lossy(),
-            "exists": exists,
-            "is_encrypted": is_encrypted,
-            "has_encryption_key": has_key,
-            "can_connect": can_connect,
-            "health_status": health_status,
-            "timestamp": chrono::Utc::now().to_rfc3339()
-        });
-
-        Ok(health)
-    }
-
-    /// Perform database integrity check
-    pub fn check_database_integrity(&self) -> Result<serde_json::Value> {
-        app_log_info!("🔍 Performing database integrity check");
-
-        let db_path = self.db_path.read().unwrap().clone();
-        let mut integrity_report = serde_json::json!({
-            "database_path": db_path.to_string_lossy(),
-            "checks": {}
-        });
-
-        // Check if database file exists
-        let exists = db_path.exists();
-        integrity_report["checks"]["file_exists"] = serde_json::Value::Bool(exists);
-
-        if !exists {
-            app_log_warn!("⚠️ Database file does not exist");
-            return Ok(integrity_report);
-        }
-
-        // Check file size
-        if let Ok(metadata) = fs::metadata(&db_path) {
-            integrity_report["checks"]["file_size_bytes"] = serde_json::Value::Number(metadata.len().into());
-        }
-
-        // Check if we can connect
-        match self.get_encrypted_connection() {
-            Ok(_) => {
-                integrity_report["checks"]["can_connect"] = serde_json::Value::Bool(true);
-                app_log_info!("✅ Database connection successful");
-            }
-            Err(e) => {
-                integrity_report["checks"]["can_connect"] = serde_json::Value::Bool(false);
-                integrity_report["checks"]["connection_error"] = serde_json::Value::String(e.to_string());
-                app_log_error!("❌ Database connection failed: {}", e);
-            }
-        }
-
-        // Check encryption status
-        let is_encrypted = self.is_database_encrypted();
-        let has_key = self.encryption_service.has_database_key();
-        integrity_report["checks"]["is_encrypted"] = serde_json::Value::Bool(is_encrypted);
-        integrity_report["checks"]["has_encryption_key"] = serde_json::Value::Bool(has_key);
-
-        app_log_info!("✅ Database integrity check completed");
-        Ok(integrity_report)
     }
 }

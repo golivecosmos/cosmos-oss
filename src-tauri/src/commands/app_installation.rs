@@ -1,9 +1,7 @@
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
 use serde_json;
-use std::sync::Arc;
 use std::time::Duration;
-use tauri::{State, AppHandle, Manager};
+use tauri::{AppHandle, Emitter, State};
 use crate::{app_log_info, app_log_error};
 use crate::services::app_installation_service::{
     AppInstallationService, AppInstallRequest, AppInstallResponse, InstalledApp
@@ -89,7 +87,6 @@ pub async fn install_app(
 
     let app_service = AppInstallationService::new(
         state.sqlite_service.get_database_service(),
-        state.sqlite_service.get_schema_service(),
     );
 
     let result = app_service.install_app(request);
@@ -98,7 +95,7 @@ pub async fn install_app(
     if let Ok(response) = &result {
         if response.success {
             app_log_info!("🔔 Emitting app_installed event for: {}", app_name);
-            if let Err(e) = app_handle.emit_all("app_installed", serde_json::json!({
+            if let Err(e) = app_handle.emit("app_installed", serde_json::json!({
                 "app_name": app_name,
                 "app_id": response.app_id,
                 "message": response.message
@@ -120,7 +117,6 @@ pub async fn get_installed_apps(
 ) -> Result<Vec<InstalledApp>, String> {
     let app_service = AppInstallationService::new(
         state.sqlite_service.get_database_service(),
-        state.sqlite_service.get_schema_service(),
     );
 
     match app_service.get_installed_apps() {
@@ -142,7 +138,6 @@ pub async fn get_app_by_id(
 ) -> Result<Option<InstalledApp>, String> {
     let app_service = AppInstallationService::new(
         state.sqlite_service.get_database_service(),
-        state.sqlite_service.get_schema_service(),
     );
 
     app_service.get_app_by_id(app_id)
@@ -158,7 +153,6 @@ pub async fn uninstall_app(
 ) -> Result<AppInstallResponse, String> {
     let app_service = AppInstallationService::new(
         state.sqlite_service.get_database_service(),
-        state.sqlite_service.get_schema_service(),
     );
 
     let result = app_service.uninstall_app(app_id);
@@ -169,7 +163,7 @@ pub async fn uninstall_app(
             // Get the app name before uninstalling for the event
             if let Ok(Some(app)) = app_service.get_app_by_id(app_id) {
                 app_log_info!("🔔 Emitting app_uninstalled event for: {}", app.app_name);
-                if let Err(e) = app_handle.emit_all("app_uninstalled", serde_json::json!({
+                if let Err(e) = app_handle.emit("app_uninstalled", serde_json::json!({
                     "app_name": app.app_name,
                     "app_id": app_id,
                     "message": response.message
@@ -193,25 +187,3 @@ pub async fn uninstall_app(
         }
     }
 }
-
-/// Clean up duplicate and orphaned API key records
-#[tauri::command]
-pub async fn cleanup_api_key_records(
-    state: State<'_, AppState>,
-) -> Result<(), String> {
-    let app_service = AppInstallationService::new(
-        state.sqlite_service.get_database_service(),
-        state.sqlite_service.get_schema_service(),
-    );
-
-    match app_service.cleanup_api_key_records() {
-        Ok(_) => {
-            println!("🧹 CLEANUP COMMAND: Successfully cleaned up API key records");
-            Ok(())
-        }
-        Err(e) => {
-            println!("🧹 CLEANUP COMMAND: Error cleaning up API key records: {}", e);
-            Err(e.to_string())
-        }
-    }
-} 

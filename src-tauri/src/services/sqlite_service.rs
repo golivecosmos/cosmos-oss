@@ -104,10 +104,6 @@ impl SqliteVectorService {
         Arc::clone(&self.db_service)
     }
 
-    pub fn get_schema_service(&self) -> Arc<SchemaService> {
-        Arc::clone(&self.schema_service)
-    }
-
     pub fn set_db_path(&self, new_dir: Option<&str>) -> Result<String, String> {
         app_log_info!("🔧 SQLITE_SET_PATH: Starting set_db_path");
         app_log_info!("🔧 SQLITE_SET_PATH: new_dir = {:?}", new_dir);

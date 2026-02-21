@@ -6,17 +6,21 @@ authors = ["Cosmos OSS Contributors"]
 license = "MIT"
 repository = "https://github.com/cosmos-oss/cosmos-oss"
 edition = "2021"
-rust-version = "1.70"
+rust-version = "1.77.2"
 
 [build-dependencies]
-tauri-build = { version = "1.5", features = [] }
+tauri-build = { version = "2.0", features = [] }
 
 [dependencies]
 chrono = { version = "0.4.24", features = ["serde"] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 # Conditional devtools feature - only in debug builds
-tauri = { version = "1.5", features = [ "process-relaunch", "fs-read-dir", "fs-exists", "fs-read-file", "shell-execute", "dialog-message", "dialog-open", "shell-open", "protocol-all", "path-all"] }
+tauri = { version = "2.0", features = ["protocol-asset"] }
+tauri-plugin-dialog = "2.0"
+tauri-plugin-opener = "2.0"
+tauri-plugin-process = "2.0"
+tauri-plugin-updater = "2.0"
 tokio = { version = "1.0", features = ["full"] }
 thiserror = "1.0"
 anyhow = "1.0"

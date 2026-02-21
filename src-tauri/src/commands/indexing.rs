@@ -1,4 +1,4 @@
-use tauri::{State, Manager};
+use tauri::{Emitter, State};
 use crate::AppState;
 use crate::constants::{is_supported_media_extension, is_supported_video_extension};
 use crate::app_log_info;
@@ -61,7 +61,7 @@ async fn emit_event_with_retry<T: serde::Serialize + ?Sized>(
 ) {
     const MAX_RETRIES: u32 = 3;
     for attempt in 0..MAX_RETRIES {
-        match app_handle.emit_all(event, payload) {
+        match app_handle.emit(event, payload) {
             Ok(_) => return,
             Err(e) if attempt < MAX_RETRIES - 1 => {
                 app_log_warn!(

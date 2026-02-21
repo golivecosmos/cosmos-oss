@@ -1,4 +1,4 @@
-use tauri::{State, Manager};
+use tauri::{Emitter, State};
 use crate::services::startup::AppState;
 use crate::{app_log_info, app_log_error};
 use crate::services::download_service::{DownloadService, DownloadProgress};
@@ -52,7 +52,7 @@ pub async fn clear_and_redownload_models(app_handle: tauri::AppHandle, state: St
     let progress_callback = {
         let app_handle = app_handle.clone();
         move |progress: DownloadProgress| {
-            if let Err(e) = app_handle.emit_all("download_progress", &progress) {
+            if let Err(e) = app_handle.emit("download_progress", &progress) {
                 app_log_error!("Failed to emit download progress: {}", e);
             }
         }
@@ -102,7 +102,7 @@ pub async fn download_models(app_handle: tauri::AppHandle, state: State<'_, AppS
     let progress_callback = {
         let app_handle = app_handle.clone();
         move |progress: DownloadProgress| {
-            if let Err(e) = app_handle.emit_all("download_progress", &progress) {
+            if let Err(e) = app_handle.emit("download_progress", &progress) {
                 app_log_error!("Failed to emit download progress: {}", e);
             }
         }

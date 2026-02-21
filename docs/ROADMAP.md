@@ -16,9 +16,9 @@ _Last updated: February 2026_
 
 ## Mid-term (Q2 2026)
 1. **Tauri 2 migration**
-   - Track the [Tauri 2 RC](https://beta.tauri.app/) and port our config (`tauri.conf.json`, `window-v2` API).
-   - Replace deprecated `@tauri-apps/api` imports with v2 modules.
-   - Verify plugin compatibility (updater, shell, dialog).
+   - ✅ Port config + runtime wiring to Tauri 2 (`tauri.conf*.json`, capabilities, plugin init).
+   - ✅ Replace deprecated `@tauri-apps/api` v1 imports with v2 modules/plugins.
+   - ☐ Clean up remaining Rust warnings and finalize DMG packaging workflow in CI.
 2. **Plugin infrastructure**
    - Turn the “App Store” into a manifest-driven registry (JSON descriptors + signatures) so the community can publish connectors.
    - Provide an SDK for writing new plugins (commands + UI stubs).

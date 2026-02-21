@@ -51,6 +51,7 @@ fn create_test_app_state() -> AppState {
         video_service,
         download_service,
         drive_service,
+        video_generation_status: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
     }
 }
 

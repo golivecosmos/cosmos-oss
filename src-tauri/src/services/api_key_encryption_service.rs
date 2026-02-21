@@ -5,8 +5,8 @@ use aes_gcm::{
 };
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use rand::{Rng, rngs::OsRng};
-use sha2::{Sha256, Digest};
-use crate::{app_log_info, app_log_error, app_log_warn};
+use sha2::Digest;
+use crate::{app_log_info, app_log_error};
 use crate::services::encryption_key_service::EncryptionKeyService;
 
 /// Service for encrypting and decrypting API keys using AES-GCM
@@ -15,7 +15,6 @@ use crate::services::encryption_key_service::EncryptionKeyService;
 /// using AES-256-GCM for authenticated encryption.
 pub struct ApiKeyEncryptionService {
     key: Aes256Gcm,
-    encryption_key_service: EncryptionKeyService,
 }
 
 impl ApiKeyEncryptionService {
@@ -30,7 +29,6 @@ impl ApiKeyEncryptionService {
         
         Ok(Self {
             key: cipher,
-            encryption_key_service,
         })
     }
     
@@ -46,7 +44,6 @@ impl ApiKeyEncryptionService {
         
         Ok(Self {
             key: cipher,
-            encryption_key_service,
         })
     }
 
@@ -148,6 +145,7 @@ impl ApiKeyEncryptionService {
     }
     
     /// Test encryption and decryption functionality
+    #[cfg(test)]
     pub fn test_encryption(&self) -> Result<()> {
         let test_api_key = "test_api_key_12345";
         

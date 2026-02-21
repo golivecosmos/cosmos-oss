@@ -1,10 +1,9 @@
 use anyhow::{anyhow, Result};
-use rusqlite::Connection;
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
 use crate::services::database_service::DatabaseService;
-use crate::{app_log_debug, app_log_error, app_log_info, app_log_warn};
+use crate::{app_log_debug, app_log_info};
 
 /// Video Generation Record
 #[derive(Debug, Serialize, Deserialize)]

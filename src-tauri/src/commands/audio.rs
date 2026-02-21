@@ -3,7 +3,7 @@ use crate::AppState;
 use crate::{app_log_debug, app_log_error, app_log_info};
 use anyhow::Result;
 use std::path::Path;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, State};
 
 /// Transcribe an audio file to text (simplified)
 #[tauri::command]
@@ -63,7 +63,7 @@ pub async fn transcribe_audio_file(
         "status": "started"
     });
     app_log_info!("🔔 Emitting transcription_started event for: {}", clean_path);
-    if let Err(e) = app_handle.emit_all("transcription_started", &transcription_started_data) {
+    if let Err(e) = app_handle.emit("transcription_started", &transcription_started_data) {
         app_log_error!("Failed to emit transcription_started event: {}", e);
     } else {
         app_log_info!("✅ Successfully emitted transcription_started event");
@@ -106,7 +106,7 @@ pub async fn transcribe_audio_file(
                 }
             });
             app_log_info!("🔔 Emitting transcription_completed event for: {}", clean_path);
-            if let Err(e) = app_handle.emit_all("transcription_completed", &transcription_completed_data) {
+            if let Err(e) = app_handle.emit("transcription_completed", &transcription_completed_data) {
                 app_log_error!("Failed to emit transcription_completed event: {}", e);
             } else {
                 app_log_info!("✅ Successfully emitted transcription_completed event");
@@ -125,7 +125,7 @@ pub async fn transcribe_audio_file(
                 "error": error
             });
             app_log_info!("🔔 Emitting transcription_failed event for: {}", clean_path);
-            if let Err(emit_err) = app_handle.emit_all("transcription_failed", &transcription_failed_data) {
+            if let Err(emit_err) = app_handle.emit("transcription_failed", &transcription_failed_data) {
                 app_log_error!("Failed to emit transcription_failed event: {}", emit_err);
             } else {
                 app_log_info!("✅ Successfully emitted transcription_failed event");

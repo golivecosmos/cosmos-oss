@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::process::Command;
-use tauri::Manager;
+use tauri::Emitter;
 use tokio::sync::RwLock;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -266,7 +266,7 @@ impl DriveService {
                         for (uuid, drive_info) in &current_drive_map {
                             if !last_known_drives.contains_key(uuid) {
                                 // Emit drive connected event
-                                if let Err(_) = app_handle.emit_all("drive_connected", drive_info) {
+                                if let Err(_) = app_handle.emit("drive_connected", drive_info) {
                                     //app_log_debug!("Failed to emit drive_connected event: {}", e);
                                 }
                             }
@@ -276,7 +276,7 @@ impl DriveService {
                         for (uuid, drive_info) in &last_known_drives {
                             if !current_drive_map.contains_key(uuid) {
                                 // Emit drive disconnected event
-                                if let Err(e) = app_handle.emit_all(
+                                if let Err(e) = app_handle.emit(
                                     "drive_disconnected",
                                     serde_json::json!({
                                         "uuid": uuid,
