@@ -109,7 +109,7 @@ Install platform packages such as `appimagetool` if Tauri requests them.
 Whenever you change database schemas or long-running commands, please add or update tests in `src-tauri/src/services/tests/` and describe manual QA steps in your PR.
 
 ## 7. Updater & signing
-The automatic updater is disabled by default (`"updater": { "active": false }` in `tauri.conf.json`). If you host your own update server, flip it back on and provide your endpoints + minisign keys. macOS signing/notarization can be automated via `apple-id` secrets in CI—we intentionally left the config blank to avoid leaking credentials.
+The updater plugin is enabled, but OSS configs ship with empty updater settings (`"plugins.updater.endpoints": []`, `"plugins.updater.pubkey": ""`), so update checks are effectively disabled until you provide your own endpoint(s) and minisign key. macOS signing/notarization can be automated via `apple-id` secrets in CI.
 
 ## 8. Troubleshooting
 | Symptom | Fix |

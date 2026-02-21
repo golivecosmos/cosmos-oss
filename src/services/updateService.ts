@@ -1,6 +1,6 @@
 import { getVersion } from '@tauri-apps/api/app';
-import { checkUpdate, installUpdate } from '@tauri-apps/api/updater';
-import { relaunch } from '@tauri-apps/api/process';
+import { check } from '@tauri-apps/plugin-updater';
+import { relaunch } from '@tauri-apps/plugin-process';
 
 export interface UpdateInfo {
   version: string;
@@ -19,6 +19,15 @@ export interface UpdateCheckResult {
 
 class UpdateService {
   private readonly TIMEOUT = 30000; // 30 seconds for update operations
+
+  private isUpdaterNotConfiguredError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    const normalized = message.toLowerCase();
+    return (
+      normalized.includes('updater does not have any endpoints set') ||
+      (normalized.includes('updater') && normalized.includes('endpoints'))
+    );
+  }
 
   // Check if we're in development/staging environment
   private isDevelopmentBuild(): boolean {
@@ -62,28 +71,16 @@ class UpdateService {
       console.log('🔍 Environment:', process.env.NODE_ENV);
       console.log('🔍 Is development build:', this.isDevelopmentBuild());
 
-      // Log the updater configuration that will be used
-      const updateResult = await checkUpdate();
+      const updateResult = await check({ timeout: this.TIMEOUT });
 
       console.log('📦 Update check result:', updateResult);
-      console.log('📦 Should update:', updateResult.shouldUpdate);
-      console.log('📦 Manifest:', updateResult.manifest);
 
-      // Log detailed signature information for debugging
-      if (updateResult.manifest) {
-        const manifest = updateResult.manifest as any;
-        console.log('🔐 Signature details:');
-        console.log('🔐 Signature length:', manifest.signature?.length || 0);
-        console.log('🔐 Signature preview:', manifest.signature?.substring(0, 100) + '...');
-        console.log('🔐 Download URL:', manifest.url);
-      }
-
-      if (updateResult.shouldUpdate) {
+      if (updateResult) {
         const updateInfo: UpdateInfo = {
-          version: updateResult.manifest?.version || 'Unknown',
-          date: updateResult.manifest?.date,
-          body: updateResult.manifest?.body || 'New version available',
-          available: true,
+          version: updateResult.version || 'Unknown',
+          date: updateResult.date,
+          body: updateResult.body || 'New version available',
+          available: updateResult.available ?? true,
         };
 
         return {
@@ -100,6 +97,14 @@ class UpdateService {
       }
 
     } catch (error) {
+      if (this.isUpdaterNotConfiguredError(error)) {
+        console.info('ℹ️ Automatic updates are not configured for this build.');
+        return {
+          hasUpdate: false,
+          currentVersion,
+        };
+      }
+
       console.error('❌ Update check failed:', error);
 
       // Special handling for signature errors in development builds
@@ -126,8 +131,12 @@ class UpdateService {
     try {
       console.log('📥 Starting update installation...');
 
-      // Install the update
-      await installUpdate();
+      const update = await check({ timeout: this.TIMEOUT });
+      if (!update) {
+        throw new Error('No update available.');
+      }
+
+      await update.downloadAndInstall();
 
       console.log('✅ Update installed successfully, restarting app...');
 
@@ -135,6 +144,10 @@ class UpdateService {
       await relaunch();
 
     } catch (error) {
+      if (this.isUpdaterNotConfiguredError(error)) {
+        throw new Error('Automatic updates are not configured for this build.');
+      }
+
       console.error('❌ Failed to install update:', error);
       throw new Error(this.formatError(error));
     }
