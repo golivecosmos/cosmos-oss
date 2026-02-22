@@ -227,9 +227,6 @@ export function IndexStatusSheet({ isOpen, onClose }: IndexStatusSheetProps) {
     };
   }, [isOpen]);
 
-  // Early return if not open
-  if (!isOpen) return null;
-
   const handleCancelJob = async (jobId: string) => {
     setCancellingJobs(prev => new Set([...prev, jobId]));
     
@@ -337,6 +334,9 @@ export function IndexStatusSheet({ isOpen, onClose }: IndexStatusSheetProps) {
     if (Number.isNaN(timestamp.getTime())) return 'Unknown update time';
     return `Updated ${formatDistanceToNow(timestamp)} ago`;
   }, [queueStatus?.latest_update_at]);
+
+  // Early return only after all hooks have run to keep hook order stable.
+  if (!isOpen) return null;
 
   const JobSection = ({ 
     title, 
