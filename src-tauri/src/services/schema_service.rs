@@ -339,6 +339,8 @@ impl SchemaService {
             app_log_info!("✅ JOBS TABLE: Jobs table created successfully");
         } else {
             app_log_debug!("✅ JOBS TABLE: Jobs table already exists");
+            // Keep indexes current even on existing databases.
+            self.create_jobs_indexes(db)?;
         }
 
         // Also ensure app tables exist for backwards compatibility
@@ -417,7 +419,16 @@ impl SchemaService {
             }
         }
 
-        // Create indexes for jobs table
+        self.create_jobs_indexes(db)?;
+
+        app_log_info!("✅ SCHEMA: Jobs table created for persistent job tracking with retry support");
+        Ok(())
+    }
+
+    fn create_jobs_indexes(&self, db: &Connection) -> Result<()> {
+        // Replace legacy uniqueness index (target_path only) with type-aware uniqueness.
+        let _ = db.execute("DROP INDEX IF EXISTS idx_jobs_unique_active_target", rusqlite::params![]);
+
         let indexes = [
             ("idx_jobs_status", "CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status)"),
             ("idx_jobs_created_at", "CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at)"),
@@ -425,8 +436,8 @@ impl SchemaService {
             ("idx_jobs_next_retry_at", "CREATE INDEX IF NOT EXISTS idx_jobs_next_retry_at ON jobs(next_retry_at)"),
             ("idx_jobs_drive_uuid", "CREATE INDEX IF NOT EXISTS idx_jobs_drive_uuid ON jobs(drive_uuid)"),
             (
-                "idx_jobs_unique_active_target",
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_unique_active_target ON jobs(target_path) WHERE status IN ('pending', 'running')"
+                "idx_jobs_unique_active_target_type",
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_unique_active_target_type ON jobs(job_type, target_path) WHERE status IN ('pending', 'running')"
             ),
         ];
 
@@ -435,12 +446,10 @@ impl SchemaService {
                 Ok(_) => app_log_debug!("✅ INDEX: Created jobs table index: {}", index_name),
                 Err(e) => {
                     app_log_warn!("⚠️ INDEX: Failed to create jobs table index {}: {}", index_name, e);
-                    // Don't fail the entire operation for index creation failures
                 }
             }
         }
 
-        app_log_info!("✅ SCHEMA: Jobs table created for persistent job tracking with retry support");
         Ok(())
     }
 

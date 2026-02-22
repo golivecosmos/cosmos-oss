@@ -32,29 +32,6 @@ impl JobQueueService {
             self.schema_service.ensure_jobs_table_exists(&db)?;
         }
 
-        // **NEW: Check for existing pending/running jobs for the same file**
-        let existing_job: Option<String> = db.query_row(
-            "SELECT id FROM jobs WHERE target_path = ? AND status IN ('pending', 'running')",
-            rusqlite::params![target_path],
-            |row| row.get(0)
-        ).optional()?;
-
-        if let Some(existing_id) = existing_job {
-            app_log_info!("⚠️ JOB: Skipping duplicate job creation - job {} already exists for {}", existing_id, target_path);
-            return Ok(existing_id);
-        }
-
-        // **NEW: Also check for any existing jobs (including completed/failed) for debugging**
-        let all_existing_jobs: Vec<String> = db.prepare(
-            "SELECT id, status FROM jobs WHERE target_path = ? ORDER BY created_at DESC"
-        )?.query_map(rusqlite::params![target_path], |row| {
-            Ok(format!("{}:{}", row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-        })?.collect::<Result<Vec<_>, _>>()?;
-
-        if !all_existing_jobs.is_empty() {
-            app_log_info!("🔍 JOB: Found {} existing jobs for {}: {:?}", all_existing_jobs.len(), target_path, all_existing_jobs);
-        }
-
         let job_id = format!("job_{}_{}",
             chrono::Utc::now().timestamp_millis(),
             uuid::Uuid::new_v4().to_string().split('-').next().unwrap_or("unknown")
@@ -78,8 +55,8 @@ impl JobQueueService {
                 if err.code == ErrorCode::ConstraintViolation =>
             {
                 let existing_id: Option<String> = db.query_row(
-                    "SELECT id FROM jobs WHERE target_path = ? AND status IN ('pending', 'running') ORDER BY created_at DESC LIMIT 1",
-                    rusqlite::params![target_path],
+                    "SELECT id FROM jobs WHERE job_type = ? AND target_path = ? AND status IN ('pending', 'running') ORDER BY created_at DESC LIMIT 1",
+                    rusqlite::params![job_type, target_path],
                     |row| row.get(0),
                 ).optional()?;
 
@@ -124,12 +101,8 @@ impl JobQueueService {
         }
 
         let now = chrono::Utc::now().to_rfc3339();
-        let errors_json = errors
-            .map(|e| serde_json::to_string(e).unwrap_or_else(|_| "[]".to_string()))
-            .unwrap_or_else(|| "[]".to_string());
-        let failed_files_json = failed_files
-            .map(|f| f.to_string())
-            .unwrap_or_else(|| "[]".to_string());
+        let errors_json = errors.map(|e| serde_json::to_string(e).unwrap_or_else(|_| "[]".to_string()));
+        let failed_files_json = failed_files.map(|f| f.to_string());
 
         // Set started_at timestamp when job status changes to 'running'
         let started_at_clause = if status == "running" {
@@ -150,8 +123,8 @@ impl JobQueueService {
                 status = ?,
                 current_file = COALESCE(?, current_file),
                 processed = COALESCE(?, processed),
-                errors = ?,
-                failed_files = ?,
+                errors = COALESCE(?, errors),
+                failed_files = COALESCE(?, failed_files),
                 updated_at = ?
                 {}{}
             WHERE id = ?",
@@ -430,62 +403,6 @@ impl JobQueueService {
         }
 
         Ok(())
-    }
-
-    /// **NEW: Get jobs ready for retry (past their next_retry_at time)**
-    pub fn get_jobs_ready_for_retry(&self, limit: usize) -> Result<Vec<serde_json::Value>> {
-        let connection = self.db_service.get_connection();
-        let db = connection.lock().unwrap();
-        let now = chrono::Utc::now().to_rfc3339();
-
-        let mut stmt = db.prepare(
-            "SELECT id, job_type, target_path, status, current_file, processed, total,
-                    errors, failed_files, metadata, retry_count, max_retries, next_retry_at,
-                    created_at, started_at, completed_at, updated_at
-             FROM jobs
-             WHERE status = 'pending'
-             AND next_retry_at IS NOT NULL
-             AND next_retry_at <= ?
-             ORDER BY next_retry_at ASC
-             LIMIT ?"
-        )?;
-
-        let rows = stmt.query_map(rusqlite::params![now, limit], |row| {
-            let errors_json: String = row.get(7)?;
-            let failed_files_json: String = row.get(8)?;
-            let metadata_json: String = row.get(9)?;
-
-            let errors: Vec<String> = serde_json::from_str(&errors_json).unwrap_or_default();
-            let failed_files: serde_json::Value = serde_json::from_str(&failed_files_json).unwrap_or(serde_json::json!([]));
-            let metadata: serde_json::Value = serde_json::from_str(&metadata_json).unwrap_or(serde_json::json!({}));
-
-            Ok(serde_json::json!({
-                "id": row.get::<_, String>(0)?,
-                "job_type": row.get::<_, String>(1)?,
-                "target_path": row.get::<_, String>(2)?,
-                "status": row.get::<_, String>(3)?,
-                "current_file": row.get::<_, Option<String>>(4)?,
-                "processed": row.get::<_, i64>(5)?,
-                "total": row.get::<_, i64>(6)?,
-                "errors": errors,
-                "failed_files": failed_files,
-                "metadata": metadata,
-                "retry_count": row.get::<_, i64>(10)?,
-                "max_retries": row.get::<_, i64>(11)?,
-                "next_retry_at": row.get::<_, Option<String>>(12)?,
-                "created_at": row.get::<_, String>(13)?,
-                "started_at": row.get::<_, Option<String>>(14)?,
-                "completed_at": row.get::<_, Option<String>>(15)?,
-                "updated_at": row.get::<_, String>(16)?
-            }))
-        })?;
-
-        let mut jobs = Vec::new();
-        for row in rows {
-            jobs.push(row?);
-        }
-
-        Ok(jobs)
     }
 
     /// **NEW: Manual user retry (resets retry count)**

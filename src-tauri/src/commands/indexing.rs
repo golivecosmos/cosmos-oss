@@ -439,37 +439,29 @@ pub async fn index_directory(
         Err(e) => return Err(format!("Failed to list directory: {}", e))
     };
 
-    // Filter to only supported file types using constants
-    let indexable_files: Vec<_> = all_files
-        .into_iter()
-        .filter(|file| {
-            if file.is_dir {
-                return false;
-            }
-
-            let extension = file.name
-                .split('.')
-                .last()
-                .unwrap_or_default()
-                .to_lowercase();
-
-            is_supported_media_extension(&extension)
-        })
-        .collect();
-
-    let total_files = indexable_files.len();
-    app_log_info!("🗂️ QUEUE INDEX: Found {} indexable files", total_files);
-
-    if total_files == 0 {
-        return Ok("No indexable files found in directory".to_string());
-    }
-
-    // **NEW: Create individual jobs for each file (queue approach)**
+    // Create individual jobs while scanning files to avoid extra large temporary collections.
     let mut created_jobs = 0;
+    let mut total_files = 0;
     let mut skipped_files = 0;
-    let mut created_job_ids = Vec::new();
+    let mut job_emit_sample: Vec<String> = Vec::new();
 
-    for file in indexable_files {
+    for file in all_files {
+        if file.is_dir {
+            continue;
+        }
+
+        let extension = file.name
+            .split('.')
+            .last()
+            .unwrap_or_default()
+            .to_lowercase();
+
+        if !is_supported_media_extension(&extension) {
+            continue;
+        }
+
+        total_files += 1;
+
         // Check if file is already indexed (skip job creation)
         let already_indexed = match is_file_already_indexed(&state.sqlite_service, &file.path).await {
             Ok(result) => result,
@@ -490,7 +482,9 @@ pub async fn index_directory(
             Ok(job_id) => {
                 app_log_info!("✅ QUEUE: Created indexing job {} for file: {}", job_id, file.name);
                 created_jobs += 1;
-                created_job_ids.push(job_id);
+                if job_emit_sample.len() < 100 {
+                    job_emit_sample.push(job_id);
+                }
             }
             Err(e) => {
                 app_log_error!("❌ QUEUE: Failed to create indexing job for {}: {}", file.path, e);
@@ -498,28 +492,22 @@ pub async fn index_directory(
         }
     }
 
+    app_log_info!("🗂️ QUEUE INDEX: Found {} indexable files", total_files);
+    if total_files == 0 {
+        return Ok("No indexable files found in directory".to_string());
+    }
+
     app_log_info!("📋 QUEUE: Created {} indexing jobs ({} skipped)", created_jobs, skipped_files);
 
-    // **NEW: Emit all created jobs at once for better UI responsiveness**
-    if !created_job_ids.is_empty() {
-        app_log_info!("🔔 QUEUE: Emitting batch job creation events for {} jobs", created_job_ids.len());
-
-        for job_id in &created_job_ids {
-            if let Ok(job_data) = state.sqlite_service.get_job_by_id(job_id) {
-                emit_event_with_retry(&app_handle, "job_created", &job_data).await;
-            }
-        }
-
-        // Also emit a batch event for the frontend to know all jobs are created
+    if created_jobs > 0 {
         let jobs_batch_payload = serde_json::json!({
             "total_jobs": created_jobs,
             "directory_path": path,
-            "job_ids": created_job_ids
+            "sample_job_ids": job_emit_sample
         });
         emit_event_with_retry(&app_handle, "jobs_batch_created", &jobs_batch_payload).await;
     }
 
-    // **NEW: Jobs will be automatically processed by the persistent background worker**
     if created_jobs > 0 {
         Ok(format!("Created {} indexing jobs in queue. Jobs will be processed automatically by background worker.", created_jobs))
     } else {
@@ -582,7 +570,6 @@ pub async fn persistent_queue_worker(
     app_log_info!("🔄 WORKER {}: Starting persistent background queue worker with batch processing", worker_id);
 
     let mut idle_cycles = 0;
-    let mut retry_idle_cycles = 0;
     let mut consecutive_errors = 0;
     let mut maintenance_cycles: u64 = 0;
 
@@ -619,7 +606,7 @@ pub async fn persistent_queue_worker(
         }
 
         // **FIXED: Atomic job claiming to prevent race conditions**
-        let mut claimed_jobs = match sqlite_service.claim_pending_jobs_atomic(worker_id, BATCH_SIZE) {
+        let claimed_jobs = match sqlite_service.claim_pending_jobs_atomic(worker_id, BATCH_SIZE) {
             Ok(jobs) => {
                 if jobs.len() > 0 {
                     app_log_info!("🔄 WORKER {}: Atomically claimed {} pending jobs", worker_id, jobs.len());
@@ -654,37 +641,8 @@ pub async fn persistent_queue_worker(
             }
         };
 
-        // Also claim jobs ready for retry if we have space
-        if claimed_jobs.len() < BATCH_SIZE {
-            let remaining_slots = BATCH_SIZE - claimed_jobs.len();
-            match sqlite_service.get_jobs_ready_for_retry(remaining_slots) {
-                Ok(retry_jobs) => {
-                    if !retry_jobs.is_empty() {
-                        app_log_info!("🔄 WORKER {}: Also claimed {} jobs ready for retry", worker_id, retry_jobs.len());
-                        retry_idle_cycles = 0; // Reset retry idle when we find retry jobs
-
-                        // Mark these jobs as running
-                        for job in &retry_jobs {
-                            let job_id = job["id"].as_str().unwrap_or("unknown");
-                            let _ = sqlite_service.update_job_progress(job_id, "running", None, None, None, None);
-                        }
-
-                        claimed_jobs.extend(retry_jobs);
-                    } else {
-                        // No retry jobs found - increment retry idle counter
-                        retry_idle_cycles += 1;
-
-                        // Log retry idle status occasionally (only from worker 1 to avoid spam)
-                        if retry_idle_cycles % 60 == 0 && worker_id == 1 { // Every 5 minutes when no retry jobs
-                            app_log_info!("🔄 RETRY: No jobs ready for retry ({}m idle)", retry_idle_cycles / 12);
-                        }
-                    }
-                }
-                Err(e) => {
-                    app_log_warn!("⚠️ WORKER {}: Failed to get retry jobs: {}", worker_id, e);
-                }
-            }
-        }
+        // Retry-eligible jobs are included in atomic pending-claim query
+        // via `next_retry_at <= now`; avoid a second non-atomic claim path.
 
         // If pause was requested while claiming jobs, release them back to pending immediately.
         if is_queue_processing_paused() && !claimed_jobs.is_empty() {

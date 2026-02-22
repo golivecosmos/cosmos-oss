@@ -344,3 +344,75 @@ async fn test_job_queue_memory_efficiency() {
         job_count
     );
 }
+
+#[tokio::test]
+async fn test_same_target_path_allows_different_job_types() {
+    let sqlite_service = create_test_sqlite_service();
+    let target = "/test/shared_media.mp4";
+
+    let file_job_id = sqlite_service
+        .create_job("file", target, Some(1))
+        .expect("Failed to create file job");
+    let transcription_job_id = sqlite_service
+        .create_job("transcription", target, Some(1))
+        .expect("Failed to create transcription job");
+
+    assert_ne!(
+        file_job_id, transcription_job_id,
+        "Different job types for the same path should not dedupe to one job"
+    );
+
+    let pending = sqlite_service
+        .get_jobs_by_status("pending")
+        .expect("Failed to get pending jobs");
+    let matching_count = pending
+        .iter()
+        .filter(|job| job["target_path"] == target)
+        .count();
+    assert_eq!(
+        matching_count, 2,
+        "Expected both file and transcription jobs to exist for {}",
+        target
+    );
+}
+
+#[tokio::test]
+async fn test_update_job_progress_preserves_errors_when_not_provided() {
+    let sqlite_service = create_test_sqlite_service();
+    let job_id = sqlite_service
+        .create_job("file", "/test/error_preservation.jpg", Some(1))
+        .expect("Failed to create job");
+
+    let initial_errors = vec!["initial failure".to_string()];
+    let initial_failed_files = serde_json::json!([
+        { "path": "/test/error_preservation.jpg", "error": "initial failure" }
+    ]);
+
+    sqlite_service
+        .update_job_progress(
+            &job_id,
+            "failed",
+            Some("first attempt failed"),
+            Some(0),
+            Some(&initial_errors),
+            Some(&initial_failed_files),
+        )
+        .expect("Failed to set initial error state");
+
+    sqlite_service
+        .update_job_progress(
+            &job_id,
+            "pending",
+            Some("retry queued"),
+            Some(0),
+            None,
+            None,
+        )
+        .expect("Failed to update job without errors payload");
+
+    let updated = sqlite_service
+        .get_job_by_id(&job_id)
+        .expect("Failed to load updated job");
+    assert_eq!(updated["errors"], serde_json::json!(initial_errors));
+    assert_eq!(updated["failed_files"], initial_failed_files);
+}

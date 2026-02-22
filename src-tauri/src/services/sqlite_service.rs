@@ -271,11 +271,6 @@ impl SqliteVectorService {
         self.job_queue_service.schedule_job_retry(job_id, error_message)
     }
 
-    /// Get jobs ready for retry (past their next_retry_at time)
-    pub fn get_jobs_ready_for_retry(&self, limit: usize) -> Result<Vec<serde_json::Value>> {
-        self.job_queue_service.get_jobs_ready_for_retry(limit)
-    }
-
     /// Manual user retry (resets retry count)
     pub fn manual_retry_job(&self, job_id: &str) -> Result<()> {
         self.job_queue_service.manual_retry_job(job_id)

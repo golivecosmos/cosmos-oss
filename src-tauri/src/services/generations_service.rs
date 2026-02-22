@@ -23,6 +23,39 @@ pub struct GenerationsService {
 }
 
 impl GenerationsService {
+    fn ensure_generations_schema(&self) -> Result<()> {
+        let connection = self.db_service.get_connection();
+        let db = connection.lock().unwrap();
+
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS generations (
+                id TEXT PRIMARY KEY,
+                user_prompt TEXT NOT NULL,
+                json_prompt TEXT NOT NULL,
+                source TEXT NOT NULL DEFAULT 'veo3',
+                generated_file_path TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )",
+            rusqlite::params![],
+        )?;
+
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_generations_created_at ON generations(created_at)",
+            rusqlite::params![],
+        )?;
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_generations_source ON generations(source)",
+            rusqlite::params![],
+        )?;
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_generations_file_path ON generations(generated_file_path)",
+            rusqlite::params![],
+        )?;
+
+        Ok(())
+    }
+
     /// Create a new GenerationsService instance
     pub fn new(db_service: Arc<DatabaseService>) -> Self {
         Self { db_service }
@@ -35,6 +68,7 @@ impl GenerationsService {
         json_prompt: &str,
         source: &str,
     ) -> Result<String> {
+        self.ensure_generations_schema()?;
         let connection = self.db_service.get_connection();
         let db = connection.lock().unwrap();
 
@@ -60,6 +94,7 @@ impl GenerationsService {
 
     /// Update a generation record with the generated file path
     pub fn update_generation_file_path(&self, generation_id: &str, file_path: &str) -> Result<()> {
+        self.ensure_generations_schema()?;
         let connection = self.db_service.get_connection();
         let db = connection.lock().unwrap();
 
@@ -82,6 +117,7 @@ impl GenerationsService {
 
     /// Get all generations, ordered by creation date (newest first)
     pub fn get_all_generations(&self) -> Result<Vec<Generation>> {
+        self.ensure_generations_schema()?;
         let connection = self.db_service.get_connection();
         let db = connection.lock().unwrap();
 
@@ -118,6 +154,7 @@ impl GenerationsService {
 
     /// Get a specific generation by ID
     pub fn get_generation_by_id(&self, generation_id: &str) -> Result<Option<Generation>> {
+        self.ensure_generations_schema()?;
         let connection = self.db_service.get_connection();
         let db = connection.lock().unwrap();
 
@@ -158,6 +195,7 @@ impl GenerationsService {
 
     /// Delete a generation record
     pub fn delete_generation(&self, generation_id: &str) -> Result<()> {
+        self.ensure_generations_schema()?;
         let connection = self.db_service.get_connection();
         let db = connection.lock().unwrap();
 
@@ -176,6 +214,7 @@ impl GenerationsService {
 
     /// Get generation statistics
     pub fn get_generation_stats(&self) -> Result<serde_json::Value> {
+        self.ensure_generations_schema()?;
         let connection = self.db_service.get_connection();
         let db = connection.lock().unwrap();
 
