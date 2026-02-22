@@ -23,6 +23,8 @@ pub const WORKER_COUNT: usize = 4;
 pub const BATCH_SIZE: usize = 8;
 pub const MAX_CONCURRENT_VIDEOS: usize = 3;
 pub const MAX_CONCURRENT_TRANSCRIPTIONS: usize = 2;
+const JOB_CREATED_EVENT_BATCH_SIZE: usize = 250;
+const JOB_CREATED_EVENT_SAMPLE_LIMIT: usize = 100;
 
 // **GLOBAL CONCURRENT LIMITS**
 static VIDEO_SEMAPHORE: OnceLock<Arc<Semaphore>> = OnceLock::new();
@@ -178,6 +180,13 @@ fn file_name_from_path(path: &str) -> String {
             "unknown".to_string()
         }
     }
+}
+
+fn is_hidden_or_system_name(name: &str) -> bool {
+    name.starts_with(".")
+        || name == "DS_Store"
+        || name == ".DS_Store"
+        || name == "Thumbs.db"
 }
 
 /// Helper function to check if a file is already indexed
@@ -433,24 +442,37 @@ pub async fn index_directory(
         return Err("Path is not a directory".to_string());
     }
 
-    // Get all files recursively
-    let all_files = match state.file_service.list_directory_recursive(&path) {
-        Ok(files) => files,
-        Err(e) => return Err(format!("Failed to list directory: {}", e))
-    };
-
-    // Create individual jobs while scanning files to avoid extra large temporary collections.
+    // Stream filesystem traversal to avoid materializing large recursive directory vectors.
     let mut created_jobs = 0;
     let mut total_files = 0;
     let mut skipped_files = 0;
+    let mut batch_created_jobs = 0;
     let mut job_emit_sample: Vec<String> = Vec::new();
 
-    for file in all_files {
-        if file.is_dir {
+    let walker = walkdir::WalkDir::new(&path)
+        .follow_links(true)
+        .into_iter()
+        .filter_entry(|entry| {
+            let name = entry.file_name().to_string_lossy();
+            !is_hidden_or_system_name(&name)
+        });
+
+    for entry in walker {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(e) => {
+                app_log_warn!("⚠️ QUEUE INDEX: Skipping unreadable entry: {}", e);
+                continue;
+            }
+        };
+
+        if !entry.file_type().is_file() {
             continue;
         }
 
-        let extension = file.name
+        let file_path = entry.path().to_string_lossy().to_string();
+        let file_name = entry.file_name().to_string_lossy().to_string();
+        let extension = file_name
             .split('.')
             .last()
             .unwrap_or_default()
@@ -463,31 +485,44 @@ pub async fn index_directory(
         total_files += 1;
 
         // Check if file is already indexed (skip job creation)
-        let already_indexed = match is_file_already_indexed(&state.sqlite_service, &file.path).await {
+        let already_indexed = match is_file_already_indexed(&state.sqlite_service, &file_path).await {
             Ok(result) => result,
             Err(e) => {
-                app_log_error!("❌ QUEUE: Aborting directory indexing due to indexed-state check failure for {}: {}", file.path, e);
-                return Err(format!("Failed checking indexed state for {}: {}", file.path, e));
+                app_log_error!("❌ QUEUE: Aborting directory indexing due to indexed-state check failure for {}: {}", file_path, e);
+                return Err(format!("Failed checking indexed state for {}: {}", file_path, e));
             },
         };
 
         if already_indexed {
-            app_log_info!("⏭️ Skipping already indexed file: {}", file.path);
+            app_log_info!("⏭️ Skipping already indexed file: {}", file_path);
             skipped_files += 1;
             continue;
         }
 
         // Create indexing job for this file
-        match state.sqlite_service.create_job("file", &file.path, Some(1)) {
+        match state.sqlite_service.create_job("file", &file_path, Some(1)) {
             Ok(job_id) => {
-                app_log_info!("✅ QUEUE: Created indexing job {} for file: {}", job_id, file.name);
+                app_log_info!("✅ QUEUE: Created indexing job {} for file: {}", job_id, file_name);
                 created_jobs += 1;
-                if job_emit_sample.len() < 100 {
+                batch_created_jobs += 1;
+                if job_emit_sample.len() < JOB_CREATED_EVENT_SAMPLE_LIMIT {
                     job_emit_sample.push(job_id);
+                }
+
+                if batch_created_jobs >= JOB_CREATED_EVENT_BATCH_SIZE {
+                    let jobs_batch_payload = serde_json::json!({
+                        "total_jobs": batch_created_jobs,
+                        "directory_path": path.clone(),
+                        "sample_job_ids": job_emit_sample,
+                        "total_jobs_created_so_far": created_jobs
+                    });
+                    emit_event_with_retry(&app_handle, "jobs_batch_created", &jobs_batch_payload).await;
+                    batch_created_jobs = 0;
+                    job_emit_sample = Vec::new();
                 }
             }
             Err(e) => {
-                app_log_error!("❌ QUEUE: Failed to create indexing job for {}: {}", file.path, e);
+                app_log_error!("❌ QUEUE: Failed to create indexing job for {}: {}", file_path, e);
             }
         }
     }
@@ -499,11 +534,12 @@ pub async fn index_directory(
 
     app_log_info!("📋 QUEUE: Created {} indexing jobs ({} skipped)", created_jobs, skipped_files);
 
-    if created_jobs > 0 {
+    if batch_created_jobs > 0 {
         let jobs_batch_payload = serde_json::json!({
-            "total_jobs": created_jobs,
-            "directory_path": path,
-            "sample_job_ids": job_emit_sample
+            "total_jobs": batch_created_jobs,
+            "directory_path": path.clone(),
+            "sample_job_ids": job_emit_sample,
+            "total_jobs_created_so_far": created_jobs
         });
         emit_event_with_retry(&app_handle, "jobs_batch_created", &jobs_batch_payload).await;
     }
@@ -512,6 +548,20 @@ pub async fn index_directory(
         Ok(format!("Created {} indexing jobs in queue. Jobs will be processed automatically by background worker.", created_jobs))
     } else {
         Ok("All files were already indexed, no jobs created.".to_string())
+    }
+}
+
+#[cfg(test)]
+mod indexing_command_tests {
+    use super::is_hidden_or_system_name;
+
+    #[test]
+    fn hidden_and_system_names_are_filtered() {
+        assert!(is_hidden_or_system_name(".git"));
+        assert!(is_hidden_or_system_name(".DS_Store"));
+        assert!(is_hidden_or_system_name("DS_Store"));
+        assert!(is_hidden_or_system_name("Thumbs.db"));
+        assert!(!is_hidden_or_system_name("photo.jpg"));
     }
 }
 
