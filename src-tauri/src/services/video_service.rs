@@ -101,50 +101,43 @@ impl VideoService {
             app_log_info!("🚀 BUILD MODE: Production - searching in Resources/");
         }
 
-        // Helper function to find a bundled binary in environment-specific locations.
-        let find_binary = |binary_name: &str| -> Option<PathBuf> {
-            let search_paths = if cfg!(debug_assertions) {
-                // Development: support running from workspace root or src-tauri.
-                vec![
-                    PathBuf::from("src-tauri/bin").join(binary_name),
-                    PathBuf::from("../src-tauri/bin").join(binary_name),
-                    PathBuf::from("bin").join(binary_name),
-                ]
-            } else {
-                // Production: look around the executable resources first.
-                match env::current_exe() {
-                    Ok(exe_path) => {
-                        if let Some(exe_dir) = exe_path.parent() {
-                            vec![
-                                exe_dir.join("../Resources/bin").join(binary_name),
-                                exe_dir.join("Resources/bin").join(binary_name),
-                                exe_dir.join("bin").join(binary_name),
-                            ]
-                        } else {
-                            app_log_error!("❌ Cannot determine executable directory");
-                            vec![]
-                        }
-                    },
-                    Err(e) => {
-                        app_log_error!("❌ Failed to get current executable path: {}", e);
-                        vec![]
-                    }
-                }
-            };
-
-            // Search for the binary
-            for path in &search_paths {
-                app_log_info!("🔍 Checking {}: {:?}", binary_name, path);
-                if path.exists() {
-                    app_log_info!("✅ Found {} at: {:?}", binary_name, path);
-                    return Some(path.clone());
-                } else {
-                    app_log_info!("❌ {} not found at: {:?}", binary_name, path);
-                }
+        // Helper function to resolve a single canonical bundled path.
+        let bundled_binary_path = |binary_name: &str| -> Option<PathBuf> {
+            #[cfg(debug_assertions)]
+            {
+                Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("bin").join(binary_name))
             }
 
-            app_log_error!("❌ {} not found in bundled locations", binary_name);
-            None
+            #[cfg(not(debug_assertions))]
+            {
+                match env::current_exe() {
+                    Ok(exe_path) => exe_path
+                        .parent()
+                        .map(|exe_dir| exe_dir.join("../Resources/bin").join(binary_name)),
+                    Err(e) => {
+                        app_log_error!("❌ Failed to get current executable path: {}", e);
+                        None
+                    }
+                }
+            }
+        };
+
+        // Helper function to validate bundled binary path.
+        let find_binary = |binary_name: &str| -> Option<PathBuf> {
+            let Some(path) = bundled_binary_path(binary_name) else {
+                app_log_error!("❌ Unable to resolve bundled path for {}", binary_name);
+                return None;
+            };
+
+            app_log_info!("🔍 Checking {}: {:?}", binary_name, path);
+            if path.exists() {
+                app_log_info!("✅ Found {} at: {:?}", binary_name, path);
+                Some(path)
+            } else {
+                app_log_info!("❌ {} not found at: {:?}", binary_name, path);
+                app_log_error!("❌ {} not found in bundled location", binary_name);
+                None
+            }
         };
 
         let ffmpeg_path = find_binary("ffmpeg");
