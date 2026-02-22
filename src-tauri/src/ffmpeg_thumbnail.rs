@@ -60,15 +60,43 @@ pub async fn generate_ffmpeg_thumbnail(file_path: &str, timestamp: f64, width: u
 }
 
 pub fn get_bundled_ffmpeg_path() -> PathBuf {
-    #[cfg(debug_assertions)]
-    let path = PathBuf::from("bin/ffmpeg");
-    
-    #[cfg(not(debug_assertions))]
-    let path = std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent().map(|dir| dir.join("../Resources/bin/ffmpeg")))
-        .unwrap_or_else(|| PathBuf::from("ffmpeg"));
-    
-    path
-}
+    let candidate_paths = {
+        #[cfg(debug_assertions)]
+        {
+            vec![
+                PathBuf::from("src-tauri/bin/ffmpeg"),
+                PathBuf::from("../src-tauri/bin/ffmpeg"),
+                PathBuf::from("bin/ffmpeg"),
+            ]
+        }
 
+        #[cfg(not(debug_assertions))]
+        {
+            let mut paths = Vec::new();
+            if let Ok(exe) = std::env::current_exe() {
+                if let Some(dir) = exe.parent() {
+                    paths.push(dir.join("../Resources/bin/ffmpeg"));
+                    paths.push(dir.join("Resources/bin/ffmpeg"));
+                    paths.push(dir.join("bin/ffmpeg"));
+                }
+            }
+            paths
+        }
+    };
+
+    for path in candidate_paths {
+        if path.exists() {
+            return path;
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    {
+        PathBuf::from("src-tauri/bin/ffmpeg")
+    }
+
+    #[cfg(not(debug_assertions))]
+    {
+        PathBuf::from("../Resources/bin/ffmpeg")
+    }
+}

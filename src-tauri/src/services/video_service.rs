@@ -101,20 +101,24 @@ impl VideoService {
             app_log_info!("🚀 BUILD MODE: Production - searching in Resources/");
         }
 
-        // Helper function to find a binary with clean paths
+        // Helper function to find a bundled binary in environment-specific locations.
         let find_binary = |binary_name: &str| -> Option<PathBuf> {
             let search_paths = if cfg!(debug_assertions) {
-                // Development: only look in src-tauri/bin/
+                // Development: support running from workspace root or src-tauri.
                 vec![
-                    PathBuf::from("../src-tauri/bin/").join(binary_name),
+                    PathBuf::from("src-tauri/bin").join(binary_name),
+                    PathBuf::from("../src-tauri/bin").join(binary_name),
+                    PathBuf::from("bin").join(binary_name),
                 ]
             } else {
-                // Production: only look in Resources/ relative to executable
+                // Production: look around the executable resources first.
                 match env::current_exe() {
                     Ok(exe_path) => {
                         if let Some(exe_dir) = exe_path.parent() {
                             vec![
-                                exe_dir.join("../Resources/bin/").join(binary_name),
+                                exe_dir.join("../Resources/bin").join(binary_name),
+                                exe_dir.join("Resources/bin").join(binary_name),
+                                exe_dir.join("bin").join(binary_name),
                             ]
                         } else {
                             app_log_error!("❌ Cannot determine executable directory");
@@ -139,7 +143,7 @@ impl VideoService {
                 }
             }
 
-            app_log_error!("❌ {} not found in any expected location", binary_name);
+            app_log_error!("❌ {} not found in bundled locations", binary_name);
             None
         };
 
