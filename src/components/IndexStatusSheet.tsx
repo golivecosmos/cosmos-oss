@@ -27,6 +27,25 @@ interface IndexStatusSheetProps {
   onClose: () => void;
 }
 
+interface QueueHealthStatus {
+  total: number;
+  pending: number;
+  running: number;
+  completed: number;
+  failed: number;
+  cancelled: number;
+  retry_scheduled: number;
+  retry_ready: number;
+  stale_running: number;
+  orphaned_pending_claims: number;
+  completed_last_hour: number;
+  failed_last_hour: number;
+  oldest_pending_age_seconds: number | null;
+  longest_running_age_seconds: number | null;
+  latest_update_at: string | null;
+  paused: boolean;
+}
+
 // Job display limits for performance
 const JOB_LIMITS = {
   PENDING: 50,
@@ -46,6 +65,7 @@ export function IndexStatusSheet({ isOpen, onClose }: IndexStatusSheetProps) {
   const [showCancelledJobs, setShowCancelledJobs] = useState(true);
   const [cancellingJobs, setCancellingJobs] = useState<Set<string>>(new Set());
   const [queuePaused, setQueuePaused] = useState(false);
+  const [queueStatus, setQueueStatus] = useState<QueueHealthStatus | null>(null);
   const [queueActionLoading, setQueueActionLoading] = useState<null | 'stop' | 'resume' | 'clear' | 'clear_all'>(null);
 
   // Memoized job categorization for performance
@@ -131,11 +151,15 @@ export function IndexStatusSheet({ isOpen, onClose }: IndexStatusSheetProps) {
     if (!isOpen) return;
 
     let unlistenQueueChanged: (() => void) | null = null;
+    let pollInterval: ReturnType<typeof setInterval> | null = null;
+    let active = true;
 
     const loadQueueStatus = async () => {
       try {
-        const status = await invoke<any>('manage_job_queue', { action: 'status' });
+        const status = await invoke<QueueHealthStatus>('manage_job_queue', { action: 'status' });
+        if (!active) return;
         setQueuePaused(Boolean(status?.paused));
+        setQueueStatus(status);
       } catch (error) {
         console.error('Failed to load queue status:', error);
       }
@@ -147,13 +171,20 @@ export function IndexStatusSheet({ isOpen, onClose }: IndexStatusSheetProps) {
         const paused = Boolean(event?.payload?.paused);
         setQueuePaused(paused);
       });
+      pollInterval = setInterval(() => {
+        void loadQueueStatus();
+      }, 5000);
     };
 
-    setup();
+    void setup();
 
     return () => {
+      active = false;
       if (unlistenQueueChanged) {
         unlistenQueueChanged();
+      }
+      if (pollInterval) {
+        clearInterval(pollInterval);
       }
     };
   }, [isOpen]);
@@ -235,6 +266,32 @@ export function IndexStatusSheet({ isOpen, onClose }: IndexStatusSheetProps) {
   const getBaseName = (path: string): string => {
     return path.split('/').pop() || path;
   };
+
+  const formatAge = (seconds: number | null | undefined): string => {
+    if (seconds === null || seconds === undefined) return 'n/a';
+    if (seconds < 60) return `${seconds}s`;
+
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m`;
+
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
+  };
+
+  const queueHealthLabel = useMemo(() => {
+    if (!queueStatus) return { text: 'Unknown', className: 'bg-gray-100 text-gray-700 dark:bg-darkBgHighlight dark:text-customGray' };
+
+    if (queueStatus.stale_running > 0 || queueStatus.orphaned_pending_claims > 0) {
+      return { text: 'Degraded', className: 'bg-red-100 text-red-700 dark:bg-redShadow dark:text-redHighlight' };
+    }
+
+    if (queueStatus.retry_scheduled > 0 || queueStatus.failed_last_hour > 0) {
+      return { text: 'Warning', className: 'bg-orange-100 text-orange-700 dark:bg-yellowShadow dark:text-yellowHighlight' };
+    }
+
+    return { text: 'Healthy', className: 'bg-green-100 text-green-700 dark:bg-greenShadow dark:text-greenHighlight' };
+  }, [queueStatus]);
 
   const JobSection = ({ 
     title, 
@@ -472,6 +529,9 @@ export function IndexStatusSheet({ isOpen, onClose }: IndexStatusSheetProps) {
           <span className={`text-xs px-2 py-0.5 rounded-full ${queuePaused ? 'bg-orange-100 text-orange-700 dark:bg-yellowShadow dark:text-yellowHighlight' : 'bg-green-100 text-green-700 dark:bg-greenShadow dark:text-greenHighlight'}`}>
             {queuePaused ? 'Paused' : 'Active'}
           </span>
+          <span className={`text-xs px-2 py-0.5 rounded-full ${queueHealthLabel.className}`}>
+            {queueHealthLabel.text}
+          </span>
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -515,6 +575,44 @@ export function IndexStatusSheet({ isOpen, onClose }: IndexStatusSheetProps) {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
+        {queueStatus && (
+          <div className="mb-4 rounded-lg border border-gray-200 dark:border-darkBgHighlight bg-gray-50 dark:bg-darkBgMid p-3">
+            <div className="text-xs uppercase tracking-wide text-gray-600 dark:text-customGray">Queue Health</div>
+            <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+              <div className="rounded border border-orange-200 dark:border-customYellow px-2 py-1">
+                <div className="text-[11px] text-gray-600 dark:text-customGray">Queued</div>
+                <div className="font-semibold text-orange-700 dark:text-yellowHighlight">{queueStatus.pending}</div>
+              </div>
+              <div className="rounded border border-blue-200 dark:border-customBlue px-2 py-1">
+                <div className="text-[11px] text-gray-600 dark:text-customGray">Running</div>
+                <div className="font-semibold text-blue-700 dark:text-blueHighlight">{queueStatus.running}</div>
+              </div>
+              <div className="rounded border border-yellow-200 dark:border-customYellow px-2 py-1">
+                <div className="text-[11px] text-gray-600 dark:text-customGray">Retries Waiting</div>
+                <div className="font-semibold text-yellow-700 dark:text-yellowHighlight">{queueStatus.retry_scheduled}</div>
+              </div>
+              <div className="rounded border border-red-200 dark:border-customRed px-2 py-1">
+                <div className="text-[11px] text-gray-600 dark:text-customGray">Stale Running</div>
+                <div className="font-semibold text-red-700 dark:text-redHighlight">{queueStatus.stale_running}</div>
+              </div>
+              <div className="rounded border border-gray-200 dark:border-customGray px-2 py-1">
+                <div className="text-[11px] text-gray-600 dark:text-customGray">Oldest Queue Age</div>
+                <div className="font-semibold text-gray-800 dark:text-text">{formatAge(queueStatus.oldest_pending_age_seconds)}</div>
+              </div>
+              <div className="rounded border border-gray-200 dark:border-customGray px-2 py-1">
+                <div className="text-[11px] text-gray-600 dark:text-customGray">Longest Running</div>
+                <div className="font-semibold text-gray-800 dark:text-text">{formatAge(queueStatus.longest_running_age_seconds)}</div>
+              </div>
+              <div className="col-span-2 rounded border border-green-200 dark:border-customGreen px-2 py-1">
+                <div className="text-[11px] text-gray-600 dark:text-customGray">Last Hour Throughput</div>
+                <div className="font-semibold text-green-700 dark:text-greenHighlight">
+                  {queueStatus.completed_last_hour} completed / {queueStatus.failed_last_hour} failed
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {!hasAnyJobs ? (
           <div className="text-center dark:text-customGray text-gray-500 py-8">
             No recent indexing jobs

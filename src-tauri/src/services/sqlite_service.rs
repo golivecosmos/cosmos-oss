@@ -301,6 +301,11 @@ impl SqliteVectorService {
         self.job_queue_service.recover_orphaned_jobs(timeout_seconds)
     }
 
+    /// Get aggregate queue health metrics
+    pub fn get_queue_health_snapshot(&self, stale_running_threshold_seconds: i64) -> Result<serde_json::Value> {
+        self.job_queue_service.get_queue_health_snapshot(stale_running_threshold_seconds)
+    }
+
     /// Clear jobs from the queue
     pub fn clear_jobs_queue(&self) -> Result<usize> {
         self.job_queue_service.clear_jobs_queue()

@@ -682,6 +682,121 @@ impl JobQueueService {
         app_log_info!("🧹 JOBS: Cleared all {} jobs", deleted);
         Ok(deleted)
     }
+
+    /// Get aggregate queue health metrics for UI dashboards.
+    pub fn get_queue_health_snapshot(&self, stale_running_threshold_seconds: i64) -> Result<serde_json::Value> {
+        let connection = self.db_service.get_connection();
+        let db = connection.lock().unwrap();
+
+        if !self.schema_service.jobs_table_exists(&db) {
+            app_log_warn!("⚠️ JOBS TABLE: Jobs table missing during get_queue_health_snapshot, creating it now");
+            self.schema_service.ensure_jobs_table_exists(&db)?;
+        }
+
+        let now = chrono::Utc::now();
+        let now_str = now.to_rfc3339();
+        let stale_cutoff = (now - chrono::Duration::seconds(stale_running_threshold_seconds)).to_rfc3339();
+        let one_hour_ago = (now - chrono::Duration::hours(1)).to_rfc3339();
+
+        let (
+            total,
+            pending,
+            running,
+            completed,
+            failed,
+            cancelled,
+            retry_scheduled,
+            retry_ready,
+            stale_running,
+            orphaned_pending_claims,
+            completed_last_hour,
+            failed_last_hour,
+        ) = db.query_row(
+            "SELECT
+                COUNT(*) as total,
+                COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) as pending,
+                COALESCE(SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END), 0) as running,
+                COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) as completed,
+                COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) as failed,
+                COALESCE(SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END), 0) as cancelled,
+                COALESCE(SUM(CASE WHEN status = 'pending' AND next_retry_at IS NOT NULL AND next_retry_at > ? THEN 1 ELSE 0 END), 0) as retry_scheduled,
+                COALESCE(SUM(CASE WHEN status = 'pending' AND next_retry_at IS NOT NULL AND next_retry_at <= ? THEN 1 ELSE 0 END), 0) as retry_ready,
+                COALESCE(SUM(CASE WHEN status = 'running' AND updated_at < ? THEN 1 ELSE 0 END), 0) as stale_running,
+                COALESCE(SUM(CASE WHEN status = 'pending' AND current_file LIKE 'worker_%' AND updated_at < ? THEN 1 ELSE 0 END), 0) as orphaned_pending_claims,
+                COALESCE(SUM(CASE WHEN status = 'completed' AND completed_at >= ? THEN 1 ELSE 0 END), 0) as completed_last_hour,
+                COALESCE(SUM(CASE WHEN status = 'failed' AND completed_at >= ? THEN 1 ELSE 0 END), 0) as failed_last_hour
+             FROM jobs",
+            rusqlite::params![
+                now_str,
+                now_str,
+                stale_cutoff,
+                stale_cutoff,
+                one_hour_ago,
+                one_hour_ago
+            ],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, i64>(4)?,
+                    row.get::<_, i64>(5)?,
+                    row.get::<_, i64>(6)?,
+                    row.get::<_, i64>(7)?,
+                    row.get::<_, i64>(8)?,
+                    row.get::<_, i64>(9)?,
+                    row.get::<_, i64>(10)?,
+                    row.get::<_, i64>(11)?,
+                ))
+            },
+        )?;
+
+        let oldest_pending_at: Option<String> = db.query_row(
+            "SELECT MIN(created_at) FROM jobs WHERE status = 'pending'",
+            rusqlite::params![],
+            |row| row.get(0),
+        )?;
+
+        let longest_running_since_at: Option<String> = db.query_row(
+            "SELECT MIN(COALESCE(started_at, created_at)) FROM jobs WHERE status = 'running'",
+            rusqlite::params![],
+            |row| row.get(0),
+        )?;
+
+        let latest_update_at: Option<String> = db.query_row(
+            "SELECT MAX(updated_at) FROM jobs",
+            rusqlite::params![],
+            |row| row.get(0),
+        )?;
+
+        let age_seconds = |timestamp: &Option<String>| -> Option<i64> {
+            let parsed = timestamp.as_ref().and_then(|value| {
+                chrono::DateTime::parse_from_rfc3339(value)
+                    .map(|dt| dt.with_timezone(&chrono::Utc))
+                    .ok()
+            })?;
+            Some((now - parsed).num_seconds().max(0))
+        };
+
+        Ok(serde_json::json!({
+            "total": total,
+            "pending": pending,
+            "running": running,
+            "completed": completed,
+            "failed": failed,
+            "cancelled": cancelled,
+            "retry_scheduled": retry_scheduled,
+            "retry_ready": retry_ready,
+            "stale_running": stale_running,
+            "orphaned_pending_claims": orphaned_pending_claims,
+            "completed_last_hour": completed_last_hour,
+            "failed_last_hour": failed_last_hour,
+            "oldest_pending_age_seconds": age_seconds(&oldest_pending_at),
+            "longest_running_age_seconds": age_seconds(&longest_running_since_at),
+            "latest_update_at": latest_update_at
+        }))
+    }
 }
 
 #[cfg(test)]
@@ -784,4 +899,91 @@ mod tests {
         let job = job_queue_service.get_job_by_id(&job_id).expect("Failed to get job");
         assert_eq!(job["status"].as_str().unwrap(), "cancelled");
     }
-} 
+
+    #[test]
+    fn test_queue_health_snapshot_metrics() {
+        let temp_dir = tempdir().unwrap();
+        let db_service = DatabaseService::new_with_path(Some(temp_dir.path().to_path_buf())).expect("Database service failed to initialize");
+        let db_service_arc = Arc::new(db_service);
+        let schema_service = SchemaService::new(Arc::clone(&db_service_arc));
+        let schema_service_arc = Arc::new(schema_service);
+        let job_queue_service = JobQueueService::new(Arc::clone(&db_service_arc), Arc::clone(&schema_service_arc));
+
+        let connection = db_service_arc.get_connection();
+        let db = connection.lock().unwrap();
+        schema_service_arc.ensure_jobs_table_exists(&db).expect("Jobs table setup failed");
+        drop(db);
+
+        let pending_job = job_queue_service.create_job("file", "/test/pending.jpg", Some(1)).unwrap();
+        let running_job = job_queue_service.create_job("file", "/test/running.jpg", Some(1)).unwrap();
+        job_queue_service
+            .update_job_progress(&running_job, "running", Some("running"), Some(0), None, None)
+            .unwrap();
+
+        let completed_job = job_queue_service.create_job("file", "/test/completed.jpg", Some(1)).unwrap();
+        job_queue_service
+            .update_job_progress(&completed_job, "completed", Some("done"), Some(1), None, None)
+            .unwrap();
+
+        let failed_job = job_queue_service.create_job("file", "/test/failed.jpg", Some(1)).unwrap();
+        job_queue_service
+            .update_job_progress(
+                &failed_job,
+                "failed",
+                Some("failed"),
+                Some(0),
+                Some(&["boom".to_string()]),
+                None,
+            )
+            .unwrap();
+
+        let cancelled_job = job_queue_service.create_job("file", "/test/cancelled.jpg", Some(1)).unwrap();
+        job_queue_service.cancel_job(&cancelled_job).unwrap();
+
+        let retry_job = job_queue_service.create_job("file", "/test/retry.jpg", Some(1)).unwrap();
+        job_queue_service
+            .schedule_job_retry(&retry_job, "Connection timeout")
+            .unwrap();
+
+        let stale_running_job = job_queue_service.create_job("file", "/test/stale-running.jpg", Some(1)).unwrap();
+        job_queue_service
+            .update_job_progress(&stale_running_job, "running", Some("stale"), Some(0), None, None)
+            .unwrap();
+
+        let orphaned_pending_job = job_queue_service.create_job("file", "/test/orphaned-pending.jpg", Some(1)).unwrap();
+
+        let two_hours_ago = (chrono::Utc::now() - chrono::Duration::hours(2)).to_rfc3339();
+        let connection = db_service_arc.get_connection();
+        let db = connection.lock().unwrap();
+        db.execute(
+            "UPDATE jobs SET updated_at = ? WHERE id = ?",
+            rusqlite::params![two_hours_ago, stale_running_job],
+        )
+        .unwrap();
+        db.execute(
+            "UPDATE jobs SET current_file = 'worker_1', updated_at = ? WHERE id = ?",
+            rusqlite::params![two_hours_ago, orphaned_pending_job],
+        )
+        .unwrap();
+        drop(db);
+
+        let snapshot = job_queue_service.get_queue_health_snapshot(600).unwrap();
+
+        assert_eq!(snapshot["total"].as_i64().unwrap(), 8);
+        assert_eq!(snapshot["pending"].as_i64().unwrap(), 3);
+        assert_eq!(snapshot["running"].as_i64().unwrap(), 2);
+        assert_eq!(snapshot["completed"].as_i64().unwrap(), 1);
+        assert_eq!(snapshot["failed"].as_i64().unwrap(), 1);
+        assert_eq!(snapshot["cancelled"].as_i64().unwrap(), 1);
+        assert_eq!(snapshot["retry_scheduled"].as_i64().unwrap(), 1);
+        assert_eq!(snapshot["stale_running"].as_i64().unwrap(), 1);
+        assert_eq!(snapshot["orphaned_pending_claims"].as_i64().unwrap(), 1);
+        assert!(snapshot["completed_last_hour"].as_i64().unwrap() >= 1);
+        assert!(snapshot["failed_last_hour"].as_i64().unwrap() >= 1);
+        assert!(snapshot["oldest_pending_age_seconds"].is_number());
+        assert!(snapshot["longest_running_age_seconds"].is_number());
+
+        // Keep variables used so clippy does not complain in test builds.
+        assert!(!pending_job.is_empty());
+    }
+}

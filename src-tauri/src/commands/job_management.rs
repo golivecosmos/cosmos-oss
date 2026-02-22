@@ -81,19 +81,12 @@ pub async fn manage_job_queue(
     match action.as_str() {
         "status" => {
             app_log_info!("🔍 QUEUE STATUS: Checking queue status");
-            match state.sqlite_service.get_jobs_by_status("pending") {
-                Ok(pending_jobs) => {
-                    let running_jobs = state.sqlite_service.get_jobs_by_status("running").unwrap_or_default();
-                    let completed_jobs = state.sqlite_service.get_jobs_by_status("completed").unwrap_or_default();
-                    let failed_jobs = state.sqlite_service.get_jobs_by_status("failed").unwrap_or_default();
-                    
-                    Ok(serde_json::json!({
-                        "pending": pending_jobs.len(),
-                        "running": running_jobs.len(),
-                        "completed": completed_jobs.len(),
-                        "failed": failed_jobs.len(),
-                        "paused": is_queue_processing_paused()
-                    }))
+            match state.sqlite_service.get_queue_health_snapshot(600) {
+                Ok(mut queue_status) => {
+                    if let Some(status_obj) = queue_status.as_object_mut() {
+                        status_obj.insert("paused".to_string(), serde_json::json!(is_queue_processing_paused()));
+                    }
+                    Ok(queue_status)
                 }
                 Err(e) => {
                     app_log_error!("❌ QUEUE STATUS: Failed to get queue status: {}", e);
