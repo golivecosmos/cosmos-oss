@@ -6,21 +6,9 @@ import ErrorReporting from './ErrorReporting'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { useIndexingJobs } from '../contexts/IndexingJobsContext'
+import type { Job } from '../contexts/IndexingJobsContext'
 
-interface Job {
-  id: string;
-  path: string;
-  progress: {
-    current_file: string;
-    processed: number;
-    total: number;
-    status: string;
-    errors: string[];
-    directory_path: string;
-  };
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
-  startTime?: Date;
-}
+type JobStatus = Job['status'];
 
 interface IndexStatusSheetProps {
   isOpen: boolean;
@@ -53,6 +41,56 @@ const JOB_LIMITS = {
   FAILED: 20,
   CANCELLED: 10,
 } as const;
+
+const JOB_STATUS_UI: Record<JobStatus, {
+  borderClass: string;
+  titleClass: string;
+  pathClass: string;
+  badgeClass: string;
+  badgeText: string;
+  icon: React.ComponentType<{ className: string }>;
+}> = {
+  pending: {
+    borderClass: 'border-orange-200 dark:border-customYellow',
+    titleClass: 'text-orange-800 dark:text-customYellow',
+    pathClass: 'text-orange-600 dark:text-yellowHighlight',
+    badgeClass: 'bg-orange-100 text-orange-700 dark:bg-yellowShadow dark:text-yellowHighlight',
+    badgeText: 'Pending',
+    icon: Clock,
+  },
+  running: {
+    borderClass: 'border-blue-200 dark:border-customBlue',
+    titleClass: 'text-blue-800 dark:text-customBlue',
+    pathClass: 'text-blue-600 dark:text-blueHighlight',
+    badgeClass: 'bg-blue-100 text-blue-700 dark:bg-blueShadow dark:text-blueHighlight',
+    badgeText: 'Running',
+    icon: FolderPlus,
+  },
+  completed: {
+    borderClass: 'border-green-200 dark:border-customGreen',
+    titleClass: 'text-green-800 dark:text-customGreen',
+    pathClass: 'text-green-600 dark:text-greenHighlight',
+    badgeClass: 'bg-green-100 text-green-700 dark:bg-greenShadow dark:text-greenHighlight',
+    badgeText: 'Completed',
+    icon: CheckCircle2,
+  },
+  failed: {
+    borderClass: 'border-red-200 dark:border-customRed',
+    titleClass: 'text-red-800 dark:text-customRed',
+    pathClass: 'text-red-600 dark:text-redHighlight',
+    badgeClass: 'bg-red-100 text-red-700 dark:bg-redShadow dark:text-redHighlight',
+    badgeText: 'Failed',
+    icon: AlertCircle,
+  },
+  cancelled: {
+    borderClass: 'border-gray-200 dark:border-customGray',
+    titleClass: 'text-gray-800 dark:text-customGray',
+    pathClass: 'text-gray-600 dark:text-customGray',
+    badgeClass: 'bg-gray-100 text-gray-700 dark:bg-darkBgHighlight dark:text-customGray',
+    badgeText: 'Cancelled',
+    icon: StopCircle,
+  },
+};
 
 export function IndexStatusSheet({ isOpen, onClose }: IndexStatusSheetProps) {
   const { indexingJobs: jobs, loadJobs } = useIndexingJobs();
@@ -293,6 +331,13 @@ export function IndexStatusSheet({ isOpen, onClose }: IndexStatusSheetProps) {
     return { text: 'Healthy', className: 'bg-green-100 text-green-700 dark:bg-greenShadow dark:text-greenHighlight' };
   }, [queueStatus]);
 
+  const queueLastUpdatedLabel = useMemo(() => {
+    if (!queueStatus?.latest_update_at) return 'No queue updates yet';
+    const timestamp = new Date(queueStatus.latest_update_at);
+    if (Number.isNaN(timestamp.getTime())) return 'Unknown update time';
+    return `Updated ${formatDistanceToNow(timestamp)} ago`;
+  }, [queueStatus?.latest_update_at]);
+
   const JobSection = ({ 
     title, 
     jobs, 
@@ -324,19 +369,19 @@ export function IndexStatusSheet({ isOpen, onClose }: IndexStatusSheetProps) {
 
     return (
       <div 
-        className={`${bgColor} rounded-lg p-3 transition-all duration-300 ease-in-out transform`}
+        className={`${bgColor} rounded-xl border ${borderColor} p-3 transition-all duration-300 ease-in-out`}
         style={{
           opacity: jobs.length > 0 ? 1 : 0,
-          transform: jobs.length > 0 ? 'translateY(0) scale(1)' : 'translateY(-10px) scale(0.95)',
+          transform: jobs.length > 0 ? 'translateY(0)' : 'translateY(-6px)',
         }}
       >
         <button
-          className={`w-full flex items-center justify-between font-medium ${textColor} text-sm mb-2 border-b ${borderColor} pb-1 bg-transparent hover:bg-opacity-20 hover:bg-gray-500 rounded transition-colors duration-200`}
+          className={`w-full flex items-center justify-between font-semibold ${textColor} text-sm mb-2 border-b ${borderColor} pb-2 bg-transparent hover:bg-white/60 dark:hover:bg-darkBgHighlight/40 rounded-md transition-colors duration-200 px-1`}
           onClick={onToggle}
         >
-          <span className="flex items-center gap-2">
+          <span className="flex items-center gap-2 tracking-tight">
             <Icon className="h-4 w-4" />
-            {title} ({displayCount} files){hasMore && ` - showing first ${limit}`}
+            {title} ({displayCount}){hasMore && ` - first ${limit}`}
           </span>
           {isExpanded ? (
             <ChevronUp className="h-4 w-4 ml-2" />
@@ -386,46 +431,35 @@ export function IndexStatusSheet({ isOpen, onClose }: IndexStatusSheetProps) {
     const isRunning = job.status === 'running';
     const isFailed = job.status === 'failed';
     const isPending = job.status === 'pending';
+    const statusUi = JOB_STATUS_UI[job.status];
+    const StatusIcon = statusUi.icon;
+    const progressPercent = job.progress.total > 0
+      ? Math.min((job.progress.processed / job.progress.total) * 100, 100)
+      : 0;
     
     return (
-      <li className={`
-        border rounded-md p-2 dark:bg-darkBgMid bg-white transition-all duration-200 hover:shadow-sm
-        ${isRunning ? 'border-blue-200 dark:border-customBlue' : ''}
-        ${isFailed ? 'border-red-200 dark:border-customRed' : ''}
-        ${isPending ? 'border-orange-200 dark:border-customYellow' : ''}
-        ${job.status === 'completed' ? 'dark:border-customGreen border-green-200' : ''}
-        ${job.status === 'cancelled' ? 'dark:border-customGray border-gray-200' : ''}
-      `}>
+      <li className={`group border rounded-lg p-3 dark:bg-darkBgMid bg-white transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 ${statusUi.borderClass}`}>
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            {isRunning && <FolderPlus className="h-4 w-4 text-blue-500 dark:text-blueHighlight flex-shrink-0" />}
-            {isPending && <FileText className="h-4 w-4 text-orange-500 dark:text-yellowHighlight flex-shrink-0" />}
-            {isFailed && <AlertCircle className="h-4 w-4 text-red-500 dark:text-redHighlight flex-shrink-0" />}
-            {job.status === 'completed' && <CheckCircle2 className="h-4 w-4 text-green-500  dark:text-greenHighlight flex-shrink-0" />}
-            {job.status === 'cancelled' && <StopCircle className="h-4 w-4 text-gray-500 dark:text-customGray flex-shrink-0" />}
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <StatusIcon className={`h-4 w-4 flex-shrink-0 ${statusUi.pathClass}`} />
             
             <div className="min-w-0 flex-1">
-              <div className={`font-medium text-sm truncate ${
-                isRunning ? 'text-blue-800 dark:text-customBlue' : 
-                isPending ? 'text-orange-800 dark:text-customYellow' : 
-                isFailed ? 'text-red-800 dark:text-customRed' : 
-                job.status === 'completed' ? 'dark:text-customGreen text-green-800' : 'text-gray-800'
-              }`}>
-                {getBaseName(job.progress.directory_path)}
+              <div className="flex items-center gap-2">
+                <div className={`font-semibold text-sm truncate tracking-tight ${statusUi.titleClass}`}>
+                  {getBaseName(job.progress.directory_path)}
+                </div>
+                <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${statusUi.badgeClass}`}>
+                  {statusUi.badgeText}
+                </span>
               </div>
               
-              <div className={`text-xs truncate ${
-                isRunning ? 'text-blue-600 dark:text-blueHighlight' : 
-                isPending ? 'text-orange-600 dark:text-yellowHighlight' : 
-                isFailed ? 'text-red-600 dark:text-redHighlight' : 
-                job.status === 'completed' ? 'text-green-600 dark:text-greenHighlight' : 'text-gray-600'
-              }`}>
+              <div className={`text-xs truncate mt-0.5 ${statusUi.pathClass}`}>
                 {job.progress.directory_path}
               </div>
 
               {isRunning && job.progress.current_file && (
                 <div className="text-xs dark:text-blueHighlight text-blue-500 font-mono mt-1">
-                  📄 {getBaseName(job.progress.current_file)}
+                  {getBaseName(job.progress.current_file)}
                 </div>
               )}
 
@@ -448,7 +482,7 @@ export function IndexStatusSheet({ isOpen, onClose }: IndexStatusSheetProps) {
 
           <div className="flex items-center gap-1 ml-2">
             {isRunning && (
-              <div className="text-xs dark:text-blueHighlight text-blue-600 mr-2">
+              <div className="text-xs dark:text-blueHighlight text-blue-600 mr-2 font-medium">
                 {job.progress.processed} of {job.progress.total}
               </div>
             )}
@@ -457,7 +491,7 @@ export function IndexStatusSheet({ isOpen, onClose }: IndexStatusSheetProps) {
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-6 w-6 p-0 dark:text-customRed text-red-600 dark:hover:bg-customRed hover:bg-red-100 dark:hover:text-redHighlight hover:text-red-700"
+                className="h-7 w-7 p-0 rounded-md dark:text-customRed text-red-600 dark:hover:bg-customRed/20 hover:bg-red-100 dark:hover:text-redHighlight hover:text-red-700"
                 title="Report bug for this failed job"
                 onClick={() => {
                   const errorMessage = job.progress.errors?.[0] || 'Job failed without specific error message';
@@ -476,7 +510,7 @@ export function IndexStatusSheet({ isOpen, onClose }: IndexStatusSheetProps) {
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-6 w-6 p-0 text-blue-600 dark:text-customYellow dark:hover:text-yellowHighlight dark:hover:bg-customYellow hover:bg-blue-100 hover:text-blue-700"
+                className="h-7 w-7 p-0 rounded-md text-blue-600 dark:text-customYellow dark:hover:text-yellowHighlight dark:hover:bg-customYellow/20 hover:bg-blue-100 hover:text-blue-700"
                 title="Retry this job"
                 onClick={() => onRetry(job)}
               >
@@ -488,7 +522,7 @@ export function IndexStatusSheet({ isOpen, onClose }: IndexStatusSheetProps) {
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-6 w-6 p-0 dark:text-customRed dark:hover:bg-customRed dark:hover:text-redHighlight text-red-600 hover:bg-red-100 hover:text-red-700"
+                className="h-7 w-7 p-0 rounded-md dark:text-customRed dark:hover:bg-customRed/20 dark:hover:text-redHighlight text-red-600 hover:bg-red-100 hover:text-red-700"
                 title={cancellingJobs.has(job.id) ? "Cancelling..." : "Cancel job"}
                 onClick={() => onCancel(job.id)}
                 disabled={cancellingJobs.has(job.id)}
@@ -505,10 +539,10 @@ export function IndexStatusSheet({ isOpen, onClose }: IndexStatusSheetProps) {
 
         {isRunning && (
           <>
-            <div className="w-full dark:bg-customBlue bg-blue-200 rounded-full h-1.5 mt-2">
+            <div className="w-full dark:bg-customBlue/30 bg-blue-200 rounded-full h-1.5 mt-3">
               <div
                 className="dark:bg-blueHighlight bg-blue-600 h-1.5 rounded-full transition-all duration-500 ease-out"
-                style={{ width: `${Math.min((job.progress.processed / job.progress.total) * 100, 100)}%` }}
+                style={{ width: `${progressPercent}%` }}
               />
             </div>
           </>
@@ -520,90 +554,102 @@ export function IndexStatusSheet({ isOpen, onClose }: IndexStatusSheetProps) {
   const hasAnyJobs = jobs.length > 0;
 
   return (
-    <div className="fixed inset-y-0 right-0 w-[500px] dark:bg-darkBg bg-white shadow-xl border-l dark:border-darkBgHighlight border-gray-200 flex flex-col z-50">
+    <div className="fixed inset-y-0 right-0 w-full sm:w-[560px] dark:bg-darkBg bg-white shadow-2xl border-l dark:border-darkBgHighlight border-gray-200 flex flex-col z-50">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b dark:border-darkBgHighlight border-gray-200">
-        <div className="flex items-center gap-2">
-          <FileText className="h-5 w-5 dark:text-customBlue text-blue-600" />
-          <h2 className="text-lg font-semibold dark:text-text text-gray-900">Indexing Status</h2>
-          <span className={`text-xs px-2 py-0.5 rounded-full ${queuePaused ? 'bg-orange-100 text-orange-700 dark:bg-yellowShadow dark:text-yellowHighlight' : 'bg-green-100 text-green-700 dark:bg-greenShadow dark:text-greenHighlight'}`}>
-            {queuePaused ? 'Paused' : 'Active'}
-          </span>
-          <span className={`text-xs px-2 py-0.5 rounded-full ${queueHealthLabel.className}`}>
-            {queueHealthLabel.text}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => handleQueueAction(queuePaused ? 'resume' : 'stop')}
-            disabled={queueActionLoading !== null}
-            title={queuePaused ? 'Resume queue processing' : 'Stop queue processing'}
-            className="h-8 px-2"
-          >
-            {queuePaused ? <PlayCircle className="h-4 w-4 mr-1" /> : <StopCircle className="h-4 w-4 mr-1" />}
-            {queuePaused ? (queueActionLoading === 'resume' ? 'Resuming...' : 'Resume') : (queueActionLoading === 'stop' ? 'Stopping...' : 'Stop')}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => handleQueueAction('clear')}
-            disabled={queueActionLoading !== null}
-            title="Clear pending and running jobs"
-            className="h-8 px-2 text-orange-700 dark:text-yellowHighlight"
-          >
-            <Trash2 className="h-4 w-4 mr-1" />
-            {queueActionLoading === 'clear' ? 'Clearing...' : 'Clear Queue'}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => handleQueueAction('clear_all')}
-            disabled={queueActionLoading !== null}
-            title="Clear all jobs"
-            className="h-8 px-2 text-red-700 dark:text-customRed"
-          >
-            <Trash2 className="h-4 w-4 mr-1" />
-            {queueActionLoading === 'clear_all' ? 'Clearing...' : 'Clear All'}
-          </Button>
-          <Button variant="ghost" size="icon" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
+      <div className="px-6 py-4 border-b dark:border-darkBgHighlight border-gray-200 bg-white/95 dark:bg-darkBg/95 backdrop-blur-sm">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <FileText className="h-5 w-5 dark:text-customBlue text-blue-600" />
+              <h2 className="text-lg font-semibold tracking-tight dark:text-text text-gray-900">Indexing Status</h2>
+            </div>
+            <p className="text-xs text-gray-500 dark:text-customGray mt-1">
+              Live queue activity and processing health
+            </p>
+            <div className="flex items-center gap-2 mt-2">
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${queuePaused ? 'bg-orange-100 text-orange-700 dark:bg-yellowShadow dark:text-yellowHighlight' : 'bg-green-100 text-green-700 dark:bg-greenShadow dark:text-greenHighlight'}`}>
+                {queuePaused ? 'Paused' : 'Active'}
+              </span>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${queueHealthLabel.className}`}>
+                {queueHealthLabel.text}
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleQueueAction(queuePaused ? 'resume' : 'stop')}
+              disabled={queueActionLoading !== null}
+              title={queuePaused ? 'Resume queue processing' : 'Stop queue processing'}
+              className="h-8 px-2 font-medium"
+            >
+              {queuePaused ? <PlayCircle className="h-4 w-4 mr-1" /> : <StopCircle className="h-4 w-4 mr-1" />}
+              {queuePaused ? (queueActionLoading === 'resume' ? 'Resuming...' : 'Resume') : (queueActionLoading === 'stop' ? 'Stopping...' : 'Stop')}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => handleQueueAction('clear')}
+              disabled={queueActionLoading !== null}
+              title="Clear pending and running jobs"
+              className="h-8 px-2 text-orange-700 dark:text-yellowHighlight font-medium hover:bg-orange-100 dark:hover:bg-yellowShadow/40"
+            >
+              <Trash2 className="h-4 w-4 mr-1" />
+              {queueActionLoading === 'clear' ? 'Clearing...' : 'Clear Queue'}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => handleQueueAction('clear_all')}
+              disabled={queueActionLoading !== null}
+              title="Clear all jobs"
+              className="h-8 px-2 text-red-700 dark:text-customRed font-medium hover:bg-red-100 dark:hover:bg-redShadow/40"
+            >
+              <Trash2 className="h-4 w-4 mr-1" />
+              {queueActionLoading === 'clear_all' ? 'Clearing...' : 'Clear All'}
+            </Button>
+            <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8">
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
         {queueStatus && (
-          <div className="mb-4 rounded-lg border border-gray-200 dark:border-darkBgHighlight bg-gray-50 dark:bg-darkBgMid p-3">
-            <div className="text-xs uppercase tracking-wide text-gray-600 dark:text-customGray">Queue Health</div>
-            <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-              <div className="rounded border border-orange-200 dark:border-customYellow px-2 py-1">
+          <div className="mb-4 rounded-xl border border-gray-200 dark:border-darkBgHighlight bg-gray-50 dark:bg-darkBgMid p-4">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs uppercase tracking-wide text-gray-600 dark:text-customGray">Queue Health</div>
+              <div className="text-[11px] text-gray-500 dark:text-customGray">{queueLastUpdatedLabel}</div>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+              <div className="rounded-lg border border-orange-200 dark:border-customYellow px-2 py-1.5 bg-white/70 dark:bg-darkBg/30">
                 <div className="text-[11px] text-gray-600 dark:text-customGray">Queued</div>
                 <div className="font-semibold text-orange-700 dark:text-yellowHighlight">{queueStatus.pending}</div>
               </div>
-              <div className="rounded border border-blue-200 dark:border-customBlue px-2 py-1">
+              <div className="rounded-lg border border-blue-200 dark:border-customBlue px-2 py-1.5 bg-white/70 dark:bg-darkBg/30">
                 <div className="text-[11px] text-gray-600 dark:text-customGray">Running</div>
                 <div className="font-semibold text-blue-700 dark:text-blueHighlight">{queueStatus.running}</div>
               </div>
-              <div className="rounded border border-yellow-200 dark:border-customYellow px-2 py-1">
+              <div className="rounded-lg border border-yellow-200 dark:border-customYellow px-2 py-1.5 bg-white/70 dark:bg-darkBg/30">
                 <div className="text-[11px] text-gray-600 dark:text-customGray">Retries Waiting</div>
                 <div className="font-semibold text-yellow-700 dark:text-yellowHighlight">{queueStatus.retry_scheduled}</div>
               </div>
-              <div className="rounded border border-red-200 dark:border-customRed px-2 py-1">
+              <div className="rounded-lg border border-red-200 dark:border-customRed px-2 py-1.5 bg-white/70 dark:bg-darkBg/30">
                 <div className="text-[11px] text-gray-600 dark:text-customGray">Stale Running</div>
                 <div className="font-semibold text-red-700 dark:text-redHighlight">{queueStatus.stale_running}</div>
               </div>
-              <div className="rounded border border-gray-200 dark:border-customGray px-2 py-1">
+              <div className="rounded-lg border border-gray-200 dark:border-customGray px-2 py-1.5 bg-white/70 dark:bg-darkBg/30">
                 <div className="text-[11px] text-gray-600 dark:text-customGray">Oldest Queue Age</div>
                 <div className="font-semibold text-gray-800 dark:text-text">{formatAge(queueStatus.oldest_pending_age_seconds)}</div>
               </div>
-              <div className="rounded border border-gray-200 dark:border-customGray px-2 py-1">
+              <div className="rounded-lg border border-gray-200 dark:border-customGray px-2 py-1.5 bg-white/70 dark:bg-darkBg/30">
                 <div className="text-[11px] text-gray-600 dark:text-customGray">Longest Running</div>
                 <div className="font-semibold text-gray-800 dark:text-text">{formatAge(queueStatus.longest_running_age_seconds)}</div>
               </div>
-              <div className="col-span-2 rounded border border-green-200 dark:border-customGreen px-2 py-1">
+              <div className="col-span-2 rounded-lg border border-green-200 dark:border-customGreen px-2 py-1.5 bg-white/70 dark:bg-darkBg/30">
                 <div className="text-[11px] text-gray-600 dark:text-customGray">Last Hour Throughput</div>
                 <div className="font-semibold text-green-700 dark:text-greenHighlight">
                   {queueStatus.completed_last_hour} completed / {queueStatus.failed_last_hour} failed
@@ -621,13 +667,13 @@ export function IndexStatusSheet({ isOpen, onClose }: IndexStatusSheetProps) {
           <div className="space-y-4">
                          {/* Running Jobs - Stabilized to prevent frenetic behavior */}
              {(showRunningSection || jobCategories.running.length > 0) && (
-               <div 
-                 className={`bg-blue-50 dark:bg-blueShadow rounded-lg p-3 transition-all duration-500 ease-in-out transform ${
+               <div
+                 className={`bg-blue-50 dark:bg-blueShadow rounded-xl border border-blue-200 dark:border-customBlue p-3 transition-all duration-500 ease-in-out transform ${
                    jobCategories.running.length > 0 ? 'opacity-100 scale-100' : 'opacity-60 scale-95'
                  }`}
                >
                  <button
-                   className="w-full flex items-center justify-between font-medium text-blue-700 dark:text-blueHighlight text-sm mb-2 border-b dark:border-customBlue border-blue-200 pb-1 bg-transparent hover:bg-opacity-20 hover:bg-gray-500 rounded transition-colors duration-200"
+                   className="w-full flex items-center justify-between font-semibold text-blue-700 dark:text-blueHighlight text-sm mb-2 border-b dark:border-customBlue border-blue-200 pb-2 bg-transparent hover:bg-white/60 dark:hover:bg-darkBgHighlight/40 rounded-md transition-colors duration-200 px-1"
                    onClick={() => setShowRunningJobs(v => !v)}
                  >
                    <span className="flex items-center gap-2">
