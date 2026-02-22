@@ -155,16 +155,22 @@ pub async fn uninstall_app(
         state.sqlite_service.get_database_service(),
     );
 
+    // Capture app name before uninstall so event payload is accurate.
+    let app_name_before_uninstall = app_service
+        .get_app_by_id(app_id)
+        .ok()
+        .flatten()
+        .map(|app| app.app_name);
+
     let result = app_service.uninstall_app(app_id);
     
     // If uninstallation was successful, emit an event to notify the frontend
     if let Ok(response) = &result {
         if response.success {
-            // Get the app name before uninstalling for the event
-            if let Ok(Some(app)) = app_service.get_app_by_id(app_id) {
-                app_log_info!("🔔 Emitting app_uninstalled event for: {}", app.app_name);
+            if let Some(app_name) = app_name_before_uninstall {
+                app_log_info!("🔔 Emitting app_uninstalled event for: {}", app_name);
                 if let Err(e) = app_handle.emit("app_uninstalled", serde_json::json!({
-                    "app_name": app.app_name,
+                    "app_name": app_name,
                     "app_id": app_id,
                     "message": response.message
                 })) {

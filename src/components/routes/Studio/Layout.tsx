@@ -8,6 +8,8 @@ import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { VideoGeneration } from "./types";
 
+const GEMINI_APP_NAME = "Google Gemini";
+
 export const StudioLayout: React.FC = () => {
     const { handleOpenAppStore, showAppStore } = useAppLayout();
 
@@ -32,7 +34,7 @@ export const StudioLayout: React.FC = () => {
         try {
             setIsCheckingVeo3(true);
             const installedApps = await invoke<any[]>('get_installed_apps');
-            const googleGeminiInstalled = installedApps.some(app => app.app_name === 'Google Gemini');
+            const googleGeminiInstalled = installedApps.some(app => app.app_name === GEMINI_APP_NAME);
             setGoogleGeminiInstalled(googleGeminiInstalled);
             return googleGeminiInstalled;
         } catch (error) {
@@ -125,8 +127,7 @@ export const StudioLayout: React.FC = () => {
                     console.log('🔔 App installed event received:', event.payload);
                     const payload = event.payload as { app_name: string; app_id: number; message: string };
 
-                    // If Veo3 was installed, refresh the installation status
-                    if (payload.app_name === 'Veo3') {
+                    if (payload.app_name === GEMINI_APP_NAME) {
                         console.log('✅ Veo3 installed, refreshing installation status...');
                         checkVeo3Installation();
                     }
@@ -136,8 +137,7 @@ export const StudioLayout: React.FC = () => {
                     console.log('🔔 App uninstalled event received:', event.payload);
                     const payload = event.payload as { app_name: string; app_id: number; message: string };
 
-                    // If Veo3 was uninstalled, refresh the installation status
-                    if (payload.app_name === 'Veo3') {
+                    if (payload.app_name === GEMINI_APP_NAME) {
                         console.log('❌ Veo3 uninstalled, refreshing installation status...');
                         checkVeo3Installation();
                     }
