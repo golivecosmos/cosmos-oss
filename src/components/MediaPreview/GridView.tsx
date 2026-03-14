@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { FileText } from "lucide-react";
+import { FileText, Loader2 } from "lucide-react";
 
 import { MediaFile } from "./types";
 import { ImagePreview } from "./ImagePreview";
@@ -62,14 +62,22 @@ const TEXT_EXTENSIONS = new Set([
 ]);
 
 const textPreviewCache = new Map<string, string | null>();
+const PREVIEW_SCALE = 1.3;
+const BASE_PREVIEW_SIZE_PX = 96;
+const BASE_CARD_MAX_WIDTH_PX = 140;
+const BASE_FOLDER_ICON_SIZE_PX = 64;
+const PREVIEW_SIZE_PX = Math.round(BASE_PREVIEW_SIZE_PX * PREVIEW_SCALE);
+const CARD_MAX_WIDTH_PX = Math.round(BASE_CARD_MAX_WIDTH_PX * PREVIEW_SCALE);
+const FOLDER_ICON_SIZE_PX = Math.round(BASE_FOLDER_ICON_SIZE_PX * PREVIEW_SCALE);
+const previewFrameStyle = { width: PREVIEW_SIZE_PX, height: PREVIEW_SIZE_PX };
 
 const getItemsPerRow = (width: number) => {
-  if (width >= 1536) return 10;
-  if (width >= 1280) return 8;
-  if (width >= 1024) return 6;
-  if (width >= 768) return 5;
-  if (width >= 640) return 4;
-  return 3;
+  if (width >= 1536) return 8;
+  if (width >= 1280) return 7;
+  if (width >= 1024) return 5;
+  if (width >= 768) return 4;
+  if (width >= 640) return 3;
+  return 2;
 };
 
 const getTooltipContent = (file: MediaFile) => {
@@ -106,6 +114,35 @@ const getTooltipContent = (file: MediaFile) => {
   }
 
   return tooltipItems.join("\n");
+};
+
+const trimInlineSnippet = (value: string, maxChars: number) => {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxChars) return normalized;
+  return `${normalized.slice(0, maxChars)}...`;
+};
+
+const getResultLabel = (file: MediaFile): string | null => {
+  if (file.metadata.sourceType === "transcript_chunk") {
+    return file.metadata.timestampFormatted
+      ? `Transcript @ ${file.metadata.timestampFormatted}`
+      : "Transcript match";
+  }
+
+  if (file.metadata.isVideoFrame) {
+    return file.metadata.timestampFormatted
+      ? `Frame @ ${file.metadata.timestampFormatted}`
+      : "Frame match";
+  }
+
+  if (
+    file.metadata.sourceType === "text_chunk" ||
+    file.metadata.sourceType === "text_document"
+  ) {
+    return "Text match";
+  }
+
+  return null;
 };
 
 function getFileExtension(fileName: string): string {
@@ -188,7 +225,10 @@ const FileGridPreview = React.memo(({ file }: { file: MediaFile }) => {
 
   if (snippet) {
     return (
-      <div className="w-24 h-24 rounded-lg bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 overflow-hidden p-2">
+      <div
+        className="rounded-lg bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 overflow-hidden p-2"
+        style={previewFrameStyle}
+      >
         <pre className="font-mono text-[9px] leading-3 whitespace-pre-wrap break-words text-gray-700 dark:text-gray-200 max-h-full overflow-hidden">
           {snippet}
         </pre>
@@ -197,7 +237,10 @@ const FileGridPreview = React.memo(({ file }: { file: MediaFile }) => {
   }
 
   return (
-    <div className="w-24 h-24 rounded-lg bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 overflow-hidden p-2">
+    <div
+      className="rounded-lg bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 overflow-hidden p-2"
+      style={previewFrameStyle}
+    >
       <div className="h-full w-full rounded-md border border-gray-200/70 dark:border-gray-500/60 bg-white dark:bg-gray-800 px-2 py-1.5">
         {ext === "pdf" ? (
           <>
@@ -281,8 +324,15 @@ export const GridView = React.memo(
             style={{ gridTemplateColumns: `repeat(${itemsPerRow}, minmax(0, 1fr))` }}
           >
             {Array.from({ length: itemsPerRow * 2 }).map((_, i) => (
-              <div key={i} className="flex flex-col items-center w-full max-w-[140px] mx-auto">
-                <div className="w-24 h-24 bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse mb-2" />
+              <div
+                key={i}
+                className="flex flex-col items-center w-full mx-auto"
+                style={{ maxWidth: CARD_MAX_WIDTH_PX }}
+              >
+                <div
+                  className="bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse mb-2"
+                  style={{ width: PREVIEW_SIZE_PX, height: PREVIEW_SIZE_PX }}
+                />
                 <div className="w-full h-3 bg-gray-200 dark:bg-gray-700 rounded animate-pulse mb-1" />
                 <div className="w-2/3 h-2 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
               </div>
@@ -304,7 +354,11 @@ export const GridView = React.memo(
 
               if (isOfflineDrive) {
                 return (
-                  <div key={`${file.path}-${index}`} className="w-full max-w-[140px] mx-auto">
+                  <div
+                    key={`${file.path}-${index}`}
+                    className="w-full mx-auto"
+                    style={{ maxWidth: CARD_MAX_WIDTH_PX }}
+                  >
                     <OfflineDriveCard
                       file={{
                         id: file.path,
@@ -343,33 +397,41 @@ export const GridView = React.memo(
                   isFromSearch={file.metadata.score !== undefined && file.metadata.score > 0}
                 >
                   <div
-                    className="group flex w-full max-w-[140px] mx-auto flex-col items-center cursor-pointer transition-all duration-150 opacity-90 hover:opacity-100"
+                    className="group flex w-full mx-auto flex-col items-center cursor-pointer transition-all duration-150 opacity-90 hover:opacity-100"
+                    style={{ maxWidth: CARD_MAX_WIDTH_PX }}
                     onClick={() => onFileSelect(file)}
                     title={file.type === "document" ? undefined : getTooltipContent(file)}
                   >
                     <div className="relative mb-1 p-2 rounded-lg hover:bg-gray-100/10 dark:hover:bg-white/5 transition-all">
-                      {file.type === "directory" ? (
-                        <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                          <path
-                            d="M8 20C8 17.7909 9.79086 16 12 16H24L28 20H52C54.2091 20 56 21.7909 56 24V48C56 50.2091 54.2091 52 52 52H12C9.79086 52 8 50.2091 8 48V20Z"
-                            className="fill-blue-500 dark:fill-blueHighlight"
-                          />
-                          <path
-                            d="M8 18C8 15.7909 9.79086 14 12 14H22L26 18H52C54.2091 18 56 19.7909 56 22V24H8V18Z"
-                            className="fill-blue-600 dark:fill-blue-400"
-                          />
-                        </svg>
-                      ) : file.type === "video" || file.metadata.isVideoFrame ? (
-                        <div className="w-24 h-24 rounded-lg overflow-hidden bg-gray-200 dark:bg-gray-700 shadow-sm">
+                      <div
+                        className="rounded-lg overflow-hidden bg-gray-200 dark:bg-gray-700 shadow-sm flex items-center justify-center"
+                        style={previewFrameStyle}
+                      >
+                        {file.type === "directory" ? (
+                          <svg
+                            width={FOLDER_ICON_SIZE_PX}
+                            height={FOLDER_ICON_SIZE_PX}
+                            viewBox="0 0 64 64"
+                            fill="none"
+                            xmlns="http://www.w3.org/2000/svg"
+                          >
+                            <path
+                              d="M8 20C8 17.7909 9.79086 16 12 16H24L28 20H52C54.2091 20 56 21.7909 56 24V48C56 50.2091 54.2091 52 52 52H12C9.79086 52 8 50.2091 8 48V20Z"
+                              className="fill-blue-500 dark:fill-blueHighlight"
+                            />
+                            <path
+                              d="M8 18C8 15.7909 9.79086 14 12 14H22L26 18H52C54.2091 18 56 19.7909 56 22V24H8V18Z"
+                              className="fill-blue-600 dark:fill-blue-400"
+                            />
+                          </svg>
+                        ) : file.type === "video" || file.metadata.isVideoFrame ? (
                           <NativeVideoThumbnail file={file} />
-                        </div>
-                      ) : file.type === "image" ? (
-                        <div className="w-24 h-24 rounded-lg overflow-hidden bg-gray-200 dark:bg-gray-700 shadow-sm">
+                        ) : file.type === "image" ? (
                           <ImagePreview file={file} />
-                        </div>
-                      ) : (
-                        <FileGridPreview file={file} />
-                      )}
+                        ) : (
+                          <FileGridPreview file={file} />
+                        )}
+                      </div>
 
                       {indexingPaths?.has(file.path) && (
                         <div className="absolute -bottom-1 -right-1 bg-blue-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full">
@@ -395,19 +457,50 @@ export const GridView = React.memo(
                       <p className="text-xs dark:text-gray-200 text-gray-700 font-normal truncate">
                         {file.name}
                       </p>
-                      <p className="text-[10px] dark:text-gray-400 text-gray-500 mt-0.5">
-                        {file.metadata.size
-                          ? formatFileSize(file.metadata.size)
-                          : file.type === "directory"
-                            ? "Folder"
-                            : "File"}
-                      </p>
+                      {getResultLabel(file) ? (
+                        <p className="text-[10px] dark:text-blue-300 text-blue-600 mt-0.5 truncate">
+                          {getResultLabel(file)}
+                        </p>
+                      ) : (
+                        <p className="text-[10px] dark:text-gray-400 text-gray-500 mt-0.5">
+                          {file.metadata.size
+                            ? formatFileSize(file.metadata.size)
+                            : file.type === "directory"
+                              ? "Folder"
+                              : "File"}
+                        </p>
+                      )}
+                      {file.metadata.snippet && (
+                        <p className="text-[10px] dark:text-gray-400 text-gray-500 mt-0.5 line-clamp-2">
+                          {trimInlineSnippet(file.metadata.snippet, 100)}
+                        </p>
+                      )}
                     </div>
                   </div>
                 </PreviewContextMenu>
               );
             })}
           </div>
+
+          {hasMoreFiles && onLoadMore && (
+            <div className="flex justify-center py-4">
+              <button
+                type="button"
+                onClick={onLoadMore}
+                disabled={isLoadingMore}
+                className="inline-flex items-center gap-2 rounded-md border border-gray-300 dark:border-darkBgHighlight px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-darkBgHighlight disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {isLoadingMore ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading...
+                  </>
+                ) : (
+                  "Load More"
+                )}
+              </button>
+            </div>
+          )}
 
           {!hasMoreFiles && files.length > 0 && (
             <div className="flex justify-center py-8">

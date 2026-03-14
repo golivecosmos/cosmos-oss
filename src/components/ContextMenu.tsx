@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ContextMenu as BaseContextMenu,
   ContextMenuContent,
@@ -23,6 +23,24 @@ import { FileItem } from "./FileTree";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { getErrorMessage } from "../utils/errorMessage";
+import { normalizeFilePath } from "../lib/utils";
+
+interface WatchedFolder {
+  id: string;
+  path: string;
+  recursive: boolean;
+  enabled: boolean;
+  auto_transcribe_videos: boolean;
+  status: string;
+  last_scan_at?: string | null;
+  last_event_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+const normalizeWatchedPath = (path: string): string => {
+  return path.replace(/\/+$/, "").toLowerCase();
+};
 
 interface FileContextMenuProps {
   children: React.ReactNode;
@@ -55,6 +73,37 @@ export function FileContextMenu({
   onBulkIndex,
   isIndexingDisabled,
 }: FileContextMenuProps) {
+  const [watchedFolder, setWatchedFolder] = useState<WatchedFolder | null>(null);
+  const [isWatchingStateLoading, setIsWatchingStateLoading] = useState(false);
+  const normalizedItemPath = useMemo(
+    () => normalizeFilePath(item.path),
+    [item.path]
+  );
+
+  const refreshWatchedFolderState = useCallback(async () => {
+    if (!item.is_dir) {
+      setWatchedFolder(null);
+      return;
+    }
+
+    setIsWatchingStateLoading(true);
+    try {
+      const folders = await invoke<WatchedFolder[]>("list_watched_folders");
+      const targetPath = normalizeWatchedPath(normalizedItemPath);
+      const matchedFolder =
+        folders.find((folder) => normalizeWatchedPath(folder.path) === targetPath) || null;
+      setWatchedFolder(matchedFolder);
+    } catch {
+      setWatchedFolder(null);
+    } finally {
+      setIsWatchingStateLoading(false);
+    }
+  }, [item.is_dir, normalizedItemPath]);
+
+  useEffect(() => {
+    refreshWatchedFolderState();
+  }, [refreshWatchedFolderState]);
+
   const handleIndexFile = async () => {
     try {
       await invoke("index_file", {
@@ -69,6 +118,64 @@ export function FileContextMenu({
     }
   };
 
+  const handleWatchFolder = async () => {
+    try {
+      const folder = await invoke<WatchedFolder>("add_watched_folder", {
+        path: normalizedItemPath,
+        recursive: true,
+        autoTranscribeVideos: true,
+      });
+      setWatchedFolder(folder);
+      toast.success("Folder is now watched");
+    } catch (error) {
+      toast.error(`Failed to watch folder: ${getErrorMessage(error)}`);
+    }
+  };
+
+  const handleSetWatchingEnabled = async (enabled: boolean) => {
+    if (!watchedFolder) return;
+    try {
+      await invoke("set_watched_folder_enabled", {
+        folderId: watchedFolder.id,
+        enabled,
+      });
+      setWatchedFolder((prev) =>
+        prev
+          ? {
+              ...prev,
+              enabled,
+              status: enabled ? "watching" : "paused",
+            }
+          : prev
+      );
+      toast.success(enabled ? "Watching resumed" : "Watching paused");
+    } catch (error) {
+      toast.error(`Failed to update watch state: ${getErrorMessage(error)}`);
+    }
+  };
+
+  const handleScanNow = async () => {
+    if (!watchedFolder) return;
+    try {
+      await invoke("trigger_watched_folder_backfill", {
+        folderId: watchedFolder.id,
+      });
+      toast.success("Watched folder scan started");
+    } catch (error) {
+      toast.error(`Failed to start scan: ${getErrorMessage(error)}`);
+    }
+  };
+
+  const handleStopWatching = async () => {
+    if (!watchedFolder) return;
+    try {
+      await invoke("remove_watched_folder", { folderId: watchedFolder.id });
+      setWatchedFolder(null);
+      toast.success("Stopped watching folder");
+    } catch (error) {
+      toast.error(`Failed to stop watching: ${getErrorMessage(error)}`);
+    }
+  };
 
   return (
     <BaseContextMenu>
@@ -108,6 +215,31 @@ export function FileContextMenu({
                     Index Directory
                   </ContextMenuItem>
                 )}
+              </>
+            )}
+
+            <ContextMenuItem
+              onClick={handleWatchFolder}
+              disabled={isWatchingStateLoading || !!watchedFolder}
+            >
+              <FolderSearch className="mr-2 h-4 w-4" />
+              Watch Folder
+            </ContextMenuItem>
+
+            {watchedFolder && (
+              <>
+                <ContextMenuItem onClick={() => handleSetWatchingEnabled(!watchedFolder.enabled)}>
+                  <FolderSearch className="mr-2 h-4 w-4" />
+                  {watchedFolder.enabled ? "Pause Watching" : "Resume Watching"}
+                </ContextMenuItem>
+                <ContextMenuItem onClick={handleScanNow}>
+                  <FolderSearch className="mr-2 h-4 w-4" />
+                  Scan Watched Folder Now
+                </ContextMenuItem>
+                <ContextMenuItem onClick={handleStopWatching}>
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Stop Watching Folder
+                </ContextMenuItem>
               </>
             )}
 

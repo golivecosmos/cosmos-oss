@@ -1,7 +1,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useLoaderData, useNavigate, useSearchParams } from "react-router-dom";
-import { Camera, CircleMinus, CirclePlus, ImageMinus, Info, Mic, Loader2 } from "lucide-react";
+import { CircleMinus, CirclePlus, Info, Mic, Loader2 } from "lucide-react";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { formatDistanceToNow } from 'date-fns';
 
@@ -10,9 +10,13 @@ import { Slider } from "../../ui/slider"
 import { FileItem } from "../../FileTree";
 import { cn, formatFileSize } from "../../../lib/utils";
 import { ContentPreview, ContentPreviewRef } from "./ContentPreview";
-import { Tooltip, TooltipContent, TooltipTrigger } from "../../ui/tooltip";
 import { TranscriptionDisplay } from "../../TranscriptionDisplay";
 import { useAppLayout } from "../../../contexts/AppLayoutContext";
+
+const getFileNameFromPath = (path: string): string => {
+    const normalized = path.replace(/\\/g, "/");
+    return normalized.split("/").pop() || path;
+};
 
 export const StudioEdit = () => {
     const { file, whisperStatus, isTranscribable } = useLoaderData<typeof StudioEdit.loader>();
@@ -24,6 +28,15 @@ export const StudioEdit = () => {
     const [showInfo, setShowInfo] = useState(false);
     const [transcriptionRefreshCounter, setTranscriptionRefreshCounter] = useState(0);
     const contentPreviewRef = useRef<ContentPreviewRef>(null);
+
+    const handleBack = () => {
+        const returnTo = searchParams.get('returnTo');
+        if (returnTo && returnTo.startsWith('/')) {
+            navigate(returnTo);
+            return;
+        }
+        navigate(-1);
+    };
 
     const handleSeekToTime = (timestamp: number) => {
         contentPreviewRef.current?.seekTo(timestamp);
@@ -67,7 +80,7 @@ export const StudioEdit = () => {
                     variant="outline"
                     size="sm"
                     className="text-xs"
-                    onClick={() => navigate(-1)}
+                    onClick={handleBack}
                 >
                     Back
                 </Button>
@@ -94,28 +107,6 @@ export const StudioEdit = () => {
             </main>
             <div className="flex items-center justify-center absolute top-24 left-4">
                 <div className="grid grid-cols-1 items-center gap-2 p-4 bg-white dark:bg-darkBgMid w-fit rounded-xl shadow-lg">
-                    <Tooltip>
-                        <TooltipTrigger className="w-full">
-                            <Button variant="outline" disabled className="min-h-20 text-xs flex flex-col items-center h-auto py-2 px-1 gap-2 rounded-xl w-full">
-                                <Camera className="max-w-4 h-auto" />
-                                <p className="text-xs text-muted-foreground max-w-20 text-wrap">Screenshot</p>
-                            </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="right">
-                            Coming soon
-                        </TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                        <TooltipTrigger className="w-full">
-                            <Button variant="outline" disabled className="min-h-20 text-xs flex flex-col items-center h-auto py-2 px-1 gap-2 rounded-xl w-full">
-                                <ImageMinus className="max-w-4 h-auto" />
-                                <p className="text-xs text-muted-foreground max-w-20 text-wrap">Remove Background</p>
-                            </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="right">
-                            Coming soon
-                        </TooltipContent>
-                    </Tooltip>
                     <Button
                         variant="outline"
                         className={
@@ -273,11 +264,52 @@ export const StudioEdit = () => {
 }
 
 StudioEdit.loader = async ({ request }) => {
+    const toFilesystemPath = (input: string): string => {
+        let normalized = input;
+
+        try {
+            normalized = decodeURIComponent(normalized);
+        } catch {
+            // Keep raw input when decode fails (for literal % in file names).
+        }
+
+        if (normalized.startsWith("asset://") || normalized.startsWith("file://")) {
+            try {
+                const parsed = new URL(normalized);
+                if (parsed.pathname) {
+                    normalized = parsed.pathname;
+                }
+            } catch {
+                // Fall through to string-based normalization below.
+            }
+        }
+
+        if (normalized.startsWith("asset://localhost")) {
+            normalized = normalized.slice("asset://localhost".length);
+        } else if (normalized.startsWith("asset://")) {
+            normalized = normalized.slice("asset://".length);
+        } else if (normalized.startsWith("file://")) {
+            normalized = normalized.slice("file://".length);
+        }
+
+        if (normalized.startsWith("//")) {
+            normalized = normalized.replace(/^\/+/, "/");
+        }
+
+        const isWindowsPath = /^[a-zA-Z]:[\\/]/.test(normalized);
+        if (!isWindowsPath && normalized && !normalized.startsWith("/")) {
+            normalized = `/${normalized}`;
+        }
+
+        return normalized;
+    };
+
     const url = new URL(request.url);
-    const path = url.searchParams.get('path');
+    const rawPath = url.searchParams.get('path');
+    const path = rawPath;
 
     if (path) {
-        const normalizedPath = path.replace("asset://localhost/", "");
+        const normalizedPath = toFilesystemPath(path);
 
         try {
             // Start all async operations in parallel
@@ -300,12 +332,24 @@ StudioEdit.loader = async ({ request }) => {
 
             const fileResult = file.status === 'fulfilled' ? file.value : null;
             const whisperResult = whisperStatus.status === 'fulfilled' ? whisperStatus.value : 'failed';
+            const resolvedFileSystemPath = fileResult?.path
+                ? toFilesystemPath(fileResult.path)
+                : normalizedPath;
+            const fallbackFile: FileItem = {
+                name: getFileNameFromPath(resolvedFileSystemPath),
+                path: resolvedFileSystemPath,
+                is_dir: false,
+                size: 0,
+                modified: new Date().toISOString(),
+                file_type: "file",
+            };
+            const effectiveFile = fileResult || fallbackFile;
 
             return {
-                file: fileResult ? {
-                    ...fileResult,
-                    normalizedPath: convertFileSrc(normalizedPath),
-                } : null,
+                file: {
+                    ...effectiveFile,
+                    normalizedPath: convertFileSrc(resolvedFileSystemPath),
+                },
                 whisperStatus: whisperResult,
                 isTranscribable
             };

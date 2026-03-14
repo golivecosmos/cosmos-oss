@@ -75,6 +75,18 @@ impl SchemaService {
                     return Err(e);
                 }
             }
+
+            // **NEW: Ensure watched folder tables exist (backwards compatibility)**
+            match self.ensure_watched_folders_tables_exist(&db) {
+                Ok(_) => app_log_info!("✅ SCHEMA: Watched folder tables verified/created successfully"),
+                Err(e) => {
+                    app_log_error!(
+                        "❌ SCHEMA: Failed to ensure watched folder tables exist: {}",
+                        e
+                    );
+                    return Err(e);
+                }
+            }
         } else {
             // Check if any tables exist (old versionless database)
             let has_existing_tables = match self.check_existing_tables(&db) {
@@ -215,6 +227,9 @@ impl SchemaService {
         // Create generations table for video generation tracking
         self.create_generations_table(db)?;
 
+        // Create watched folder tables for background indexing
+        self.create_watched_folders_tables(db)?;
+
         // Create indexes
         self.create_indexes(db)?;
 
@@ -226,6 +241,102 @@ impl SchemaService {
         self.set_schema_metadata(db)?;
 
         app_log_info!("✅ SCHEMA: Fresh Nomic-compatible database created successfully");
+        Ok(())
+    }
+
+    /// Create watched folders tables for background indexing orchestration
+    pub fn create_watched_folders_tables(&self, db: &Connection) -> Result<()> {
+        app_log_info!("🏗️ WATCHED FOLDERS: Creating watched folder tables");
+
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS watched_folders (
+                id TEXT PRIMARY KEY,
+                path TEXT NOT NULL UNIQUE,
+                recursive INTEGER NOT NULL DEFAULT 1,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                auto_transcribe_videos INTEGER NOT NULL DEFAULT 1,
+                status TEXT NOT NULL DEFAULT 'idle',
+                last_scan_at TEXT,
+                last_event_at TEXT,
+                metadata TEXT DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+            rusqlite::params![],
+        )?;
+
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS watched_folder_file_state (
+                watched_folder_id TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                file_size INTEGER,
+                mtime_unix_ms INTEGER,
+                content_sig TEXT,
+                last_seen_at TEXT NOT NULL,
+                last_index_job_id TEXT,
+                PRIMARY KEY (watched_folder_id, file_path),
+                FOREIGN KEY (watched_folder_id) REFERENCES watched_folders(id) ON DELETE CASCADE
+            )",
+            rusqlite::params![],
+        )?;
+
+        let indexes = [
+            (
+                "idx_watched_folders_enabled",
+                "CREATE INDEX IF NOT EXISTS idx_watched_folders_enabled ON watched_folders(enabled)",
+            ),
+            (
+                "idx_watched_folders_status",
+                "CREATE INDEX IF NOT EXISTS idx_watched_folders_status ON watched_folders(status)",
+            ),
+            (
+                "idx_watched_folder_file_state_path",
+                "CREATE INDEX IF NOT EXISTS idx_watched_folder_file_state_path ON watched_folder_file_state(file_path)",
+            ),
+        ];
+
+        for (index_name, sql) in indexes {
+            match db.execute(sql, rusqlite::params![]) {
+                Ok(_) => app_log_debug!(
+                    "✅ INDEX: Created watched folder table index: {}",
+                    index_name
+                ),
+                Err(e) => {
+                    app_log_warn!(
+                        "⚠️ INDEX: Failed to create watched folder table index {}: {}",
+                        index_name,
+                        e
+                    );
+                }
+            }
+        }
+
+        app_log_info!("✅ WATCHED FOLDERS: Watched folder tables ready");
+        Ok(())
+    }
+
+    /// Ensure watched folder tables exist for backwards compatibility.
+    pub fn ensure_watched_folders_tables_exist(&self, db: &Connection) -> Result<()> {
+        let table_exists = match db.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='watched_folders'",
+            rusqlite::params![],
+            |row| row.get::<_, i64>(0),
+        ) {
+            Ok(count) => count > 0,
+            Err(_) => false,
+        };
+
+        if !table_exists {
+            app_log_warn!(
+                "⚠️ WATCHED FOLDERS: Missing watched folder tables, creating for backwards compatibility"
+            );
+            self.create_watched_folders_tables(db)?;
+            app_log_info!("✅ WATCHED FOLDERS: Watched folder tables created successfully");
+        } else {
+            // Keep indexes current.
+            self.create_watched_folders_tables(db)?;
+        }
+
         Ok(())
     }
 
@@ -1095,6 +1206,8 @@ mod tests {
             "drives",
             "drive_mounts",
             "transcriptions",
+            "watched_folders",
+            "watched_folder_file_state",
             "schema_info",
             "app_installations",
             "app_settings",

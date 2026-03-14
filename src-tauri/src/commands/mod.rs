@@ -13,6 +13,7 @@ pub mod models;
 pub mod search;
 pub mod system;
 pub mod video;
+pub mod watched_folders;
 
 // Re-export all commands for easy importing in main.rs
 pub use app_installation::*;
@@ -29,6 +30,7 @@ pub use models::*;
 pub use search::*;
 pub use system::*;
 pub use video::*;
+pub use watched_folders::*;
 
 #[cfg(test)]
 mod tests;

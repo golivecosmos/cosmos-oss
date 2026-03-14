@@ -39,7 +39,6 @@ export const Drive: React.FC = () => {
     setReferenceImage,
     setShowReferenceImage,
     clearSearch,
-    handleOpenBenchmark,
     hasActiveJobs,
     hasFailedJobs,
     setShowIndexingInfo,
@@ -70,7 +69,6 @@ export const Drive: React.FC = () => {
       setReferenceImage={setReferenceImage}
       setShowReferenceImage={setShowReferenceImage}
       clearSearch={clearSearch}
-      handleOpenBenchmark={handleOpenBenchmark}
       hasActiveJobs={hasActiveJobs}
       hasFailedJobs={hasFailedJobs}
       setShowIndexingInfo={setShowIndexingInfo}

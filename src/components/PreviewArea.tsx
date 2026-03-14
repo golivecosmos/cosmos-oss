@@ -18,7 +18,7 @@ import {
 } from "../constants";
 import { SearchBar } from "./SearchBar";
 import { Info } from "lucide-react";
-import { SearchType } from "./SearchBar";
+import { SearchOptions, SemanticFileTypeFilter, SearchType } from "../hooks/useSearch";
 
 interface SearchState {
   query: string;
@@ -62,6 +62,9 @@ interface IndexedFile {
   timestamp_formatted: string | null;
   frame_number: number | null;
   video_duration: number | null;
+  source_type?: string | null;
+  chunk_index?: number | null;
+  snippet?: string | null;
   // Drive information
   drive_uuid?: string | null;
   drive_name?: string | null;
@@ -70,15 +73,22 @@ interface IndexedFile {
   drive_status?: string | null;
 }
 
+interface PaginatedDirectoryResult {
+  items: FileItem[];
+  total: number;
+  offset: number;
+  limit: number;
+  has_more: boolean;
+}
+
 export const PreviewArea: React.FC<PreviewAreaProps & {
-  handleSearch: (query: string, type: SearchType) => Promise<void>;
+  handleSearch: (query: string, type: SearchType, options?: SearchOptions) => Promise<void>;
   handleFileUpload: (file: File) => void;
   setReferenceImage: (image: ReferenceImageData | null) => void;
   setShowReferenceImage: (show: boolean) => void;
   referenceImage: ReferenceImageData | null;
   showReferenceImage: boolean;
   clearSearch: () => void;
-  handleOpenBenchmark: () => void;
   hasActiveJobs: boolean;
   hasFailedJobs: boolean;
   setShowIndexingInfo: (open: boolean) => void;
@@ -103,7 +113,6 @@ export const PreviewArea: React.FC<PreviewAreaProps & {
   setShowReferenceImage,
   showReferenceImage: propShowReferenceImage,
   clearSearch,
-  handleOpenBenchmark,
   hasActiveJobs,
   hasFailedJobs,
   setShowIndexingInfo,
@@ -124,9 +133,27 @@ export const PreviewArea: React.FC<PreviewAreaProps & {
     const [isLoadingMore, setIsLoadingMore] = useState(false);
     const PAGE_SIZE = 500; // Load 500 files at a time to get more diverse folders
 
+    // Directory pagination
+    const [directoryPage, setDirectoryPage] = useState(0);
+    const [hasMoreDirectoryFiles, setHasMoreDirectoryFiles] = useState(false);
+    const [isLoadingMoreDirectoryFiles, setIsLoadingMoreDirectoryFiles] = useState(false);
+    const [directoryTotalCount, setDirectoryTotalCount] = useState(0);
+    const DIRECTORY_PAGE_SIZE = 300;
+
+    // Search result pagination
+    const [searchPage, setSearchPage] = useState(1);
+    const SEARCH_PAGE_SIZE = 60;
+
     // Add state for viewMode and fileTypeFilter
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
     const [fileTypeFilter, setFileTypeFilter] = useState<string>('all');
+    const semanticFileTypeFilter: SemanticFileTypeFilter =
+      fileTypeFilter === "image" ||
+      fileTypeFilter === "video" ||
+      fileTypeFilter === "audio" ||
+      fileTypeFilter === "document"
+        ? fileTypeFilter
+        : "all";
 
     const { query: searchQuery, results: searchResults, isSearching, type: searchType, isSearchMode } = searchState;
 
@@ -155,6 +182,16 @@ export const PreviewArea: React.FC<PreviewAreaProps & {
       return normalized.slice(0, lastSlash);
     };
 
+    const normalizeDisplayPath = (path: string): string => {
+      let normalized = path.replace("asset://localhost/", "");
+      try {
+        normalized = decodeURIComponent(normalized);
+      } catch {
+        // Keep raw path when decoding fails.
+      }
+      return normalized;
+    };
+
     // File type detection helper
     const getFileType = (filename: string): MediaFile["type"] => {
       const ext = filename.split(".").pop()?.toLowerCase() || "";
@@ -167,25 +204,31 @@ export const PreviewArea: React.FC<PreviewAreaProps & {
       return "document"; // Default to document type for unknown extensions
     };
 
-    // Simple file loading function
-    const loadFiles = async (path: string) => {
+    // Directory loading with pagination
+    const loadFiles = async (path: string, reset: boolean = true) => {
       if (!path) return;
 
       // Normalize the path by removing asset:// prefix if present
       const normalizedPath = path.replace("asset://localhost/", "");
-
-      // Don't set loading state here as it's already set in useEffect
-      // Just clear files to ensure clean state
-      setMediaFiles([]);
+      const offset = reset ? 0 : directoryPage * DIRECTORY_PAGE_SIZE;
 
       try {
-        const files = await invoke<FileItem[]>("list_directory", {
+        if (reset) {
+          setDirectoryPage(0);
+          setHasMoreDirectoryFiles(false);
+          setDirectoryTotalCount(0);
+          setMediaFiles([]);
+        } else {
+          setIsLoadingMoreDirectoryFiles(true);
+        }
+
+        const payload = await invoke<PaginatedDirectoryResult>("list_directory_paginated", {
           path: normalizedPath,
+          offset,
+          limit: DIRECTORY_PAGE_SIZE,
         });
 
-        // Remove the artificial limit - let React handle all files
-        // GridView is optimized with virtualization-ready structure
-        const convertedFiles = files.map((f) => ({
+        const convertedFiles = payload.items.map((f) => ({
           path: f.is_dir ? f.path : convertFileSrc(f.path),
           name: f.name,
           type: f.is_dir ? ("directory" as const) : getFileType(f.name),
@@ -196,12 +239,20 @@ export const PreviewArea: React.FC<PreviewAreaProps & {
           },
         }));
 
-        setMediaFiles(convertedFiles);
+        setMediaFiles((prev) => (reset ? convertedFiles : [...prev, ...convertedFiles]));
+        setDirectoryTotalCount(payload.total);
+        setHasMoreDirectoryFiles(payload.has_more);
+        setDirectoryPage(reset ? 1 : (prev) => prev + 1);
       } catch (error) {
         console.error("Error loading files from path:", normalizedPath, error);
-        setMediaFiles([]);
+        if (reset) {
+          setMediaFiles([]);
+          setDirectoryTotalCount(0);
+          setHasMoreDirectoryFiles(false);
+        }
       } finally {
         setIsLoadingFiles(false);
+        setIsLoadingMoreDirectoryFiles(false);
       }
     };
 
@@ -265,6 +316,14 @@ export const PreviewArea: React.FC<PreviewAreaProps & {
     const loadMoreIndexedFiles = async () => {
       if (!hasMoreFiles || isLoadingMore || isLoadingIndexedFiles) return;
       await loadIndexedFiles(false);
+    };
+
+    const loadMoreDirectoryFiles = async () => {
+      if (!currentDirectory && !selectedFile?.path) return;
+      if (isLoadingMoreDirectoryFiles || isLoadingFiles || !hasMoreDirectoryFiles) return;
+      const pathToLoad = currentDirectory || selectedFile?.path;
+      if (!pathToLoad) return;
+      await loadFiles(pathToLoad, false);
     };
 
     // Load indexed files when the indexed collection is selected
@@ -374,32 +433,53 @@ export const PreviewArea: React.FC<PreviewAreaProps & {
               // Generate a filename if needed
               const fileName = getBaseName(decodedFilePath);
 
-              // Check if this is a grouped video (from backend grouping logic)
-              // NOTE: Exclude video frames (mime_type: "video/frame") from grouped videos
+              const sourceTypeRaw =
+                typeof file.source_type === "string"
+                  ? file.source_type
+                  : typeof parsedMetadata.source_type === "string"
+                    ? parsedMetadata.source_type
+                    : null;
+              const sourceType = sourceTypeRaw?.toLowerCase() || null;
+              const isTranscriptChunk = sourceType === "transcript_chunk";
+              const isTextChunk =
+                sourceType === "text_chunk" ||
+                sourceType === "text_document" ||
+                file.chunk_index !== undefined && file.chunk_index !== null;
+              const timestampValue =
+                typeof file.timestamp === "number"
+                  ? file.timestamp
+                  : typeof parsedMetadata.time_start_seconds === "number"
+                    ? parsedMetadata.time_start_seconds
+                    : null;
+              const timestampFormatted =
+                file.timestamp_formatted ||
+                parsedMetadata.timestamp_formatted ||
+                parsedMetadata.time_start_formatted ||
+                null;
+              const resultSnippet =
+                file.snippet || parsedMetadata.snippet || null;
+
+              // Check if this is a grouped video (from backend grouping logic).
               const isGroupedVideo = Boolean(
-                (mimeType?.startsWith("video/") &&
-                  mimeType !== "video/frame") ||
-                  parsedMetadata.source_type === "video" ||
-                  (parsedMetadata.frame_count && parsedMetadata.frame_count > 0)
+                !isTranscriptChunk &&
+                  ((mimeType?.startsWith("video/") &&
+                    mimeType !== "video/frame" &&
+                    !isTextChunk) ||
+                    sourceType === "video" ||
+                    (parsedMetadata.frame_count && parsedMetadata.frame_count > 0))
               );
 
-              // Determine if this is a video frame - properly check multiple properties
+              // Determine if this is a video frame (avoid treating transcript hits as frames).
               const isVideoFrame =
-                !isGroupedVideo && // Only check for individual frames if not already grouped
-                // Check specific properties that only video frames would have
-                ((file.timestamp !== undefined && file.timestamp !== null) ||
-                  (file.timestamp_formatted !== undefined &&
-                    file.timestamp_formatted !== null) ||
+                !isGroupedVideo &&
+                !isTranscriptChunk &&
+                ((sourceType === "video_frame") ||
                   (file.frame_number !== undefined &&
                     file.frame_number !== null) ||
                   (file.video_duration !== undefined &&
                     file.video_duration !== null) ||
-                  // Also check if mime type specifically indicates a video frame
                   file.mime_type === "video/frame" ||
-                  // Check ID format which might indicate a frame
-                  (file.id && file.id.includes(":frame:")) ||
-                  // Check metadata source type
-                  parsedMetadata.source_type === "video_frame");
+                  (file.id && file.id.includes(":frame:")));
 
               // Skip reference images
               if (
@@ -416,6 +496,8 @@ export const PreviewArea: React.FC<PreviewAreaProps & {
                 finalType = "video"; // Grouped videos should be displayed as videos
               } else if (isVideoFrame) {
                 finalType = "image"; // Individual video frames are displayed as images but with special metadata
+              } else if (isTranscriptChunk) {
+                finalType = "video";
               } else if (mimeType?.startsWith("image/")) {
                 finalType = "image";
               } else if (mimeType?.startsWith("video/")) {
@@ -464,6 +546,10 @@ export const PreviewArea: React.FC<PreviewAreaProps & {
                 score: file.score || 0,
                 isIndexed:
                   file.status === "indexed" || file.last_indexed_at !== null,
+                sourceType: sourceType || undefined,
+                snippet: resultSnippet,
+                chunkIndex: file.chunk_index ?? null,
+                isTranscriptHit: isTranscriptChunk,
                 // Drive information
                 driveUuid: file.drive_uuid || null,
                 driveName: file.drive_name || null,
@@ -499,8 +585,8 @@ export const PreviewArea: React.FC<PreviewAreaProps & {
                 mediaFile.metadata = {
                   ...baseMetadata,
                   isVideoFrame: true,
-                  timestamp: file.timestamp,
-                  timestampFormatted: file.timestamp_formatted,
+                  timestamp: timestampValue,
+                  timestampFormatted,
                   frameNumber: file.frame_number,
                   videoDuration: file.video_duration,
                   parentPath:
@@ -509,9 +595,27 @@ export const PreviewArea: React.FC<PreviewAreaProps & {
                 };
 
                 // For video frames, also add the timestamp info to the name for display
-                if (file.timestamp_formatted) {
-                  mediaFile.name = `${fileName} @ ${file.timestamp_formatted}`;
+                if (timestampFormatted) {
+                  mediaFile.name = `${fileName} @ ${timestampFormatted}`;
                 }
+              } else if (isTranscriptChunk) {
+                mediaFile.metadata = {
+                  ...baseMetadata,
+                  sourceType: "transcript_chunk",
+                  isTranscriptHit: true,
+                  timestamp: timestampValue,
+                  timestampFormatted,
+                  chunkIndex: file.chunk_index ?? null,
+                  snippet: resultSnippet,
+                  parentPath: fallbackParentPath,
+                };
+              } else if (isTextChunk) {
+                mediaFile.metadata = {
+                  ...baseMetadata,
+                  sourceType: sourceType || "text_chunk",
+                  chunkIndex: file.chunk_index ?? null,
+                  snippet: resultSnippet,
+                };
               }
 
               return mediaFile;
@@ -583,6 +687,27 @@ export const PreviewArea: React.FC<PreviewAreaProps & {
         setSearchMediaFiles([]);
       }
     }, [searchResults, isSearchMode, isSearching, processFilesForDisplay]);
+
+    useEffect(() => {
+      setSearchPage(1);
+    }, [searchQuery, searchType, searchResults.length, fileTypeFilter]);
+
+    useEffect(() => {
+      if (!isSearchMode || searchType !== "text") return;
+      if (!searchQuery.trim()) return;
+      handleSearch(searchQuery, "text", { semanticFileTypeFilter });
+    }, [fileTypeFilter]);
+
+    const displayedSearchMediaFiles = searchMediaFiles.slice(
+      0,
+      searchPage * SEARCH_PAGE_SIZE
+    );
+    const hasMoreSearchFiles = displayedSearchMediaFiles.length < searchMediaFiles.length;
+
+    const loadMoreSearchFiles = () => {
+      if (!hasMoreSearchFiles) return;
+      setSearchPage((prev) => prev + 1);
+    };
 
     // Load files when selected file or current directory changes
     useEffect(() => {
@@ -698,42 +823,95 @@ export const PreviewArea: React.FC<PreviewAreaProps & {
 
         setCurrentDirectory(previousDirectory || null);
         setNavigationStack(newStack);
-      } else if (navigationStack.length === 1) {
+      } else if (navigationStack.length === 1 || currentDirectory) {
         setCurrentDirectory(null);
         setNavigationStack([]);
       }
     };
 
+    const handleBreadcrumbNavigate = (targetPath: string | null) => {
+      if (!targetPath) {
+        setCurrentDirectory(null);
+        setNavigationStack([]);
+        return;
+      }
+
+      const normalizedTargetPath = targetPath.replace("asset://localhost/", "");
+      const selectedRootPath = selectedFile?.path
+        ? selectedFile.path.replace("asset://localhost/", "")
+        : null;
+
+      if (selectedRootPath && normalizedTargetPath === selectedRootPath) {
+        setCurrentDirectory(null);
+        setNavigationStack([]);
+        return;
+      }
+
+      setCurrentDirectory(normalizedTargetPath);
+      setNavigationStack((prev) => {
+        const existingIndex = prev.indexOf(normalizedTargetPath);
+        if (existingIndex >= 0) {
+          return prev.slice(0, existingIndex + 1);
+        }
+        return [...prev, normalizedTargetPath];
+      });
+    };
+
     const getBreadcrumbs = () => {
       if (!currentDirectory && !selectedFile) return null;
 
-      const path = currentDirectory || selectedFile?.path || "";
-      const parts = path.split("/").filter(Boolean);
+      const rawPath = currentDirectory || selectedFile?.path || "";
+      const normalizedPath = normalizeDisplayPath(rawPath);
+      const parts = normalizedPath.split("/").filter(Boolean);
+      const hasLeadingSlash = normalizedPath.startsWith("/");
+
+      const crumbEntries = parts.map((part, index) => {
+        const prefix = hasLeadingSlash ? "/" : "";
+        const pathValue = `${prefix}${parts.slice(0, index + 1).join("/")}`;
+        return {
+          label: part,
+          path: pathValue,
+          isLast: index === parts.length - 1,
+        };
+      });
 
       return (
         <div className="flex items-center gap-1 px-4 py-2 bg-white dark:bg-darkBgMid border-b border-gray-200 dark:border-darkBgHighlight text-sm">
-          {navigationStack.length > 0 && (
+          {(navigationStack.length > 0 || currentDirectory) && (
             <button
               onClick={(e) => handleNavigateBack(e)}
-              className="text-blue-500 hover:text-blue-700 dark:text-blueHighlight dark:hover:text-customWhite mr-1"
+              className="text-blue-500 hover:text-blue-700 dark:text-blueHighlight dark:hover:text-customWhite mr-2"
             >
               ← Back
             </button>
           )}
-          <span className="text-gray-500 dark:text-customGray">/</span>
-          {parts.map((part, index) => (
-            <React.Fragment key={index}>
-              <span
-                className={cn(
-                  "truncate max-w-[200px]",
-                  index === parts.length - 1
-                    ? "font-medium text-gray-900 dark:text-gray-100"
-                    : "text-gray-500 dark:text-gray-400"
-                )}
-              >
-                {part}
-              </span>
-              {index < parts.length - 1 && (
+
+          <button
+            onClick={() => handleBreadcrumbNavigate(selectedFile?.path || null)}
+            className="text-blue-500 hover:text-blue-700 dark:text-blueHighlight dark:hover:text-customWhite"
+          >
+            Root
+          </button>
+
+          {crumbEntries.length > 0 && (
+            <span className="text-gray-500 dark:text-customGray">/</span>
+          )}
+
+          {crumbEntries.map((entry) => (
+            <React.Fragment key={entry.path}>
+              {entry.isLast ? (
+                <span className="truncate max-w-[200px] font-medium text-gray-900 dark:text-gray-100">
+                  {entry.label}
+                </span>
+              ) : (
+                <button
+                  onClick={() => handleBreadcrumbNavigate(entry.path)}
+                  className="truncate max-w-[200px] text-blue-500 hover:text-blue-700 dark:text-blueHighlight dark:hover:text-customWhite"
+                >
+                  {entry.label}
+                </button>
+              )}
+              {!entry.isLast && (
                 <span className="text-gray-500 dark:text-gray-400">/</span>
               )}
             </React.Fragment>
@@ -751,6 +929,21 @@ export const PreviewArea: React.FC<PreviewAreaProps & {
       );
     };
 
+    const isIndexedRootMode =
+      selectedCollection === "indexed" && !currentDirectory && !isSearchMode;
+    const activeOnLoadMore = isIndexedRootMode
+      ? loadMoreIndexedFiles
+      : loadMoreDirectoryFiles;
+    const activeHasMoreFiles = isIndexedRootMode ? hasMoreFiles : hasMoreDirectoryFiles;
+    const activeIsLoadingMore = isIndexedRootMode
+      ? isLoadingMore
+      : isLoadingMoreDirectoryFiles;
+    const activeTotalCount = isIndexedRootMode
+      ? totalCount
+      : directoryTotalCount > 0
+        ? directoryTotalCount
+        : undefined;
+
     // **NEW: Clear error when starting new operations**
     useEffect(() => {
       if (isLoadingFiles || isSearching) {
@@ -765,7 +958,13 @@ export const PreviewArea: React.FC<PreviewAreaProps & {
           <div className="flex flex-wrap items-center gap-4 dark:bg-darkBg px-6 py-3">
             <div className="flex-1 min-w-0">
               <SearchBar
-                onSearch={handleSearch}
+                onSearch={(query, type) =>
+                  handleSearch(
+                    query,
+                    type,
+                    type === "text" ? { semanticFileTypeFilter } : undefined
+                  )
+                }
                 onFileUpload={handleFileUpload}
                 isSearchDisabled={isIndexingDisabled}
                 onReferenceImageChange={setReferenceImage}
@@ -773,7 +972,6 @@ export const PreviewArea: React.FC<PreviewAreaProps & {
                 referenceImage={referenceImage}
                 showReferenceImage={showReferenceImage}
                 onClearSearch={clearSearch}
-                onOpenBenchmark={handleOpenBenchmark}
               />
             </div>
             <PreviewActions
@@ -848,9 +1046,9 @@ export const PreviewArea: React.FC<PreviewAreaProps & {
               >
             <PreviewContainer
               key={`search-${searchQuery}-${viewMode}`}
-              files={searchMediaFiles}
+              files={displayedSearchMediaFiles}
               initialViewMode="grid"
-              onLoadMore={() => {}}
+              onLoadMore={loadMoreSearchFiles}
               isLoadingFiles={isSearching}
               onDirectorySelect={handleDirectorySelect}
               indexingPaths={indexingPaths}
@@ -866,7 +1064,7 @@ export const PreviewArea: React.FC<PreviewAreaProps & {
               onBulkIndex={onBulkIndex}
               currentDirectoryPath={getCurrentDirectoryPath()}
               isIndexingDisabled={isIndexingDisabled}
-              hasMoreFiles={false}
+              hasMoreFiles={hasMoreSearchFiles}
               isLoadingMore={false}
               isSearchMode={true}
               selectedCollection={selectedCollection}
@@ -895,9 +1093,9 @@ export const PreviewArea: React.FC<PreviewAreaProps & {
             {/* isSearchMode is set to true for all search results, so PreviewContainer will not group by folder or video */}
             <PreviewContainer
               key={`search-${searchQuery}-${viewMode}`}
-              files={searchMediaFiles}
+              files={displayedSearchMediaFiles}
               initialViewMode="grid"
-              onLoadMore={() => {}}
+              onLoadMore={loadMoreSearchFiles}
               isLoadingFiles={isSearching}
               onDirectorySelect={handleDirectorySelect}
               indexingPaths={indexingPaths}
@@ -913,7 +1111,7 @@ export const PreviewArea: React.FC<PreviewAreaProps & {
               onBulkIndex={onBulkIndex}
               currentDirectoryPath={getCurrentDirectoryPath()}
               isIndexingDisabled={isIndexingDisabled}
-              hasMoreFiles={false}
+              hasMoreFiles={hasMoreSearchFiles}
               isLoadingMore={false}
               isSearchMode={true}
               selectedCollection={selectedCollection}
@@ -940,9 +1138,7 @@ export const PreviewArea: React.FC<PreviewAreaProps & {
             key={`files-${currentDirectory || selectedFile?.path || "none"}-${viewMode}`}
             files={mediaFiles}
             initialViewMode={viewMode}
-            onLoadMore={
-              selectedCollection === "indexed" ? loadMoreIndexedFiles : () => {}
-            }
+            onLoadMore={activeOnLoadMore}
             isLoadingFiles={isLoadingFiles || isLoadingIndexedFiles}
             onDirectorySelect={handleDirectorySelect}
             indexingPaths={indexingPaths}
@@ -958,13 +1154,11 @@ export const PreviewArea: React.FC<PreviewAreaProps & {
             onBulkIndex={onBulkIndex}
             currentDirectoryPath={getCurrentDirectoryPath()}
             isIndexingDisabled={isIndexingDisabled}
-            hasMoreFiles={
-              selectedCollection === "indexed" ? hasMoreFiles : false
-            }
-            isLoadingMore={isLoadingMore}
+            hasMoreFiles={activeHasMoreFiles}
+            isLoadingMore={activeIsLoadingMore}
             isSearchMode={false}
             selectedCollection={selectedCollection}
-            totalCount={totalCount}
+            totalCount={activeTotalCount}
             viewMode={viewMode}
             setViewMode={setViewMode}
             fileTypeFilter={fileTypeFilter}

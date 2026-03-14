@@ -11,6 +11,7 @@ use crate::services::{
     model_service::ModelService,
     sqlite_service::SqliteVectorService,
     video_service::VideoService,
+    watched_folder_service::{run_watched_folder_monitor_loop, WatchedFolderService},
 };
 
 use crate::{
@@ -30,6 +31,7 @@ pub struct AppState {
     pub video_service: Arc<VideoService>,
     pub download_service: Arc<DownloadService>,
     pub drive_service: Arc<DriveService>,
+    pub watched_folder_service: Arc<WatchedFolderService>,
     pub video_generation_status: Arc<
         tokio::sync::Mutex<
             std::collections::HashMap<String, crate::commands::video::VideoGenerationStatus>,
@@ -76,6 +78,9 @@ impl StartupManager {
         let sqlite_service = self.initialize_sqlite_service()?;
         // Get the database service from the sqlite service for the drive service
         let drive_service = Arc::new(DriveService::new(sqlite_service.get_database_service()));
+        let watched_folder_service = Arc::new(WatchedFolderService::new(
+            sqlite_service.get_database_service(),
+        ));
         let embedding_service = Arc::new(EmbeddingService::new(
             model_service.clone(),
             sqlite_service.clone(),
@@ -95,6 +100,7 @@ impl StartupManager {
             video_service,
             download_service,
             drive_service,
+            watched_folder_service,
             video_generation_status: Arc::new(tokio::sync::Mutex::new(
                 std::collections::HashMap::new(),
             )),
@@ -124,6 +130,9 @@ impl StartupManager {
         let sqlite_service = self.initialize_sqlite_service_for_testing()?;
         // Get the database service from the sqlite service for the drive service
         let drive_service = Arc::new(DriveService::new(sqlite_service.get_database_service()));
+        let watched_folder_service = Arc::new(WatchedFolderService::new(
+            sqlite_service.get_database_service(),
+        ));
         let embedding_service = Arc::new(EmbeddingService::new(
             model_service.clone(),
             sqlite_service.clone(),
@@ -143,6 +152,7 @@ impl StartupManager {
             video_service,
             download_service,
             drive_service,
+            watched_folder_service,
             video_generation_status: Arc::new(tokio::sync::Mutex::new(
                 std::collections::HashMap::new(),
             )),
@@ -171,6 +181,9 @@ impl StartupManager {
 
         // Setup drive monitoring
         self.setup_drive_monitoring(app, &app_state.drive_service)?;
+
+        // Setup watched folder background monitoring
+        self.setup_watched_folder_monitoring(app, app_state)?;
 
         // Setup security and development tools
         self.setup_security_and_devtools(app)?;
@@ -571,6 +584,22 @@ impl StartupManager {
         Ok(())
     }
 
+    /// Setup watched folder monitoring for automatic incremental indexing.
+    fn setup_watched_folder_monitoring(&self, app: &App, app_state: &AppState) -> Result<(), String> {
+        app_log_info!("🚀 STARTUP: Setting up watched folder monitoring");
+        let watched_folder_service = app_state.watched_folder_service.clone();
+        let sqlite_service = app_state.sqlite_service.clone();
+        let app_handle = app.handle().clone();
+
+        tokio::spawn(async move {
+            run_watched_folder_monitor_loop(watched_folder_service, sqlite_service, app_handle)
+                .await;
+        });
+
+        app_log_info!("✅ STARTUP: Watched folder monitoring started");
+        Ok(())
+    }
+
     /// Setup security and development tools
     fn setup_security_and_devtools(&self, _app: &App) -> Result<(), String> {
         // Security: Disable devtools in production builds
@@ -633,6 +662,7 @@ impl Clone for AppState {
             video_service: self.video_service.clone(),
             download_service: self.download_service.clone(),
             drive_service: self.drive_service.clone(),
+            watched_folder_service: self.watched_folder_service.clone(),
             video_generation_status: self.video_generation_status.clone(),
         }
     }

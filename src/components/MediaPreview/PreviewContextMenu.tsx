@@ -14,12 +14,14 @@ import {
   ExternalLink,
   Info,
   BookOpen,
-  Video
+  Video,
+  FolderSearch,
+  Trash2,
 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { normalizeFilePath } from '../../lib/utils';
 import { toast } from 'sonner';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 // Helper function to check if a file can be transcribed (audio or video)
 const isTranscribableFile = (fileName: string): boolean => {
@@ -39,6 +41,16 @@ interface PreviewContextMenuProps {
   isFromSearch?: boolean; // New prop to indicate if this is from search results
 }
 
+interface WatchedFolder {
+  id: string;
+  path: string;
+  enabled: boolean;
+}
+
+const normalizeWatchedPath = (path: string): string => {
+  return path.replace(/\/+$/, "").toLowerCase();
+};
+
 export function PreviewContextMenu({
   file,
   children,
@@ -50,8 +62,40 @@ export function PreviewContextMenu({
   isFromSearch = false,
 }: PreviewContextMenuProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [isVideoInStudio, setIsVideoInStudio] = useState(false);
   const [isCheckingStudio, setIsCheckingStudio] = useState(false);
+  const [watchedFolder, setWatchedFolder] = useState<WatchedFolder | null>(null);
+  const [isWatchStateLoading, setIsWatchStateLoading] = useState(false);
+
+  const toFilesystemPath = (input: string): string => {
+    let normalized = input;
+
+    if (normalized.startsWith("asset://localhost")) {
+      normalized = normalized.slice("asset://localhost".length);
+    } else if (normalized.startsWith("asset://")) {
+      normalized = normalized.slice("asset://".length);
+    } else if (normalized.startsWith("file://")) {
+      normalized = normalized.slice("file://".length);
+    }
+
+    if (normalized.startsWith("//")) {
+      normalized = normalized.replace(/^\/+/, "/");
+    }
+
+    try {
+      normalized = decodeURIComponent(normalized);
+    } catch {
+      // Keep raw path when decode fails.
+    }
+
+    const isWindowsPath = /^[a-zA-Z]:[\\/]/.test(normalized);
+    if (!isWindowsPath && normalized && !normalized.startsWith("/")) {
+      normalized = `/${normalized}`;
+    }
+
+    return normalized;
+  };
 
   const isIndexing = indexingPaths?.has(file.path);
   const isTranscribing = transcribingPaths?.has(normalizeFilePath(file.path));
@@ -75,6 +119,32 @@ export function PreviewContextMenu({
     };
 
     checkVideoInStudio();
+  }, [file.path, file.type]);
+
+  useEffect(() => {
+    const loadWatchState = async () => {
+      if (file.type !== 'directory') {
+        setWatchedFolder(null);
+        return;
+      }
+
+      setIsWatchStateLoading(true);
+      try {
+        const targetPath = normalizeFilePath(file.path);
+        const folders = await invoke<WatchedFolder[]>('list_watched_folders');
+        const normalizedTargetPath = normalizeWatchedPath(targetPath);
+        const match =
+          folders.find((folder) => normalizeWatchedPath(folder.path) === normalizedTargetPath) ||
+          null;
+        setWatchedFolder(match);
+      } catch {
+        setWatchedFolder(null);
+      } finally {
+        setIsWatchStateLoading(false);
+      }
+    };
+
+    loadWatchState();
   }, [file.path, file.type]);
 
   const handleCopyPath = async () => {
@@ -118,9 +188,82 @@ export function PreviewContextMenu({
   };
 
   const handleSendToStudio = async () => {
-    const cleanPath = normalizeFilePath(file.path);
-    navigate(`/studio/edit?path=${cleanPath}`);
+    const cleanPath = toFilesystemPath(file.path);
+    const params = new URLSearchParams();
+    params.set("path", cleanPath);
+
+    const currentRoute = `${location.pathname}${location.search}`;
+    let parentPathFromMetadata: string | null = null;
+    if (file.metadata.parentPath) {
+      try {
+        parentPathFromMetadata = normalizeFilePath(file.metadata.parentPath);
+      } catch {
+        parentPathFromMetadata = file.metadata.parentPath;
+      }
+    }
+    const lastSlash = cleanPath.lastIndexOf("/");
+    const parentPathFromFile = lastSlash > 0 ? cleanPath.slice(0, lastSlash) : null;
+    const parentPath = parentPathFromMetadata || parentPathFromFile;
+
+    if ((location.pathname === "/fs" || location.pathname.startsWith("/drive/")) && parentPath) {
+      params.set("returnTo", `${location.pathname}?path=${encodeURIComponent(parentPath)}`);
+    } else {
+      params.set("returnTo", currentRoute);
+    }
+
+    navigate(`/studio/edit?${params.toString()}`);
   };
+
+  const handleWatchFolder = async () => {
+    try {
+      const targetPath = normalizeFilePath(file.path);
+      const folder = await invoke<WatchedFolder>('add_watched_folder', {
+        path: targetPath,
+        recursive: true,
+        autoTranscribeVideos: true,
+      });
+      setWatchedFolder(folder);
+      toast.success('Folder is now watched');
+    } catch (error) {
+      toast.error(`Failed to watch folder: ${error}`);
+    }
+  };
+
+  const handleSetWatchEnabled = async (enabled: boolean) => {
+    if (!watchedFolder) return;
+    try {
+      await invoke('set_watched_folder_enabled', {
+        folderId: watchedFolder.id,
+        enabled,
+      });
+      setWatchedFolder((prev) => (prev ? { ...prev, enabled } : prev));
+      toast.success(enabled ? 'Watching resumed' : 'Watching paused');
+    } catch (error) {
+      toast.error(`Failed to update watch state: ${error}`);
+    }
+  };
+
+  const handleScanWatchedFolder = async () => {
+    if (!watchedFolder) return;
+    try {
+      await invoke('trigger_watched_folder_backfill', { folderId: watchedFolder.id });
+      toast.success('Watched folder scan started');
+    } catch (error) {
+      toast.error(`Failed to scan watched folder: ${error}`);
+    }
+  };
+
+  const handleStopWatchingFolder = async () => {
+    if (!watchedFolder) return;
+    try {
+      await invoke('remove_watched_folder', { folderId: watchedFolder.id });
+      setWatchedFolder(null);
+      toast.success('Stopped watching folder');
+    } catch (error) {
+      toast.error(`Failed to stop watching folder: ${error}`);
+    }
+  };
+
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
@@ -164,6 +307,35 @@ export function PreviewContextMenu({
           <FolderOpen className="h-4 w-4 mr-2" />
           {navigator.platform.includes('Mac') ? 'Reveal in Finder' : 'Show in Explorer'}
         </ContextMenuItem>
+
+        {file.type === 'directory' && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem
+              onClick={handleWatchFolder}
+              disabled={isWatchStateLoading || !!watchedFolder}
+            >
+              <FolderSearch className="h-4 w-4 mr-2" />
+              Watch Folder
+            </ContextMenuItem>
+            {watchedFolder && (
+              <>
+                <ContextMenuItem onClick={() => handleSetWatchEnabled(!watchedFolder.enabled)}>
+                  <FolderSearch className="h-4 w-4 mr-2" />
+                  {watchedFolder.enabled ? 'Pause Watching' : 'Resume Watching'}
+                </ContextMenuItem>
+                <ContextMenuItem onClick={handleScanWatchedFolder}>
+                  <FolderSearch className="h-4 w-4 mr-2" />
+                  Scan Watched Folder Now
+                </ContextMenuItem>
+                <ContextMenuItem onClick={handleStopWatchingFolder}>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Stop Watching Folder
+                </ContextMenuItem>
+              </>
+            )}
+          </>
+        )}
 
         {/* Indexing and Transcription Actions - Only show if not already indexed */}
         {!isAlreadyIndexed && !isIndexing && file.type !== 'directory' && (

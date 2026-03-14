@@ -82,6 +82,36 @@ export function ListView({
     }
   };
 
+  const getMatchLabel = (file: MediaFile): string | null => {
+    if (file.metadata.sourceType === 'transcript_chunk') {
+      return file.metadata.timestampFormatted
+        ? `Transcript @ ${file.metadata.timestampFormatted}`
+        : 'Transcript match';
+    }
+
+    if (file.metadata.isVideoFrame) {
+      return file.metadata.timestampFormatted
+        ? `Frame @ ${file.metadata.timestampFormatted}`
+        : 'Frame match';
+    }
+
+    if (
+      file.metadata.sourceType === 'text_chunk' ||
+      file.metadata.sourceType === 'text_document'
+    ) {
+      return 'Text match';
+    }
+
+    return null;
+  };
+
+  const getSnippetPreview = (file: MediaFile): string | null => {
+    const snippet = file.metadata.snippet;
+    if (!snippet) return null;
+    const normalized = snippet.replace(/\s+/g, ' ').trim();
+    return normalized.length > 220 ? `${normalized.slice(0, 220)}...` : normalized;
+  };
+
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -163,7 +193,19 @@ export function ListView({
                 <td className="px-4 py-3 border-b dark:border-darkBgHighlight">
                   <div className="flex items-center gap-2">
                     {getFileIcon(file.type, file)}
-                    <span className="truncate">{file.name}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate">{file.name}</div>
+                      {getMatchLabel(file) && (
+                        <div className="text-xs text-blue-600 dark:text-blue-300 truncate">
+                          {getMatchLabel(file)}
+                        </div>
+                      )}
+                      {getSnippetPreview(file) && (
+                        <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                          {getSnippetPreview(file)}
+                        </div>
+                      )}
+                    </div>
                     {indexingPaths?.has(file.path) && (
                       <span className="text-xs text-blue-500">Indexing...</span>
                     )}
@@ -178,6 +220,25 @@ export function ListView({
         </tbody>
       </table>
 
+      {hasMoreFiles && onLoadMore && (
+        <div className="flex justify-center py-4">
+          <button
+            type="button"
+            onClick={onLoadMore}
+            disabled={isLoadingMore}
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 dark:border-darkBgHighlight px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-darkBgHighlight disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {isLoadingMore ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading...
+              </>
+            ) : (
+              "Load More"
+            )}
+          </button>
+        </div>
+      )}
 
 
       {/* End of results indicator */}

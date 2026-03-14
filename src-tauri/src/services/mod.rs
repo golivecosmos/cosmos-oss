@@ -19,6 +19,7 @@ pub mod startup;
 pub mod transcription_service;
 pub mod vector_service;
 pub mod video_service;
+pub mod watched_folder_service;
 
 #[cfg(test)]
 mod tests;

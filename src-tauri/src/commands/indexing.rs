@@ -1354,6 +1354,29 @@ pub async fn persistent_queue_worker(
                             emit_event_with_retry(&app_handle, "job_completed", &job_data).await;
                         }
                     }
+
+                    // Always enqueue transcript processing for newly indexed videos.
+                    match sqlite_service.create_job("transcription", file_path, Some(1)) {
+                        Ok(transcription_job_id) => {
+                            app_log_info!(
+                                "🎤 WORKER {}: Enqueued transcription job {} for video {}",
+                                worker_id,
+                                transcription_job_id,
+                                file_name
+                            );
+                            if let Ok(job_data) = sqlite_service.get_job_by_id(&transcription_job_id) {
+                                emit_event_with_retry(&app_handle, "job_created", &job_data).await;
+                            }
+                        }
+                        Err(e) => {
+                            app_log_warn!(
+                                "⚠️ WORKER {}: Failed to enqueue transcription job for {}: {}",
+                                worker_id,
+                                file_name,
+                                e
+                            );
+                        }
+                    }
                 }
                 Err(e) => {
                     consecutive_errors += 1;
@@ -1590,13 +1613,63 @@ pub async fn persistent_queue_worker(
                         transcription_result.language
                     );
 
-                    // Store transcription result (for now just log, later we'll integrate with database)
-                    app_log_debug!("📝 TRANSCRIPTION: {}", transcription_result.text);
+                    // Persist full transcription document.
+                    if let Err(store_err) =
+                        sqlite_service.store_transcription(&transcription_result, file_path)
+                    {
+                        app_log_error!(
+                            "❌ WORKER {}: Failed to store transcription for {}: {}",
+                            worker_id,
+                            file_name,
+                            store_err
+                        );
+                        let error_message =
+                            format!("Failed to store transcription in database: {}", store_err);
+                        let _ = sqlite_service.update_job_progress(
+                            job_id,
+                            "failed",
+                            Some(&error_message),
+                            Some(0),
+                            Some(&vec![error_message.clone()]),
+                            None,
+                        );
+                        if let Ok(job_data) = sqlite_service.get_job_by_id(job_id) {
+                            emit_event_with_retry(&app_handle, "job_updated", &job_data).await;
+                        }
+                        continue;
+                    }
+
+                    // Index transcript chunks so semantic search can return timestamp-aware hits.
+                    if let Err(embed_err) = embedding_service
+                        .index_transcript_for_media(file_path, &transcription_result)
+                        .await
+                    {
+                        app_log_error!(
+                            "❌ WORKER {}: Failed to embed transcript for {}: {}",
+                            worker_id,
+                            file_name,
+                            embed_err
+                        );
+                        let error_message =
+                            format!("Failed to embed transcript for semantic search: {}", embed_err);
+                        let _ = sqlite_service.update_job_progress(
+                            job_id,
+                            "failed",
+                            Some(&error_message),
+                            Some(0),
+                            Some(&vec![error_message.clone()]),
+                            None,
+                        );
+                        if let Ok(job_data) = sqlite_service.get_job_by_id(job_id) {
+                            emit_event_with_retry(&app_handle, "job_updated", &job_data).await;
+                        }
+                        continue;
+                    }
 
                     if let Err(e) = sqlite_service.update_job_progress(
                         job_id,
                         "completed",
-                        Some("Transcription completed"),
+                        Some("Transcription + transcript embeddings completed"),
                         Some(1),
                         None,
                         None,

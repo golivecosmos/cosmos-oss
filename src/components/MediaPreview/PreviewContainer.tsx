@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ViewMode, MediaFile } from './types';
 import { Button } from '../ui/button';
 import { List, LayoutGrid, FolderSearch } from 'lucide-react';
@@ -91,6 +91,8 @@ export function PreviewActions({
           <SelectItem value="all">All Files</SelectItem>
           <SelectItem value="image">Images</SelectItem>
           <SelectItem value="video">Videos</SelectItem>
+          <SelectItem value="audio">Audio</SelectItem>
+          <SelectItem value="document">Documents</SelectItem>
         </SelectContent>
       </Select>
       {currentDirectoryPath && onBulkIndex && (
@@ -131,12 +133,68 @@ export function PreviewContainer({
   fileTypeFilter,
 }: PreviewContainerProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const safeNormalizePath = (path?: string | null): string | null => {
+    if (!path) return null;
+    let stripped = path;
+
+    if (stripped.startsWith("asset://localhost")) {
+      stripped = stripped.slice("asset://localhost".length);
+    } else if (stripped.startsWith("asset://")) {
+      stripped = stripped.slice("asset://".length);
+    } else if (stripped.startsWith("file://")) {
+      stripped = stripped.slice("file://".length);
+    }
+
+    if (stripped.startsWith("//")) {
+      stripped = stripped.replace(/^\/+/, "/");
+    }
+
+    try {
+      stripped = decodeURIComponent(stripped);
+    } catch {
+      // Use raw path when URL decoding fails.
+    }
+
+    const isWindowsPath = /^[a-zA-Z]:[\\/]/.test(stripped);
+    if (!isWindowsPath && stripped && !stripped.startsWith("/")) {
+      stripped = `/${stripped}`;
+    }
+
+    return stripped;
+  };
+
+  const getParentDirectory = (path?: string | null): string | null => {
+    const normalized = safeNormalizePath(path);
+    if (!normalized) return null;
+    const lastSlash = normalized.lastIndexOf("/");
+    if (lastSlash <= 0) return null;
+    return normalized.slice(0, lastSlash);
+  };
+
+  const buildReturnTo = (file: MediaFile): string => {
+    const routePath = location.pathname;
+    const fallback = `${location.pathname}${location.search}`;
+    const parentPath =
+      safeNormalizePath(currentDirectoryPath) ||
+      safeNormalizePath(file.metadata.parentPath) ||
+      getParentDirectory(file.path);
+
+    if ((routePath === "/fs" || routePath.startsWith("/drive/")) && parentPath) {
+      return `${routePath}?path=${encodeURIComponent(parentPath)}`;
+    }
+
+    return fallback;
+  };
 
   const filteredFiles = files.filter(file => {
     if (fileTypeFilter === 'all') return true;
     if (fileTypeFilter === 'image') return file.type === 'image' && !file.metadata.isVideoFrame;
     if (fileTypeFilter === 'video') return file.type === 'video' || file.metadata.isVideoFrame;
+    if (fileTypeFilter === 'audio') return file.type === 'audio';
+    if (fileTypeFilter === 'document') return file.type === 'document';
     return true;
   });
 
@@ -145,10 +203,15 @@ export function PreviewContainer({
       onDirectorySelect(file);
     } else {
       const timestamp = file.metadata?.timestamp;
-      const url = timestamp
-        ? `/studio/edit?path=${file.path}&timestamp=${timestamp}`
-        : `/studio/edit?path=${file.path}`;
-      navigate(url);
+      const hasTimestamp = typeof timestamp === 'number' && !Number.isNaN(timestamp);
+      const targetPath = safeNormalizePath(file.path) || file.path;
+      const params = new URLSearchParams();
+      params.set("path", targetPath);
+      params.set("returnTo", buildReturnTo(file));
+      if (hasTimestamp) {
+        params.set("timestamp", `${timestamp}`);
+      }
+      navigate(`/studio/edit?${params.toString()}`);
     }
   };
 

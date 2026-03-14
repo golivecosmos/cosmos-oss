@@ -19,7 +19,12 @@ import {
   Check,
   MapPin,
   Calendar,
-  Save
+  Save,
+  Eye,
+  EyeOff,
+  FolderPlus,
+  Play,
+  Pause,
 } from 'lucide-react'
 import { Button } from "./ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs"
@@ -27,6 +32,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/
 import { Badge } from "./ui/badge"
 import { Progress } from "./ui/progress"
 import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import { UpdateChecker } from './UpdateNotification'
 import { useAppVersion } from '../hooks/useAppVersion'
 import { homeDir } from '@tauri-apps/api/path'
@@ -82,6 +88,19 @@ interface DriveInfo {
   status: 'connected' | 'disconnected' | 'indexing' | 'error';
   indexed_files_count: number;
   is_removable: boolean;
+}
+
+interface WatchedFolder {
+  id: string;
+  path: string;
+  recursive: boolean;
+  enabled: boolean;
+  auto_transcribe_videos: boolean;
+  status: string;
+  last_scan_at?: string | null;
+  last_event_at?: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 interface DriveItemEditableProps {
@@ -352,10 +371,13 @@ export function Settings({ isOpen, onClose, onRestartTour, modelDownloadState, o
 
   const [activeTab, setActiveTab] = useState('index')
   const [indexStats, setIndexStats] = useState<IndexStats | null>(null)
+  const [watchedFolders, setWatchedFolders] = useState<WatchedFolder[]>([])
 
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [isSettingIndexDir, setIsSettingIndexDir] = useState(false)
+  const [isWatchedFoldersLoading, setIsWatchedFoldersLoading] = useState(false)
+  const [isAddingWatchedFolder, setIsAddingWatchedFolder] = useState(false)
   const { version } = useAppVersion()
   const { drives, isDrivesLoading, updateDrive, deleteDrive, setShowBugReport } = useAppLayout()
 
@@ -377,6 +399,34 @@ export function Settings({ isOpen, onClose, onRestartTour, modelDownloadState, o
     }
   }, [isOpen])
 
+  useEffect(() => {
+    if (!isOpen) return;
+
+    let unlistenUpdated: (() => void) | null = null;
+    let unlistenProgress: (() => void) | null = null;
+    let unlistenActivity: (() => void) | null = null;
+
+    const setup = async () => {
+      unlistenUpdated = await listen('watched_folder_updated', () => {
+        loadWatchedFolders();
+      });
+      unlistenProgress = await listen('watched_folder_scan_progress', () => {
+        loadWatchedFolders();
+      });
+      unlistenActivity = await listen('watched_folder_activity', () => {
+        loadWatchedFolders();
+      });
+    };
+
+    setup();
+
+    return () => {
+      if (unlistenUpdated) unlistenUpdated();
+      if (unlistenProgress) unlistenProgress();
+      if (unlistenActivity) unlistenActivity();
+    };
+  }, [isOpen]);
+
   const toggleDisplayMode = (displayMode: string) => {
     const currMode = localStorage.getItem('theme')
     if (displayMode === "dark" && currMode !== 'dark') {
@@ -396,10 +446,26 @@ export function Settings({ isOpen, onClose, onRestartTour, modelDownloadState, o
 
       // Load system status
       await loadSystemStatus()
+
+      // Load watched folders
+      await loadWatchedFolders()
     } catch (error) {
       console.error('Failed to load settings data:', error)
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const loadWatchedFolders = async () => {
+    setIsWatchedFoldersLoading(true)
+    try {
+      const folders = await invoke<WatchedFolder[]>('list_watched_folders')
+      setWatchedFolders(folders)
+    } catch (error) {
+      console.error('Failed to load watched folders:', error)
+      setWatchedFolders([])
+    } finally {
+      setIsWatchedFoldersLoading(false)
     }
   }
 
@@ -502,6 +568,97 @@ export function Settings({ isOpen, onClose, onRestartTour, modelDownloadState, o
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString() + ' ' + new Date(dateString).toLocaleTimeString()
+  }
+
+  const formatMaybeDate = (dateString?: string | null) => {
+    if (!dateString) return 'Never';
+    const date = new Date(dateString);
+    if (Number.isNaN(date.getTime())) return 'Never';
+    return date.toLocaleString();
+  }
+
+  const getWatchedStatusBadgeClass = (folder: WatchedFolder) => {
+    if (folder.status === 'scanning') {
+      return 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700';
+    }
+    if (!folder.enabled || folder.status === 'paused') {
+      return 'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600';
+    }
+    return 'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-700';
+  }
+
+  const getWatchedStatusLabel = (folder: WatchedFolder) => {
+    if (folder.status === 'scanning') return 'Scanning';
+    if (!folder.enabled || folder.status === 'paused') return 'Paused';
+    return 'Watching';
+  }
+
+  const handleAddWatchedFolder = async () => {
+    if (isAddingWatchedFolder) return;
+    setIsAddingWatchedFolder(true);
+    try {
+      const chosen = await open({
+        directory: true,
+        multiple: false,
+        title: 'Choose folder to watch',
+        defaultPath: homeDirectory
+      });
+
+      if (!chosen || typeof chosen !== 'string') {
+        return;
+      }
+
+      await invoke('add_watched_folder', {
+        path: chosen,
+        recursive: true,
+        autoTranscribeVideos: true,
+      });
+      toast.success('Watched folder added');
+      await loadWatchedFolders();
+    } catch (error) {
+      console.error('Failed to add watched folder:', error);
+      toast.error('Failed to add watched folder');
+    } finally {
+      setIsAddingWatchedFolder(false);
+    }
+  }
+
+  const handleToggleWatchedFolder = async (folder: WatchedFolder) => {
+    try {
+      await invoke('set_watched_folder_enabled', {
+        folderId: folder.id,
+        enabled: !folder.enabled,
+      });
+      toast.success(folder.enabled ? 'Watching paused' : 'Watching resumed');
+      await loadWatchedFolders();
+    } catch (error) {
+      console.error('Failed to update watched folder status:', error);
+      toast.error('Failed to update watched folder');
+    }
+  }
+
+  const handleScanWatchedFolderNow = async (folder: WatchedFolder) => {
+    try {
+      await invoke('trigger_watched_folder_backfill', {
+        folderId: folder.id,
+      });
+      toast.success('Watched folder scan started');
+      await loadWatchedFolders();
+    } catch (error) {
+      console.error('Failed to trigger watched folder scan:', error);
+      toast.error('Failed to start watched folder scan');
+    }
+  }
+
+  const handleRemoveWatchedFolder = async (folder: WatchedFolder) => {
+    try {
+      await invoke('remove_watched_folder', { folderId: folder.id });
+      toast.success('Removed watched folder');
+      await loadWatchedFolders();
+    } catch (error) {
+      console.error('Failed to remove watched folder:', error);
+      toast.error('Failed to remove watched folder');
+    }
   }
 
   const handleClearIndex = async () => {
@@ -656,6 +813,10 @@ export function Settings({ isOpen, onClose, onRestartTour, modelDownloadState, o
                 <TabsTrigger value="drives" className="flex items-center">
                   <HardDrive className="w-4 h-4 mr-2" />
                   Drives
+                </TabsTrigger>
+                <TabsTrigger value="watched" className="flex items-center">
+                  <Eye className="w-4 h-4 mr-2" />
+                  Watched Folders
                 </TabsTrigger>
                 <TabsTrigger value="models" className="flex items-center">
                   <Brain className="w-4 h-4 mr-2" />
@@ -857,6 +1018,112 @@ export function Settings({ isOpen, onClose, onRestartTour, modelDownloadState, o
                     </CardContent>
                   </Card>
                 </div>
+              </TabsContent>
+
+              {/* Watched Folders Tab */}
+              <TabsContent value="watched" className="space-y-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center justify-between">
+                      <span className="flex items-center gap-2">
+                        <Eye className="w-5 h-5" />
+                        Watched Folders
+                      </span>
+                      <Button
+                        size="sm"
+                        onClick={handleAddWatchedFolder}
+                        disabled={isAddingWatchedFolder}
+                      >
+                        {isAddingWatchedFolder ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <FolderPlus className="w-4 h-4 mr-2" />
+                        )}
+                        Add Folder
+                      </Button>
+                    </CardTitle>
+                    <CardDescription>
+                      Watched folders are scanned continuously and new or changed files are queued for indexing automatically.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {isWatchedFoldersLoading ? (
+                      <div className="flex items-center justify-center py-8 text-gray-600 dark:text-gray-400">
+                        <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                        <span>Loading watched folders...</span>
+                      </div>
+                    ) : watchedFolders.length === 0 ? (
+                      <div className="text-center py-8 text-gray-600 dark:text-gray-400">
+                        <EyeOff className="w-10 h-10 mx-auto mb-2 text-gray-400 dark:text-gray-500" />
+                        <p className="text-gray-900 dark:text-gray-100">No watched folders configured</p>
+                        <p className="text-sm mt-1">Add a folder to automatically pick up new assets.</p>
+                      </div>
+                    ) : (
+                      watchedFolders.map((folder) => (
+                        <div
+                          key={folder.id}
+                          className="border rounded-lg p-4 space-y-3 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="font-medium text-sm text-gray-900 dark:text-gray-100 truncate">
+                                {folder.path}
+                              </div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                {folder.recursive ? 'Recursive' : 'Top-level only'} • Auto-transcribe videos: {folder.auto_transcribe_videos ? 'On' : 'Off'}
+                              </div>
+                            </div>
+                            <span
+                              className={cn(
+                                'px-2 py-1 text-xs rounded-full border whitespace-nowrap',
+                                getWatchedStatusBadgeClass(folder)
+                              )}
+                            >
+                              {getWatchedStatusLabel(folder)}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-gray-600 dark:text-gray-400">
+                            <div>Last scan: {formatMaybeDate(folder.last_scan_at)}</div>
+                            <div>Last event: {formatMaybeDate(folder.last_event_at)}</div>
+                          </div>
+
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleToggleWatchedFolder(folder)}
+                            >
+                              {folder.enabled ? (
+                                <Pause className="w-3 h-3 mr-1" />
+                              ) : (
+                                <Play className="w-3 h-3 mr-1" />
+                              )}
+                              {folder.enabled ? 'Pause' : 'Resume'}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleScanWatchedFolderNow(folder)}
+                            >
+                              <RefreshCw className="w-3 h-3 mr-1" />
+                              Scan Now
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-red-600 border-red-200 hover:bg-red-50 dark:text-red-400 dark:border-red-700 dark:hover:bg-red-900/20"
+                              onClick={() => handleRemoveWatchedFolder(folder)}
+                            >
+                              <Trash2 className="w-3 h-3 mr-1" />
+                              Remove
+                            </Button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </CardContent>
+                </Card>
               </TabsContent>
 
               {/* AI Models Tab */}

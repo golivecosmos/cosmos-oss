@@ -4,6 +4,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { SearchCache } from "../utils/searchCache";
 
 export type SearchType = "text" | "visual" | "tag" | "recent";
+export type SemanticFileTypeFilter = "all" | "image" | "video" | "audio" | "document";
+
+export interface SearchOptions {
+  semanticFileTypeFilter?: SemanticFileTypeFilter;
+}
 
 export interface SearchState {
   query: string;
@@ -15,7 +20,7 @@ export interface SearchState {
 
 export interface UseSearchReturn {
   searchState: SearchState;
-  handleSearch: (query: string, type: SearchType) => Promise<void>;
+  handleSearch: (query: string, type: SearchType, options?: SearchOptions) => Promise<void>;
   clearSearch: () => void;
   refreshCurrentSearch: () => Promise<void>;
   clearCache: () => void;
@@ -35,7 +40,8 @@ export const useSearch = (): UseSearchReturn => {
 
   const handleSearch = useCallback(async (
     query: string,
-    type: SearchType
+    type: SearchType,
+    options: SearchOptions = {}
   ): Promise<void> => {
     try {
       // Handle empty query (clear search)
@@ -59,7 +65,8 @@ export const useSearch = (): UseSearchReturn => {
         isSearching: true
       }));
 
-      const cacheKey = `${type}:${query}`;
+      const semanticFilter = options.semanticFileTypeFilter || "all";
+      const cacheKey = `${type}:${query}:${semanticFilter}`;
       // Check cache first for non-visual searches
       if (type !== "visual") {
         const cachedResults = cacheRef.current.get(cacheKey);
@@ -87,7 +94,10 @@ export const useSearch = (): UseSearchReturn => {
       switch (type) {
         case "text":
           console.time("🔍 Semantic search");
-          searchResults = await invoke<any[]>("search_semantic", { query });
+          searchResults = await invoke<any[]>("search_semantic", {
+            query,
+            fileTypeFilter: semanticFilter === "all" ? null : semanticFilter,
+          });
           console.timeEnd("🔍 Semantic search");
 
           if (Array.isArray(searchResults)) {

@@ -4,7 +4,7 @@ import { cn } from "../../lib/utils";
 import {
   ChevronLeft,
   ChevronRight,
-  Sparkles,
+  Brain,
   House,
   HardDrive,
   Loader2,
@@ -266,7 +266,7 @@ export function Sidebar({
               );
             }}>
             <NavButton.Trigger data-tour="ai-library-button">
-              <NavButton.Icon className="bg-yellow-600/20 rounded-full h-fit w-fit p-2" icon={<Sparkles className="text-yellow-500 font-bold w-5 h-5" />} />
+              <NavButton.Icon className="bg-yellow-600/20 rounded-full h-fit w-fit p-2" icon={<Brain className="text-yellow-500 font-bold w-5 h-5" />} />
               <NavButton.Label label="AI Library" description={`${indexedCount.toLocaleString()} ${indexedCount === 1 ? 'item' : 'items'}`} />
             </NavButton.Trigger>
           </NavButton>

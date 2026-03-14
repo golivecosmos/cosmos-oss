@@ -1,11 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
-import { Search, Image, Clock, X, Bug, RefreshCw, Settings, ChevronDown, Target } from 'lucide-react'
+import { Search, Image, Clock, X, RefreshCw, ChevronDown } from 'lucide-react'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
-import { invoke } from '@tauri-apps/api/core'
-import { debug } from '../utils/debug'
-import { ReferenceImagePanel } from './ReferenceImagePanel'
 
 // Add interface for reference image data
 export interface ReferenceImageData {
@@ -27,7 +24,6 @@ interface SearchBarProps {
   referenceImage?: ReferenceImageData | null;
   showReferenceImage?: boolean;
   results_count?: number;
-  onOpenBenchmark?: () => void;
   onClearSearch?: () => void;
 }
 
@@ -84,11 +80,9 @@ export const SearchBar: React.FC<SearchBarProps> = ({
   const [searchQuery, setSearchQuery] = useState('')
   const [isSearching, setIsSearching] = useState(false)
   const [showRecentDropdown, setShowRecentDropdown] = useState(false)
-  const [showDebugMenu, setShowDebugMenu] = useState(false)
   const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const recentDropdownRef = useRef<HTMLDivElement>(null)
-  const debugMenuRef = useRef<HTMLDivElement>(null)
   
   // Load recent searches on mount
   useEffect(() => {
@@ -287,51 +281,6 @@ export const SearchBar: React.FC<SearchBarProps> = ({
     return `${days}d ago`
   }
 
-  const checkSearchStatus = async () => {
-    try {
-      debug.log('🔍 Checking search status...')
-      const status = await invoke('check_search_status')
-      debug.log('📊 Search Status:', status)
-      alert(`Search Status:\n${JSON.stringify(status, null, 2)}`)
-    } catch (error) {
-      debug.error('❌ Failed to check search status:', error)
-      alert(`Failed to check search status: ${error}`)
-    }
-  }
-
-  const recreateSqliteVirtualTable = async () => {
-    try {
-      const result = await invoke('recreate_sqlite_virtual_table');
-      console.log('🔧 Virtual table result:', result);
-      alert('Virtual table recreated successfully');
-    } catch (error) {
-      console.error('Failed to recreate virtual table:', error);
-      alert(`Failed to recreate virtual table: ${error}`);
-    }
-  };
-
-  const debugModelStatus = async () => {
-    try {
-      const status = await invoke('debug_model_status')
-      console.log('🤖 Model Status:', status)
-      alert('Model status logged to console - check developer tools')
-    } catch (error) {
-      console.error('Failed to debug model status:', error)
-      alert(`Failed to debug model status: ${error}`)
-    }
-  }
-
-  const reloadModels = async () => {
-    try {
-      const result = await invoke('reload_models')
-      console.log('🔄 Reload result:', result)
-      alert('Models reloaded successfully')
-    } catch (error) {
-      console.error('Failed to reload models:', error)
-      alert(`Failed to reload models: ${error}`)
-    }
-  }
-
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     console.log('Tour: File input change event triggered');
     const file = e.target.files?.[0]
@@ -345,18 +294,6 @@ export const SearchBar: React.FC<SearchBarProps> = ({
     // Clear the file input
     e.target.value = '';
   };
-
-  // Add click outside handler for debug menu
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (debugMenuRef.current && !debugMenuRef.current.contains(event.target as Node)) {
-        setShowDebugMenu(false);
-      }
-    };
-    
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   return (
     <>
@@ -512,64 +449,6 @@ export const SearchBar: React.FC<SearchBarProps> = ({
             </Tooltip>
           </div>
 
-          {/* Debug button and menu - only show in development */}
-          {process.env.NODE_ENV === 'development' && (
-            <div className="relative" ref={debugMenuRef}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowDebugMenu(!showDebugMenu)}
-                    className="h-8 px-3 rounded-md dark:border-customYellow border-green-200 dark:text-customYellow text-green-600 dark:hover:bg-customYellow/80 hover:bg-green-50"
-                  >
-                    <Bug className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Debug Tools</TooltipContent>
-              </Tooltip>
-
-              {showDebugMenu && (
-                <div className="absolute right-0 mt-2 w-48 dark:bg-darkBg bg-white rounded-lg shadow-lg border dark:border-darkBgHighlight border-gray-200 z-50">
-                  <div className="p-2">
-                    <button
-                      type="button"
-                      onClick={checkSearchStatus}
-                      className="w-full px-3 py-2 text-left text-sm dark:text-text text-gray-700 hover:bg-gray-100 rounded-md flex items-center gap-2"
-                    >
-                      <Bug className="h-4 w-4 dark:text-customYellow text-green-600" />
-                      Check Search Status
-                    </button>
-                    <button
-                      type="button"
-                      onClick={recreateSqliteVirtualTable}
-                      className="w-full px-3 py-2 text-left text-sm dark:text-text text-gray-700 hover:bg-gray-100 rounded-md flex items-center gap-2"
-                    >
-                      <Target className="h-4 w-4 dark:text-customBlue text-blue-600" />
-                      Recreate Virtual Table
-                    </button>
-                    <button
-                      type="button"
-                      onClick={debugModelStatus}
-                      className="w-full px-3 py-2 text-left text-sm dark:text-text text-gray-700 hover:bg-gray-100 rounded-md flex items-center gap-2"
-                    >
-                      <Settings className="h-4 w-4 dark:text-customBlue text-blue-600" />
-                      Model Status
-                    </button>
-                    <button
-                      type="button"
-                      onClick={reloadModels}
-                      className="w-full px-3 py-2 text-left text-sm dark:text-text text-gray-700 hover:bg-gray-100 rounded-md flex items-center gap-2"
-                    >
-                      <RefreshCw className="h-4 w-4 dark:text-customYellow text-green-600" />
-                      Reload Models
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
         </div>
 
         {/* File input */}

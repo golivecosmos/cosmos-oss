@@ -321,7 +321,8 @@ impl VectorService {
                 i.parent_file_path, i.tags,
                 i.timestamp, i.timestamp_formatted, i.frame_number, i.video_duration,
                 i.drive_uuid, d.name as drive_name, d.custom_name as drive_custom_name,
-                d.physical_location as drive_physical_location, d.status as drive_status
+                d.physical_location as drive_physical_location, d.status as drive_status,
+                i.source_type
             FROM vec_images v
             JOIN images i ON i.rowid = v.rowid
             LEFT JOIN drives d ON i.drive_uuid = d.uuid
@@ -351,7 +352,7 @@ impl VectorService {
                 drive_custom_name: row.get(16)?,
                 drive_physical_location: row.get(17)?,
                 drive_status: row.get(18)?,
-                source_type: None,
+                source_type: row.get(19)?,
                 chunk_index: None,
                 snippet: None,
             })
@@ -404,7 +405,8 @@ impl VectorService {
                 i.parent_file_path, i.tags,
                 i.timestamp, i.timestamp_formatted, i.frame_number, i.video_duration,
                 i.drive_uuid, d.name as drive_name, d.custom_name as drive_custom_name,
-                d.physical_location as drive_physical_location, d.status as drive_status
+                d.physical_location as drive_physical_location, d.status as drive_status,
+                i.source_type
             FROM images i
             LEFT JOIN drives d ON i.drive_uuid = d.uuid
             WHERE i.embedding IS NOT NULL
@@ -454,7 +456,7 @@ impl VectorService {
                 drive_custom_name: row.get(16)?,
                 drive_physical_location: row.get(17)?,
                 drive_status: row.get(18)?,
-                source_type: None,
+                source_type: row.get(19)?,
                 chunk_index: None,
                 snippet: None,
             })
@@ -504,7 +506,8 @@ impl VectorService {
                 i.parent_file_path, i.tags,
                 i.timestamp, i.timestamp_formatted, i.frame_number, i.video_duration,
                 i.drive_uuid, d.name as drive_name, d.custom_name as drive_custom_name,
-                d.physical_location as drive_physical_location, d.status as drive_status
+                d.physical_location as drive_physical_location, d.status as drive_status,
+                i.source_type
             FROM images i
             LEFT JOIN drives d ON i.drive_uuid = d.uuid
             WHERE i.embedding IS NOT NULL
@@ -533,7 +536,7 @@ impl VectorService {
                 drive_custom_name: row.get(15)?,
                 drive_physical_location: row.get(16)?,
                 drive_status: row.get(17)?,
-                source_type: None,
+                source_type: row.get(18)?,
                 chunk_index: None,
                 snippet: None,
             })
@@ -557,7 +560,8 @@ impl VectorService {
                 i.parent_file_path, i.tags,
                 i.timestamp, i.timestamp_formatted, i.frame_number, i.video_duration,
                 i.drive_uuid, d.name as drive_name, d.custom_name as drive_custom_name,
-                d.physical_location as drive_physical_location, d.status as drive_status
+                d.physical_location as drive_physical_location, d.status as drive_status,
+                i.source_type
             FROM images i
             LEFT JOIN drives d ON i.drive_uuid = d.uuid
             ORDER BY i.parent_file_path, i.created_at DESC",
@@ -584,7 +588,7 @@ impl VectorService {
                 drive_custom_name: row.get(16)?,
                 drive_physical_location: row.get(17)?,
                 drive_status: row.get(18)?,
-                source_type: None,
+                source_type: row.get(19)?,
                 chunk_index: None,
                 snippet: None,
             })
@@ -768,6 +772,31 @@ impl VectorService {
         Ok(())
     }
 
+    pub fn delete_transcript_chunks_for_file(&self, file_path: &str) -> Result<()> {
+        let connection = self.db_service.get_connection();
+        let mut db = connection.lock().unwrap();
+        let tx = db.transaction()?;
+
+        tx.execute(
+            "DELETE FROM vec_text_chunks
+             WHERE rowid IN (
+                SELECT rowid FROM text_chunks
+                WHERE file_path = ?1
+                  AND json_extract(metadata, '$.source_type') = 'transcript_chunk'
+             )",
+            rusqlite::params![file_path],
+        )?;
+        tx.execute(
+            "DELETE FROM text_chunks
+             WHERE file_path = ?1
+               AND json_extract(metadata, '$.source_type') = 'transcript_chunk'",
+            rusqlite::params![file_path],
+        )?;
+
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn store_text_chunk_vectors_bulk(&self, chunks: Vec<TextChunkBulkData>) -> Result<usize> {
         let connection = self.db_service.get_connection();
         let mut db = connection.lock().unwrap();
@@ -853,8 +882,11 @@ impl VectorService {
                 t.mime_type,
                 t.parent_file_path,
                 '' as tags,
-                NULL as timestamp,
-                NULL as timestamp_formatted,
+                CAST(json_extract(t.metadata, '$.time_start_seconds') AS REAL) as timestamp,
+                COALESCE(
+                    json_extract(t.metadata, '$.timestamp_formatted'),
+                    json_extract(t.metadata, '$.time_start_formatted')
+                ) as timestamp_formatted,
                 NULL as frame_number,
                 NULL as video_duration,
                 t.drive_uuid,
@@ -862,7 +894,7 @@ impl VectorService {
                 d.custom_name as drive_custom_name,
                 d.physical_location as drive_physical_location,
                 d.status as drive_status,
-                'text_chunk' as source_type,
+                COALESCE(json_extract(t.metadata, '$.source_type'), 'text_chunk') as source_type,
                 t.chunk_index,
                 t.chunk_text
             FROM vec_text_chunks v

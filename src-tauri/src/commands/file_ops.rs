@@ -1,6 +1,6 @@
 use crate::models::embedding::ImageVectorDataResponse;
 use crate::models::file_item::{FileItem, FileMetadata};
-use crate::services::file_service::FilePreviewResult;
+use crate::services::file_service::{FilePreviewResult, PaginatedDirectoryResult};
 use crate::services::startup::AppState;
 use crate::utils::logger;
 use base64::{engine::general_purpose, Engine};
@@ -125,6 +125,20 @@ pub fn list_directory(path: String, state: State<'_, AppState>) -> Result<Vec<Fi
         .file_service
         .list_directory(&path)
         .map_err(|e| format!("Failed to list directory: {}", e))
+}
+
+/// List directory contents with pagination.
+#[tauri::command]
+pub fn list_directory_paginated(
+    path: String,
+    offset: usize,
+    limit: usize,
+    state: State<'_, AppState>,
+) -> Result<PaginatedDirectoryResult, String> {
+    state
+        .file_service
+        .list_directory_paginated(&path, offset, limit)
+        .map_err(|e| format!("Failed to list directory with pagination: {}", e))
 }
 
 /// List directory contents recursively

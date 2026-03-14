@@ -38,6 +38,15 @@ struct TextChunk {
     token_estimate: i64,
 }
 
+#[derive(Debug, Clone)]
+struct TranscriptChunk {
+    chunk_index: i64,
+    chunk_text: String,
+    time_start_seconds: f64,
+    time_end_seconds: f64,
+    token_estimate: i64,
+}
+
 /// Service for managing image embeddings and vector search
 pub struct EmbeddingService {
     pub model_service: Arc<ModelService>,
@@ -784,6 +793,103 @@ impl EmbeddingService {
         Ok(format!("text-indexed:{}", file_path))
     }
 
+    /// Index transcript text for a media file and persist timestamp-aware semantic chunks.
+    pub async fn index_transcript_for_media(
+        &self,
+        media_path: &str,
+        transcription_result: &crate::services::audio_service::TranscriptionResult,
+    ) -> Result<usize> {
+        let path = Path::new(media_path);
+        if path.is_dir() {
+            return Err(anyhow::anyhow!(
+                "Cannot transcript-index a directory: {}",
+                media_path
+            ));
+        }
+
+        let file_name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+        let parent_path = path
+            .parent()
+            .and_then(|p| p.to_str())
+            .map(|s| s.to_string());
+        let mime_type = mime_guess::from_path(media_path)
+            .first()
+            .map(|m| m.to_string())
+            .or(Some("video/*".to_string()));
+
+        let chunks = Self::chunk_transcription_segments(&transcription_result.segments);
+        if chunks.is_empty() {
+            return Err(anyhow::anyhow!(
+                "No transcript chunks generated for {}",
+                media_path
+            ));
+        }
+
+        self.sqlite_service.delete_transcript_chunks_for_file(media_path)?;
+
+        let drive_uuid = self
+            .drive_service
+            .get_drive_for_path(media_path)
+            .await
+            .map(|d| d.uuid);
+
+        let mut chunk_rows = Vec::with_capacity(chunks.len());
+        for chunk in chunks {
+            let enhanced_chunk = self.model_service.format_document_text(&chunk.chunk_text);
+            let embedding = self.model_service.encode_text(&enhanced_chunk)?;
+            if embedding.len() != 768 {
+                return Err(anyhow::anyhow!(
+                    "Invalid transcript embedding dimensions for {} chunk {}: {}",
+                    media_path,
+                    chunk.chunk_index,
+                    embedding.len()
+                ));
+            }
+
+            let chunk_id = format!(
+                "transcript:{}:{:x}:{}",
+                media_path,
+                md5::compute(media_path.as_bytes()),
+                chunk.chunk_index
+            );
+
+            let metadata = json!({
+                "source_type": "transcript_chunk",
+                "source_media_type": "video",
+                "chunk_index": chunk.chunk_index,
+                "time_start_seconds": chunk.time_start_seconds,
+                "time_end_seconds": chunk.time_end_seconds,
+                "timestamp_formatted": Self::format_timestamp(chunk.time_start_seconds),
+                "token_estimate": chunk.token_estimate,
+                "snippet": chunk.chunk_text,
+                "language": transcription_result.language,
+            });
+
+            chunk_rows.push(TextChunkBulkData {
+                id: chunk_id,
+                file_path: media_path.to_string(),
+                parent_file_path: parent_path.clone(),
+                file_name: file_name.clone(),
+                mime_type: mime_type.clone(),
+                chunk_index: chunk.chunk_index,
+                chunk_text: chunk.chunk_text,
+                char_start: 0,
+                char_end: 0,
+                token_estimate: chunk.token_estimate,
+                metadata,
+                embedding,
+                drive_uuid: drive_uuid.clone(),
+            });
+        }
+
+        self.sqlite_service
+            .store_text_chunk_vectors_bulk(chunk_rows)
+    }
+
     fn extract_text_content(&self, file_path: &str) -> Result<String> {
         let extension = Path::new(file_path)
             .extension()
@@ -910,6 +1016,82 @@ impl EmbeddingService {
         }
 
         chunks
+    }
+
+    fn chunk_transcription_segments(
+        segments: &[crate::services::audio_service::TranscriptionSegment],
+    ) -> Vec<TranscriptChunk> {
+        const MAX_CHARS: usize = 420;
+        const MAX_SEGMENTS: usize = 6;
+
+        let mut chunks = Vec::new();
+        let mut current_text = String::new();
+        let mut current_start = 0.0f64;
+        let mut current_end = 0.0f64;
+        let mut current_segments = 0usize;
+        let mut chunk_index = 0i64;
+
+        for segment in segments {
+            let segment_text = segment.text.trim();
+            if segment_text.is_empty() {
+                continue;
+            }
+
+            let should_flush = !current_text.is_empty()
+                && (current_text.len() + segment_text.len() + 1 > MAX_CHARS
+                    || current_segments >= MAX_SEGMENTS);
+            if should_flush {
+                let token_estimate = current_text.split_whitespace().count() as i64;
+                chunks.push(TranscriptChunk {
+                    chunk_index,
+                    chunk_text: current_text.trim().to_string(),
+                    time_start_seconds: current_start,
+                    time_end_seconds: current_end.max(current_start),
+                    token_estimate,
+                });
+                chunk_index += 1;
+                current_text.clear();
+                current_segments = 0;
+            }
+
+            if current_text.is_empty() {
+                current_start = segment.start.max(0.0);
+                current_end = segment.end.max(current_start);
+            }
+
+            if !current_text.is_empty() {
+                current_text.push(' ');
+            }
+            current_text.push_str(segment_text);
+            current_end = segment.end.max(current_start);
+            current_segments += 1;
+        }
+
+        if !current_text.trim().is_empty() {
+            let token_estimate = current_text.split_whitespace().count() as i64;
+            chunks.push(TranscriptChunk {
+                chunk_index,
+                chunk_text: current_text.trim().to_string(),
+                time_start_seconds: current_start,
+                time_end_seconds: current_end.max(current_start),
+                token_estimate,
+            });
+        }
+
+        chunks
+    }
+
+    fn format_timestamp(seconds: f64) -> String {
+        let total_seconds = seconds.max(0.0).floor() as i64;
+        let hours = total_seconds / 3600;
+        let minutes = (total_seconds % 3600) / 60;
+        let secs = total_seconds % 60;
+
+        if hours > 0 {
+            format!("{:02}:{:02}:{:02}", hours, minutes, secs)
+        } else {
+            format!("{:02}:{:02}", minutes, secs)
+        }
     }
 
     /// **NEW: Batch index multiple image files at once**

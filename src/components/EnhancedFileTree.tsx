@@ -1,6 +1,8 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { ChevronRight, ChevronDown, Folder, File } from 'lucide-react'
+import { ChevronRight, ChevronDown, Folder, File, Eye, EyeOff, Loader2 } from 'lucide-react'
+import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 
 import { FileItem } from './FileTree'
 import { loadDirectoryWithPermissions } from '../utils/permissionManager'
@@ -24,6 +26,23 @@ interface EnhancedFileTreeProps {
   isParentExpanded?: boolean;
 }
 
+interface WatchedFolder {
+  id: string;
+  path: string;
+  recursive: boolean;
+  enabled: boolean;
+  auto_transcribe_videos: boolean;
+  status: string;
+  last_scan_at?: string | null;
+  last_event_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+const normalizeWatchedPath = (path: string): string => {
+  return path.replace(/\/+$/, '').toLowerCase();
+};
+
 function FileTreeItem({
   item,
   level = 0,
@@ -41,7 +60,8 @@ function FileTreeItem({
   onToggleExpand,
   isParentExpanded = true,
   expandedItems,
-  loadedChildren
+  loadedChildren,
+  watchedFoldersByPath,
 }: {
   item: FileItem;
   level?: number;
@@ -62,11 +82,14 @@ function FileTreeItem({
   isParentExpanded?: boolean;
   expandedItems: Set<string>;
   loadedChildren: Record<string, FileItem[]>;
+  watchedFoldersByPath: Record<string, WatchedFolder>;
 }) {
   const [searchParams] = useSearchParams();
   const currentPath = searchParams.get("path") || "";
   const isSelected = currentPath === item.path;
   const isIndexing = indexingPaths?.has(item.path);
+  const watchedFolder =
+    item.is_dir ? watchedFoldersByPath[normalizeWatchedPath(item.path)] : undefined;
 
   const handleItemClick = () => {
     onSelect(item);
@@ -176,6 +199,26 @@ function FileTreeItem({
               <File className="h-4 w-4 text-customGray flex-shrink-0" />
             )}
             <span className="text-sm truncate flex-1 min-w-0">{item.name}</span>
+            {watchedFolder && (
+              <span
+                className="flex-shrink-0"
+                title={
+                  watchedFolder.status === 'scanning'
+                    ? 'Watched folder (scanning)'
+                    : watchedFolder.enabled
+                      ? 'Watched folder'
+                      : 'Watched folder (paused)'
+                }
+              >
+                {watchedFolder.status === 'scanning' ? (
+                  <Loader2 className="h-3.5 w-3.5 text-blue-500 animate-spin" />
+                ) : watchedFolder.enabled ? (
+                  <Eye className="h-3.5 w-3.5 text-emerald-500" />
+                ) : (
+                  <EyeOff className="h-3.5 w-3.5 text-gray-400" />
+                )}
+              </span>
+            )}
             {isIndexing && (
               <span className="text-xs text-blue-500 flex-shrink-0">Indexing...</span>
             )}
@@ -205,6 +248,7 @@ function FileTreeItem({
               isParentExpanded={isParentExpanded}
               expandedItems={expandedItems}
               loadedChildren={loadedChildren}
+              watchedFoldersByPath={watchedFoldersByPath}
             />
           ))}
         </div>
@@ -230,6 +274,48 @@ export function EnhancedFileTree({
 }: EnhancedFileTreeProps) {
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set())
   const [loadedChildren, setLoadedChildren] = useState<Record<string, FileItem[]>>({})
+  const [watchedFoldersByPath, setWatchedFoldersByPath] = useState<Record<string, WatchedFolder>>(
+    {}
+  );
+
+  const loadWatchedFolders = useCallback(async () => {
+    try {
+      const folders = await invoke<WatchedFolder[]>('list_watched_folders');
+      const nextMap: Record<string, WatchedFolder> = {};
+      folders.forEach((folder) => {
+        nextMap[normalizeWatchedPath(folder.path)] = folder;
+      });
+      setWatchedFoldersByPath(nextMap);
+    } catch {
+      // Keep file tree resilient if watched-folder command is unavailable.
+      setWatchedFoldersByPath({});
+    }
+  }, []);
+
+  useEffect(() => {
+    loadWatchedFolders();
+  }, [loadWatchedFolders]);
+
+  useEffect(() => {
+    let unlistenUpdated: (() => void) | null = null;
+    let unlistenProgress: (() => void) | null = null;
+
+    const setup = async () => {
+      unlistenUpdated = await listen('watched_folder_updated', () => {
+        loadWatchedFolders();
+      });
+      unlistenProgress = await listen('watched_folder_scan_progress', () => {
+        loadWatchedFolders();
+      });
+    };
+
+    setup();
+
+    return () => {
+      if (unlistenUpdated) unlistenUpdated();
+      if (unlistenProgress) unlistenProgress();
+    };
+  }, [loadWatchedFolders]);
 
   const toggleExpand = useCallback(async (item: FileItem) => {
     if (!item.is_dir) return
@@ -294,6 +380,7 @@ export function EnhancedFileTree({
           isParentExpanded={isParentExpanded}
           expandedItems={expandedItems}
           loadedChildren={loadedChildren}
+          watchedFoldersByPath={watchedFoldersByPath}
         />
       ))}
     </div>

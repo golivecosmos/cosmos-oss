@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { 
-  Sparkles, 
   FolderOpen, 
   Search, 
   Image, 

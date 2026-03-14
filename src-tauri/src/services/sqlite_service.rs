@@ -267,6 +267,11 @@ impl SqliteVectorService {
         self.vector_service.delete_text_chunks_for_file(file_path)
     }
 
+    /// Delete transcript text chunks for a media file while preserving document chunks.
+    pub fn delete_transcript_chunks_for_file(&self, file_path: &str) -> Result<()> {
+        self.vector_service.delete_transcript_chunks_for_file(file_path)
+    }
+
     /// Search text chunks using vector similarity with no fallback behavior
     pub fn search_text_chunks_strict(
         &self,

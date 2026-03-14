@@ -15,6 +15,15 @@ pub struct FilePreviewResult {
     pub encoding: String,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PaginatedDirectoryResult {
+    pub items: Vec<FileItem>,
+    pub total: usize,
+    pub offset: usize,
+    pub limit: usize,
+    pub has_more: bool,
+}
+
 /// Service for handling file system operations
 pub struct FileService;
 
@@ -88,6 +97,33 @@ impl FileService {
         });
 
         Ok(items)
+    }
+
+    /// List contents of a directory with offset/limit pagination.
+    pub fn list_directory_paginated(
+        &self,
+        path: &str,
+        offset: usize,
+        limit: usize,
+    ) -> Result<PaginatedDirectoryResult> {
+        let items = self.list_directory(path)?;
+        let total = items.len();
+        let safe_offset = offset.min(total);
+        let safe_limit = limit.max(1);
+        let end = (safe_offset + safe_limit).min(total);
+        let paginated_items = items
+            .into_iter()
+            .skip(safe_offset)
+            .take(end - safe_offset)
+            .collect::<Vec<_>>();
+
+        Ok(PaginatedDirectoryResult {
+            items: paginated_items,
+            total,
+            offset: safe_offset,
+            limit: safe_limit,
+            has_more: end < total,
+        })
     }
 
     /// List contents of a directory recursively

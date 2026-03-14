@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef } from 'react';
-import { Sparkles, Target, Bug, Settings as SettingsIcon, Menu, Store } from 'lucide-react';
+import { Brain, Target, Bug, Settings as SettingsIcon, Menu, Store } from 'lucide-react';
 import { Button } from "./ui/button";
 
 export interface QuickMenuProps {
@@ -56,7 +56,7 @@ export function QuickMenu({
                 size="sm"
                 className="w-full justify-start hover:bg-gray-100 dark:hover:bg-blueShadow"
               >
-                <Sparkles className="w-4 h-4 mr-2" />
+                <Brain className="w-4 h-4 mr-2" />
                 Restart Welcome
               </Button>
             )}

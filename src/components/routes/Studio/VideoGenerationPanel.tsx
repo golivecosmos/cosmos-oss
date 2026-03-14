@@ -2,7 +2,7 @@ import React, { useEffect } from "react";
 
 import { Button } from "../../ui/button";
 import { Textarea } from "../../ui/textarea";
-import { Sparkles, Loader2, X } from "lucide-react";
+import { Brain, Loader2, X } from "lucide-react";
 import { GoogleGeminiStatusAlert } from "./GoogleGeminiStatusAlert";
 import { VideoGeneration } from "./types";
 import { cn } from "../../../lib/utils";
@@ -97,7 +97,7 @@ export const VideoGenerationPanel: React.FC<VideoGenerationPanelProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b dark:border-darkBgHighlight border-gray-200">
           <div className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+            <Brain className="h-5 w-5 text-purple-600 dark:text-purple-400" />
             <h2 className="text-lg font-semibold dark:text-text text-gray-900">Video Creator</h2>
           </div>
           <div className="flex items-center gap-2">
@@ -226,7 +226,7 @@ export const VideoGenerationPanel: React.FC<VideoGenerationPanelProps> = ({
                 </>
               ) : (
                 <>
-                  <Sparkles className="w-4 h-4 mr-2" />
+                  <Brain className="w-4 h-4 mr-2" />
                   Generate Video
                 </>
               )}

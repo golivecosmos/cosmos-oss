@@ -27,6 +27,9 @@ export interface MediaFile {
     isVideo?: boolean;
     isGroupedVideo?: boolean;
     sourceType?: string;
+    snippet?: string | null;
+    chunkIndex?: number | null;
+    isTranscriptHit?: boolean;
     
     // Video frame specific
     isVideoFrame?: boolean;

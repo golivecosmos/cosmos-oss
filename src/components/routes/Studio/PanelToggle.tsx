@@ -1,6 +1,6 @@
 import React from "react";
 import { Button } from "../../ui/button";
-import { Sparkles } from "lucide-react";
+import { Brain } from "lucide-react";
 
 interface PanelToggleProps {
   onOpen: () => void;
@@ -15,7 +15,7 @@ export const PanelToggle: React.FC<PanelToggleProps> = ({ onOpen }) => {
         onClick={onOpen}
         className="bg-white dark:bg-transparent shadow-md"
       >
-        <Sparkles className="w-4 h-4 mr-2" />
+        <Brain className="w-4 h-4 mr-2" />
         Create Video
       </Button>
     </div>

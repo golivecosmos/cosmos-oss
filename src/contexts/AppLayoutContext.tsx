@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { resolve } from "@tauri-apps/api/path";
 import { FileItem } from "../components/FileTree";
 import { ReferenceImageData } from "../components/SearchBar";
-import { useSearch, SearchType } from "../hooks/useSearch";
+import { useSearch, SearchOptions, SearchType } from "../hooks/useSearch";
 import { getErrorMessage } from "../utils/errorMessage";
 import {
   useIndexingJobs,
@@ -99,7 +99,7 @@ interface AppLayoutContextType {
 
   // Search state
   searchState: any;
-  handleSearch: (query: string, type: SearchType) => Promise<void>;
+  handleSearch: (query: string, type: SearchType, options?: SearchOptions) => Promise<void>;
   clearSearch: () => void;
   refreshCurrentSearch: () => void;
 

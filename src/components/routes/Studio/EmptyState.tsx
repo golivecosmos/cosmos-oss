@@ -1,5 +1,5 @@
 import React from "react";
-import { Video, Sparkles, Download } from "lucide-react";
+import { Video, Brain, Download } from "lucide-react";
 
 export const EmptyState: React.FC = () => {
   return (
@@ -20,7 +20,7 @@ export const EmptyState: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-4xl mx-auto mb-8">
         <div className="p-6 bg-white dark:bg-darkBgHighlight rounded-xl border border-gray-200 dark:border-gray-700">
           <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900/20 flex items-center justify-center mb-4 mx-auto rounded-full">
-            <Sparkles className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+            <Brain className="w-6 h-6 text-purple-600 dark:text-purple-400" />
           </div>
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Write Prompts</h3>
           <p className="text-gray-600 dark:text-gray-400">Describe your vision in detail for better results</p>
