@@ -43,21 +43,19 @@
 /// - ✅ Version control over model files
 /// - ✅ Simplified directory structure
 /// - ✅ Production-ready deployment
-
 use anyhow::Result;
 use fastembed::{
-    TextEmbedding, ImageEmbedding,
-    InitOptions, ImageInitOptions,
-    EmbeddingModel, ImageEmbeddingModel
+    EmbeddingModel, ImageEmbedding, ImageEmbeddingModel, ImageInitOptions, InitOptions,
+    TextEmbedding,
 };
 use image::DynamicImage;
 
-use std::sync::{Arc, Mutex};
-use std::collections::HashMap;
-use serde::{Deserialize, Serialize};
-use crate::{app_log_error, app_log_info, app_log_warn};
-use crate::utils::path_utils;
 use super::EmbeddingModel as EmbeddingModelTrait;
+use crate::utils::path_utils;
+use crate::{app_log_error, app_log_info, app_log_warn};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 // Nomic model configuration
 #[derive(Debug, Deserialize, Serialize)]
@@ -125,15 +123,23 @@ impl NomicModel {
 
         // **CRITICAL: Set FASTEMBED_CACHE_DIR environment variable**
         // This tells FastEmbed where to look for models
-        std::env::set_var("FASTEMBED_CACHE_DIR", models_cache_dir.to_string_lossy().to_string());
-        app_log_info!("🔧 Set FASTEMBED_CACHE_DIR to: {}", models_cache_dir.display());
+        std::env::set_var(
+            "FASTEMBED_CACHE_DIR",
+            models_cache_dir.to_string_lossy().to_string(),
+        );
+        app_log_info!(
+            "🔧 Set FASTEMBED_CACHE_DIR to: {}",
+            models_cache_dir.display()
+        );
 
         // **Check if models are available before initializing**
         let models_available = Self::check_local_models_available();
         if !models_available {
             app_log_error!("❌ Required model files not found in local cache");
             app_log_error!("💡 Please run download_models command first to download from S3");
-            return Err(anyhow::anyhow!("Model files not found. Please download models first."));
+            return Err(anyhow::anyhow!(
+                "Model files not found. Please download models first."
+            ));
         }
 
         app_log_info!("✅ Local model files found, initializing with local_files_only=true");
@@ -142,15 +148,18 @@ impl NomicModel {
         let text_model = match TextEmbedding::try_new(
             InitOptions::new(EmbeddingModel::NomicEmbedTextV15)
                 .with_show_download_progress(false) // No downloads, so no progress needed
-                .with_cache_dir(models_cache_dir.clone()) // Explicit cache directory
+                .with_cache_dir(models_cache_dir.clone()), // Explicit cache directory
         ) {
             Ok(model) => {
                 app_log_info!("✅ FastEmbed text model created successfully");
                 Arc::new(Mutex::new(model))
-            },
+            }
             Err(e) => {
                 app_log_error!("❌ Failed to create FastEmbed text model: {}", e);
-                return Err(anyhow::anyhow!("Failed to create FastEmbed text model: {}", e));
+                return Err(anyhow::anyhow!(
+                    "Failed to create FastEmbed text model: {}",
+                    e
+                ));
             }
         };
 
@@ -158,15 +167,18 @@ impl NomicModel {
         let vision_model = match ImageEmbedding::try_new(
             ImageInitOptions::new(ImageEmbeddingModel::NomicEmbedVisionV15)
                 .with_show_download_progress(false) // No downloads, so no progress needed
-                .with_cache_dir(models_cache_dir) // Explicit cache directory
+                .with_cache_dir(models_cache_dir), // Explicit cache directory
         ) {
             Ok(model) => {
                 app_log_info!("✅ FastEmbed vision model created successfully");
                 Arc::new(Mutex::new(model))
-            },
+            }
             Err(e) => {
                 app_log_error!("❌ Failed to create FastEmbed vision model: {}", e);
-                return Err(anyhow::anyhow!("Failed to create FastEmbed vision model: {}", e));
+                return Err(anyhow::anyhow!(
+                    "Failed to create FastEmbed vision model: {}",
+                    e
+                ));
             }
         };
 
@@ -184,29 +196,73 @@ impl NomicModel {
             Ok(app_data_dir) => {
                 let models_cache = app_data_dir.join("models");
 
-                                 // **Check text model files**
-                 let text_model_dir = models_cache.join("nomic-embed-text-v1.5");
-                 let text_model_onnx = text_model_dir.join("onnx").join("model.onnx");
-                 let text_config = text_model_dir.join("config.json");
-                 let text_tokenizer = text_model_dir.join("tokenizer.json");
+                // **Check text model files**
+                let text_model_dir = models_cache.join("nomic-embed-text-v1.5");
+                let text_model_onnx = text_model_dir.join("onnx").join("model.onnx");
+                let text_config = text_model_dir.join("config.json");
+                let text_tokenizer = text_model_dir.join("tokenizer.json");
 
-                 // **Check vision model files**
-                 let vision_model_dir = models_cache.join("nomic-embed-vision-v1.5");
-                 let vision_model_onnx = vision_model_dir.join("onnx").join("model.onnx");
-                 let vision_preprocessor = vision_model_dir.join("preprocessor_config.json");
+                // **Check vision model files**
+                let vision_model_dir = models_cache.join("nomic-embed-vision-v1.5");
+                let vision_model_onnx = vision_model_dir.join("onnx").join("model.onnx");
+                let vision_preprocessor = vision_model_dir.join("preprocessor_config.json");
 
-                let text_available = text_model_onnx.exists() && text_config.exists() && text_tokenizer.exists();
+                let text_available =
+                    text_model_onnx.exists() && text_config.exists() && text_tokenizer.exists();
                 let vision_available = vision_model_onnx.exists() && vision_preprocessor.exists();
 
                 app_log_info!("🔍 Local model availability check:");
-                app_log_info!("  Text model ONNX: {} - {}", text_model_onnx.display(), if text_model_onnx.exists() { "✅" } else { "❌" });
-                app_log_info!("  Text config: {} - {}", text_config.display(), if text_config.exists() { "✅" } else { "❌" });
-                app_log_info!("  Text tokenizer: {} - {}", text_tokenizer.display(), if text_tokenizer.exists() { "✅" } else { "❌" });
-                app_log_info!("  Vision model ONNX: {} - {}", vision_model_onnx.display(), if vision_model_onnx.exists() { "✅" } else { "❌" });
-                app_log_info!("  Vision preprocessor: {} - {}", vision_preprocessor.display(), if vision_preprocessor.exists() { "✅" } else { "❌" });
+                app_log_info!(
+                    "  Text model ONNX: {} - {}",
+                    text_model_onnx.display(),
+                    if text_model_onnx.exists() {
+                        "✅"
+                    } else {
+                        "❌"
+                    }
+                );
+                app_log_info!(
+                    "  Text config: {} - {}",
+                    text_config.display(),
+                    if text_config.exists() { "✅" } else { "❌" }
+                );
+                app_log_info!(
+                    "  Text tokenizer: {} - {}",
+                    text_tokenizer.display(),
+                    if text_tokenizer.exists() {
+                        "✅"
+                    } else {
+                        "❌"
+                    }
+                );
+                app_log_info!(
+                    "  Vision model ONNX: {} - {}",
+                    vision_model_onnx.display(),
+                    if vision_model_onnx.exists() {
+                        "✅"
+                    } else {
+                        "❌"
+                    }
+                );
+                app_log_info!(
+                    "  Vision preprocessor: {} - {}",
+                    vision_preprocessor.display(),
+                    if vision_preprocessor.exists() {
+                        "✅"
+                    } else {
+                        "❌"
+                    }
+                );
 
                 let all_available = text_available && vision_available;
-                app_log_info!("📊 Overall availability: {}", if all_available { "✅ Ready" } else { "❌ Missing files" });
+                app_log_info!(
+                    "📊 Overall availability: {}",
+                    if all_available {
+                        "✅ Ready"
+                    } else {
+                        "❌ Missing files"
+                    }
+                );
 
                 all_available
             }
@@ -224,11 +280,17 @@ impl EmbeddingModelTrait for NomicModel {
         let documents = vec![text];
 
         let lock_start = std::time::Instant::now();
-        let text_model = self.text_model.lock().map_err(|e| anyhow::anyhow!("Failed to acquire text model lock: {}", e))?;
+        let text_model = self
+            .text_model
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire text model lock: {}", e))?;
         let lock_time = lock_start.elapsed();
 
         if lock_time.as_millis() > 10 {
-            app_log_warn!("⏱️ TEXT MODEL LOCK: Took {:.2}ms to acquire (possible contention)", lock_time.as_millis());
+            app_log_warn!(
+                "⏱️ TEXT MODEL LOCK: Took {:.2}ms to acquire (possible contention)",
+                lock_time.as_millis()
+            );
         }
 
         let inference_start = std::time::Instant::now();
@@ -239,13 +301,16 @@ impl EmbeddingModelTrait for NomicModel {
                 } else {
                     Err(anyhow::anyhow!("No embedding generated"))
                 }
-            },
-            Err(e) => Err(anyhow::anyhow!("Failed to generate embedding: {}", e))
+            }
+            Err(e) => Err(anyhow::anyhow!("Failed to generate embedding: {}", e)),
         };
         let inference_time = inference_start.elapsed();
 
-        app_log_info!("🧠 NOMIC TEXT TIMING: Lock={:.1}ms, Inference={:.1}ms",
-            lock_time.as_millis(), inference_time.as_millis());
+        app_log_info!(
+            "🧠 NOMIC TEXT TIMING: Lock={:.1}ms, Inference={:.1}ms",
+            lock_time.as_millis(),
+            inference_time.as_millis()
+        );
 
         result
     }
@@ -266,11 +331,17 @@ impl EmbeddingModelTrait for NomicModel {
         let images = vec![temp_path.to_string_lossy().to_string()];
 
         let lock_start = std::time::Instant::now();
-        let vision_model = self.vision_model.lock().map_err(|e| anyhow::anyhow!("Failed to acquire vision model lock: {}", e))?;
+        let vision_model = self
+            .vision_model
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire vision model lock: {}", e))?;
         let lock_time = lock_start.elapsed();
 
         if lock_time.as_millis() > 10 {
-            app_log_warn!("⚠️ VISION MODEL LOCK: Took {:.2}ms to acquire (BOTTLENECK!)", lock_time.as_millis());
+            app_log_warn!(
+                "⚠️ VISION MODEL LOCK: Took {:.2}ms to acquire (BOTTLENECK!)",
+                lock_time.as_millis()
+            );
         }
         let inference_start = std::time::Instant::now();
         let result = match vision_model.embed(images, None) {
@@ -280,14 +351,19 @@ impl EmbeddingModelTrait for NomicModel {
                 } else {
                     Err(anyhow::anyhow!("No embedding generated"))
                 }
-            },
-            Err(e) => Err(anyhow::anyhow!("Failed to generate embedding: {}", e))
+            }
+            Err(e) => Err(anyhow::anyhow!("Failed to generate embedding: {}", e)),
         };
         let inference_time = inference_start.elapsed();
         let total_time = total_start.elapsed();
 
-        app_log_info!("🧠 NOMIC VISION TIMING: IO={:.1}ms, Lock={:.1}ms, Inference={:.1}ms, Total={:.1}ms",
-            io_time.as_millis(), lock_time.as_millis(), inference_time.as_millis(), total_time.as_millis());
+        app_log_info!(
+            "🧠 NOMIC VISION TIMING: IO={:.1}ms, Lock={:.1}ms, Inference={:.1}ms, Total={:.1}ms",
+            io_time.as_millis(),
+            lock_time.as_millis(),
+            inference_time.as_millis(),
+            total_time.as_millis()
+        );
 
         result
     }

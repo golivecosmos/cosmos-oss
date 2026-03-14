@@ -2,8 +2,8 @@ use anyhow::Result;
 use std::sync::Arc;
 use std::sync::Mutex;
 
+use crate::models::{nomic::NomicModel, EmbeddingModel};
 use crate::{app_log_debug, app_log_error, app_log_info, app_log_warn};
-use crate::models::{EmbeddingModel, nomic::NomicModel};
 
 // Configuration for model selection
 #[derive(Debug, Clone, PartialEq)]
@@ -13,7 +13,7 @@ pub enum ModelType {
 
 impl Default for ModelType {
     fn default() -> Self {
-        ModelType::Nomic  // Switch to Nomic for testing
+        ModelType::Nomic // Switch to Nomic for testing
     }
 }
 
@@ -31,7 +31,10 @@ impl ModelService {
 
     /// Create a new model service with specified model type
     pub fn new_with_model_type(model_type: ModelType) -> Self {
-        app_log_info!("Initializing ModelService with model type: {:?}...", model_type);
+        app_log_info!(
+            "Initializing ModelService with model type: {:?}...",
+            model_type
+        );
 
         let model = Self::load_model(&model_type).unwrap_or_else(|e| {
             app_log_error!("Failed to load model during initialization: {}", e);
@@ -86,7 +89,7 @@ impl ModelService {
                 *model_guard = Some(model);
                 app_log_info!("{:?} model reloaded successfully", self.model_type);
                 Ok(())
-            },
+            }
             Err(_) => {
                 app_log_error!("Model lock is poisoned during reload");
                 Err(anyhow::anyhow!("Failed to reload model - lock is poisoned"))
@@ -127,7 +130,7 @@ impl ModelService {
             Ok(model) => {
                 app_log_info!("✅ Successfully loaded Nomic models");
                 Ok(Some(Box::new(model)))
-            },
+            }
             Err(e) => {
                 app_log_error!("❌ Failed to load Nomic models: {}", e);
                 Err(anyhow::anyhow!("Failed to load Nomic models: {}", e))
@@ -137,10 +140,13 @@ impl ModelService {
 
     /// Generate text embedding from input text using the active model
     pub fn encode_text(&self, text: &str) -> Result<Vec<f32>> {
-        let model_guard = self.active_model.lock()
+        let model_guard = self
+            .active_model
+            .lock()
             .map_err(|_| anyhow::anyhow!("Failed to acquire model lock"))?;
 
-        let model = model_guard.as_ref()
+        let model = model_guard
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("No model loaded"))?;
 
         model.encode_text(text)
@@ -148,27 +154,39 @@ impl ModelService {
 
     /// Generate image embedding from input image using the active model
     pub fn encode_image(&self, img: &image::DynamicImage) -> Result<Vec<f32>> {
-        let model_guard = self.active_model.lock()
+        let model_guard = self
+            .active_model
+            .lock()
             .map_err(|_| anyhow::anyhow!("Failed to acquire model lock"))?;
 
-        let model = model_guard.as_ref()
+        let model = model_guard
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("No model loaded"))?;
 
         model.encode_image(img)
     }
 
-    /// Apply prompt template to improve text embeddings (model-specific)
-    pub fn apply_prompt_template(&self, query: &str) -> String {
+    /// Format a query string for retrieval query embeddings.
+    pub fn format_query_text(&self, query: &str) -> String {
         match self.model_type {
-            ModelType::Nomic => Self::apply_nomic_template(query),
+            ModelType::Nomic => Self::apply_nomic_query_template(query),
         }
     }
 
-    /// Apply Nomic prompt template to improve text embeddings
-    pub fn apply_nomic_template(query: &str) -> String {
-        // Nomic models require the "search_query:" prefix for text queries
-        // This is handled directly in the NomicModel::encode_text method
-        // so we don't need to add it here to avoid double-prefixing
-        query.to_string()
+    /// Format a document chunk for retrieval document embeddings.
+    pub fn format_document_text(&self, document_text: &str) -> String {
+        match self.model_type {
+            ModelType::Nomic => Self::apply_nomic_document_template(document_text),
+        }
+    }
+
+    /// Apply Nomic query prefix required for retrieval embeddings.
+    pub fn apply_nomic_query_template(query: &str) -> String {
+        format!("search_query: {}", query.trim())
+    }
+
+    /// Apply Nomic document prefix required for retrieval embeddings.
+    pub fn apply_nomic_document_template(document_text: &str) -> String {
+        format!("search_document: {}", document_text.trim())
     }
 }

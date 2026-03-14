@@ -68,33 +68,22 @@ export function FileTree({
     if (isCollapsed) return null;
 
     return (
-        <div className="space-y-3">
-            <div className="px-6 sticky top-0 bg-white dark:bg-darkBg shadow-sm border-b border-gray-200 dark:border-gray-700">
-                <div className="flex items-center justify-between mb-3">
-                    <div className="transition-opacity duration-300 opacity-100">
-                        <h2 className="text-sm font-semibold uppercase tracking-wide">FILE SYSTEM</h2>
-                        <p className="text-xs text-gray dark:text-customGray mt-1">Browse all files</p>
-                    </div>
-                </div>
-            </div>
-
-            <div className="px-3 transition-opacity duration-300 opacity-100">
-                {basePath && (
-                    <EnhancedFileTree
-                        items={items}
-                        onSelect={onSelect}
-                        onCreateFolder={onCreateFolder}
-                        onDelete={onDelete}
-                        onAddToFavorites={onAddToFavorites}
-                        onShare={onShare}
-                        indexingPaths={indexingPaths}
-                        onBulkIndex={onBulkIndex}
-                        isIndexingDisabled={isIndexingDisabled}
-                        onNavigateToDirectory={onNavigateToDirectory}
-                        isParentExpanded={expanded}
-                    />
-                )}
-            </div>
+        <div className="px-3 transition-opacity duration-300 opacity-100">
+            {basePath && (
+                <EnhancedFileTree
+                    items={items}
+                    onSelect={onSelect}
+                    onCreateFolder={onCreateFolder}
+                    onDelete={onDelete}
+                    onAddToFavorites={onAddToFavorites}
+                    onShare={onShare}
+                    indexingPaths={indexingPaths}
+                    onBulkIndex={onBulkIndex}
+                    isIndexingDisabled={isIndexingDisabled}
+                    onNavigateToDirectory={onNavigateToDirectory}
+                    isParentExpanded={expanded}
+                />
+            )}
         </div>
     );
 }

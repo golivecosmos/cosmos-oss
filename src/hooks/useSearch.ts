@@ -143,38 +143,11 @@ export const useSearch = (): UseSearchReturn => {
 
     } catch (error) {
       console.error("Search error:", error);
-      // Fallback handling for text search
-      if (type === "text") {
-        console.log("🔄 Falling back to filename search...");
-        try {
-          const indexedFiles = await invoke<any[]>("get_indexed_files_grouped_paginated", {
-            offset: 0,
-            limit: 1000,
-          });
-          const fallbackResults = indexedFiles.filter((file) =>
-            file.file_path.toLowerCase().includes(query.toLowerCase())
-          );
-          setSearchState(prev => ({
-            ...prev,
-            results: fallbackResults,
-            isSearching: false
-          }));
-        } catch (fallbackError) {
-          console.error("Fallback search failed:", fallbackError);
-          setSearchState(prev => ({
-            ...prev,
-            results: [],
-            isSearching: false
-          }));
-        }
-      } else {
-        // For other search types, show empty results
-        setSearchState(prev => ({
-          ...prev,
-          results: [],
-          isSearching: false
-        }));
-      }
+      setSearchState(prev => ({
+        ...prev,
+        results: [],
+        isSearching: false
+      }));
     }
   }, []);
 

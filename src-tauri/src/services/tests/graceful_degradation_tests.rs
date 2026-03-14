@@ -1,12 +1,12 @@
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::time::{timeout, sleep};
+use tokio::time::{sleep, timeout};
 
 /// Create ultra-lightweight mock services for graceful degradation testing
 fn create_mock_degradation_state() -> (
-    Arc<std::sync::atomic::AtomicBool>, // Service "available" state
+    Arc<std::sync::atomic::AtomicBool>,  // Service "available" state
     Arc<std::sync::atomic::AtomicUsize>, // Error counter
-    Arc<std::sync::atomic::AtomicBool>, // Recovery state
+    Arc<std::sync::atomic::AtomicBool>,  // Recovery state
 ) {
     (
         Arc::new(std::sync::atomic::AtomicBool::new(true)), // Available
@@ -26,14 +26,27 @@ async fn test_service_continues_when_model_unavailable() {
 
     // Core services should still work even if model operations fail
     let core_available = Arc::new(std::sync::atomic::AtomicBool::new(true));
-    assert!(core_available.load(std::sync::atomic::Ordering::SeqCst), "Core services should remain available");
+    assert!(
+        core_available.load(std::sync::atomic::Ordering::SeqCst),
+        "Core services should remain available"
+    );
 
     // Even if model service has issues, other services remain functional
-    assert!(!available.load(std::sync::atomic::Ordering::SeqCst), "Model service should be unavailable");
-    assert_eq!(error_count.load(std::sync::atomic::Ordering::SeqCst), 1, "Should track service errors");
+    assert!(
+        !available.load(std::sync::atomic::Ordering::SeqCst),
+        "Model service should be unavailable"
+    );
+    assert_eq!(
+        error_count.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "Should track service errors"
+    );
 
     // App should continue functioning regardless of model state
-    assert!(core_available.load(std::sync::atomic::Ordering::SeqCst), "App should continue functioning");
+    assert!(
+        core_available.load(std::sync::atomic::Ordering::SeqCst),
+        "App should continue functioning"
+    );
 }
 
 #[tokio::test]
@@ -48,14 +61,35 @@ async fn test_partial_service_failure_isolation() {
     service1_errors.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
     // Other services should remain isolated and functional
-    assert!(service2_available.load(std::sync::atomic::Ordering::SeqCst), "Service2 should remain available");
-    assert!(service3_available.load(std::sync::atomic::Ordering::SeqCst), "Service3 should remain available");
-    assert_eq!(service2_errors.load(std::sync::atomic::Ordering::SeqCst), 0, "Service2 should have no errors");
-    assert_eq!(service3_errors.load(std::sync::atomic::Ordering::SeqCst), 0, "Service3 should have no errors");
+    assert!(
+        service2_available.load(std::sync::atomic::Ordering::SeqCst),
+        "Service2 should remain available"
+    );
+    assert!(
+        service3_available.load(std::sync::atomic::Ordering::SeqCst),
+        "Service3 should remain available"
+    );
+    assert_eq!(
+        service2_errors.load(std::sync::atomic::Ordering::SeqCst),
+        0,
+        "Service2 should have no errors"
+    );
+    assert_eq!(
+        service3_errors.load(std::sync::atomic::Ordering::SeqCst),
+        0,
+        "Service3 should have no errors"
+    );
 
     // Failed service should be isolated
-    assert!(!service1_available.load(std::sync::atomic::Ordering::SeqCst), "Service1 should be failed");
-    assert_eq!(service1_errors.load(std::sync::atomic::Ordering::SeqCst), 1, "Service1 should track its error");
+    assert!(
+        !service1_available.load(std::sync::atomic::Ordering::SeqCst),
+        "Service1 should be failed"
+    );
+    assert_eq!(
+        service1_errors.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "Service1 should track its error"
+    );
 
     // Services should continue working independently despite one failure
     service2_available.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -76,9 +110,19 @@ async fn test_service_recovery_after_error() {
     recovered.store(true, std::sync::atomic::Ordering::SeqCst);
 
     // Service should be recovered and functional
-    assert!(available.load(std::sync::atomic::Ordering::SeqCst), "Service should recover and be available");
-    assert!(recovered.load(std::sync::atomic::Ordering::SeqCst), "Service should be marked as recovered");
-    assert_eq!(error_count.load(std::sync::atomic::Ordering::SeqCst), 3, "Should track error history");
+    assert!(
+        available.load(std::sync::atomic::Ordering::SeqCst),
+        "Service should recover and be available"
+    );
+    assert!(
+        recovered.load(std::sync::atomic::Ordering::SeqCst),
+        "Service should be marked as recovered"
+    );
+    assert_eq!(
+        error_count.load(std::sync::atomic::Ordering::SeqCst),
+        3,
+        "Should track error history"
+    );
 }
 
 #[tokio::test]
@@ -92,8 +136,14 @@ async fn test_degraded_mode_functionality() {
     enhanced_errors.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
     // Core functionality should remain available
-    assert!(core_available.load(std::sync::atomic::Ordering::SeqCst), "Core functionality should remain available");
-    assert!(!enhanced_available.load(std::sync::atomic::Ordering::SeqCst), "Enhanced features should be degraded");
+    assert!(
+        core_available.load(std::sync::atomic::Ordering::SeqCst),
+        "Core functionality should remain available"
+    );
+    assert!(
+        !enhanced_available.load(std::sync::atomic::Ordering::SeqCst),
+        "Enhanced features should be degraded"
+    );
 
     // Test that we can handle multiple concurrent "degraded" operations
     let mut handles = Vec::new();
@@ -103,7 +153,7 @@ async fn test_degraded_mode_functionality() {
         let handle = tokio::spawn(async move {
             // Simulate degraded operations but core remains functional
             sleep(Duration::from_millis(1)).await; // Simulate operation
-            
+
             // Core should remain available even under degraded conditions
             core_clone.load(std::sync::atomic::Ordering::SeqCst)
         });
@@ -120,7 +170,10 @@ async fn test_degraded_mode_functionality() {
     }
 
     // All operations should succeed since core remains available
-    assert_eq!(successful_operations, 5, "All core operations should succeed");
+    assert_eq!(
+        successful_operations, 5,
+        "All core operations should succeed"
+    );
 }
 
 #[tokio::test]
@@ -138,7 +191,7 @@ async fn test_resource_exhaustion_handling() {
 
         let handle = tokio::spawn(async move {
             sleep(Duration::from_millis(1)).await;
-            
+
             // Simulate some tasks failing due to resource exhaustion
             if i > 7 {
                 error_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -152,15 +205,23 @@ async fn test_resource_exhaustion_handling() {
 
     let mut successful_operations = 0;
     for handle in handles {
-        let result = handle.await.expect("Resource exhaustion task should complete");
+        let result = handle
+            .await
+            .expect("Resource exhaustion task should complete");
         if result {
             successful_operations += 1;
         }
     }
 
     // Should handle partial failures gracefully
-    assert!(successful_operations >= 7, "Should handle resource exhaustion gracefully");
-    assert!(error_count.load(std::sync::atomic::Ordering::SeqCst) >= 2, "Should track resource exhaustion errors");
+    assert!(
+        successful_operations >= 7,
+        "Should handle resource exhaustion gracefully"
+    );
+    assert!(
+        error_count.load(std::sync::atomic::Ordering::SeqCst) >= 2,
+        "Should track resource exhaustion errors"
+    );
 }
 
 #[tokio::test]
@@ -172,7 +233,8 @@ async fn test_service_timeout_graceful_handling() {
     let quick_result = timeout(Duration::from_millis(100), async {
         sleep(Duration::from_millis(1)).await;
         mock_available.load(std::sync::atomic::Ordering::SeqCst)
-    }).await;
+    })
+    .await;
 
     assert!(quick_result.is_ok(), "Quick operations should not timeout");
     assert!(quick_result.unwrap(), "Quick operations should succeed");
@@ -181,9 +243,13 @@ async fn test_service_timeout_graceful_handling() {
     let slow_result = timeout(Duration::from_millis(10), async {
         sleep(Duration::from_millis(50)).await; // Longer than timeout
         true
-    }).await;
+    })
+    .await;
 
-    assert!(slow_result.is_err(), "Slow operations should timeout gracefully");
+    assert!(
+        slow_result.is_err(),
+        "Slow operations should timeout gracefully"
+    );
 }
 
 #[tokio::test]
@@ -205,7 +271,7 @@ async fn test_concurrent_service_degradation() {
 
         let handle = tokio::spawn(async move {
             sleep(Duration::from_millis(1)).await;
-            
+
             // Simulate degradation patterns
             match i % 3 {
                 0 => {
@@ -227,7 +293,9 @@ async fn test_concurrent_service_degradation() {
 
     // Wait for all degradation to complete
     for handle in handles {
-        handle.await.expect("Concurrent degradation should complete");
+        handle
+            .await
+            .expect("Concurrent degradation should complete");
     }
 
     // All services should be degraded
@@ -255,7 +323,7 @@ async fn test_service_state_consistency_under_stress() {
         let handle = tokio::spawn(async move {
             for j in 0..5 {
                 sleep(Duration::from_millis(1)).await;
-                
+
                 // Alternate between available and error states
                 if (i + j) % 2 == 0 {
                     available_clone.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -276,8 +344,11 @@ async fn test_service_state_consistency_under_stress() {
     // State should be consistent (either available or not)
     let final_available = available.load(std::sync::atomic::Ordering::SeqCst);
     let final_errors = error_count.load(std::sync::atomic::Ordering::SeqCst);
-    
-    assert!(final_available == true || final_available == false, "State should be consistent");
+
+    assert!(
+        final_available == true || final_available == false,
+        "State should be consistent"
+    );
     assert!(final_errors > 0, "Should track state change errors");
 }
 
@@ -295,7 +366,7 @@ async fn test_graceful_service_cleanup_on_drop() {
         let _temp_service1 = available.clone();
         let _temp_service2 = error_count.clone();
         let _temp_service3 = recovered.clone();
-        
+
         // Use the services briefly
         _temp_service1.store(true, std::sync::atomic::Ordering::SeqCst);
         _temp_service2.fetch_add(0, std::sync::atomic::Ordering::SeqCst); // No-op
@@ -303,6 +374,13 @@ async fn test_graceful_service_cleanup_on_drop() {
     } // Services dropped here
 
     // Original references should still work
-    assert!(available.load(std::sync::atomic::Ordering::SeqCst), "Original service should still work after cleanup");
-    assert_eq!(error_count.load(std::sync::atomic::Ordering::SeqCst), 0, "Error count should be consistent");
+    assert!(
+        available.load(std::sync::atomic::Ordering::SeqCst),
+        "Original service should still work after cleanup"
+    );
+    assert_eq!(
+        error_count.load(std::sync::atomic::Ordering::SeqCst),
+        0,
+        "Error count should be consistent"
+    );
 }

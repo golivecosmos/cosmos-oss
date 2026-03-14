@@ -1,11 +1,11 @@
+use crate::services::database_service::DatabaseService;
+use crate::{app_log_debug, app_log_error, app_log_info, app_log_warn};
 use anyhow::{anyhow, Result};
 use rusqlite::Connection;
 use std::sync::Arc;
-use crate::services::database_service::DatabaseService;
-use crate::{app_log_debug, app_log_error, app_log_info, app_log_warn};
 
 /// Schema Management Service
-/// 
+///
 /// Handles all database schema operations including:
 /// - Table creation and schema validation
 /// - Index management
@@ -14,6 +14,8 @@ use crate::{app_log_debug, app_log_error, app_log_info, app_log_warn};
 pub struct SchemaService {
     db_service: Arc<DatabaseService>,
 }
+
+const SCHEMA_VERSION: &str = "2";
 
 impl SchemaService {
     /// Create a new SchemaService instance
@@ -32,7 +34,10 @@ impl SchemaService {
         let has_nomic_schema = match self.check_nomic_schema(&db) {
             Ok(result) => result,
             Err(e) => {
-                app_log_warn!("⚠️ SCHEMA CHECK: Failed to check Nomic schema: {}, assuming false", e);
+                app_log_warn!(
+                    "⚠️ SCHEMA CHECK: Failed to check Nomic schema: {}, assuming false",
+                    e
+                );
                 false
             }
         };
@@ -47,16 +52,21 @@ impl SchemaService {
                     return Err(e);
                 }
             }
-            
+
             // **NEW: Ensure generations table exists (backwards compatibility)**
             match self.ensure_generations_table_exists(&db) {
-                Ok(_) => app_log_info!("✅ SCHEMA: Generations table verified/created successfully"),
+                Ok(_) => {
+                    app_log_info!("✅ SCHEMA: Generations table verified/created successfully")
+                }
                 Err(e) => {
-                    app_log_error!("❌ SCHEMA: Failed to ensure generations table exists: {}", e);
+                    app_log_error!(
+                        "❌ SCHEMA: Failed to ensure generations table exists: {}",
+                        e
+                    );
                     return Err(e);
                 }
             }
-            
+
             // **NEW: Ensure app tables exist (backwards compatibility)**
             match self.ensure_app_tables_exist(&db) {
                 Ok(_) => app_log_info!("✅ SCHEMA: App tables verified/created successfully"),
@@ -70,7 +80,10 @@ impl SchemaService {
             let has_existing_tables = match self.check_existing_tables(&db) {
                 Ok(result) => result,
                 Err(e) => {
-                    app_log_warn!("⚠️ SCHEMA CHECK: Failed to check existing tables: {}, assuming false", e);
+                    app_log_warn!(
+                        "⚠️ SCHEMA CHECK: Failed to check existing tables: {}, assuming false",
+                        e
+                    );
                     false
                 }
             };
@@ -79,7 +92,9 @@ impl SchemaService {
                 app_log_warn!("🔄 SCHEMA: Detected old versionless database - recreating for Nomic compatibility");
                 app_log_warn!("📝 SCHEMA: Old embeddings incompatible with Nomic models - clean slate required");
                 match self.recreate_database_for_upgrade(&db) {
-                    Ok(_) => app_log_info!("✅ SCHEMA: Database successfully recreated for Nomic compatibility"),
+                    Ok(_) => app_log_info!(
+                        "✅ SCHEMA: Database successfully recreated for Nomic compatibility"
+                    ),
                     Err(e) => {
                         app_log_error!("❌ SCHEMA: Failed to recreate database: {}", e);
                         return Err(e);
@@ -88,7 +103,9 @@ impl SchemaService {
             } else {
                 app_log_info!("🆕 SCHEMA: Creating new Nomic-compatible database");
                 match self.create_fresh_schema(&db) {
-                    Ok(_) => app_log_info!("✅ SCHEMA: Fresh Nomic-compatible database created successfully"),
+                    Ok(_) => app_log_info!(
+                        "✅ SCHEMA: Fresh Nomic-compatible database created successfully"
+                    ),
                     Err(e) => {
                         app_log_error!("❌ SCHEMA: Failed to create fresh schema: {}", e);
                         return Err(e);
@@ -98,7 +115,7 @@ impl SchemaService {
         }
 
         app_log_info!("✅ SCHEMA SETUP: Database schema setup completed successfully");
-        
+
         Ok(())
     }
 
@@ -128,7 +145,37 @@ impl SchemaService {
             Err(_) => false,
         };
 
-        Ok(has_nomic_metadata)
+        let has_schema_version = match db.query_row(
+            "SELECT COUNT(*) FROM schema_info WHERE key = 'schema_version' AND value = ?1",
+            rusqlite::params![SCHEMA_VERSION],
+            |row| row.get::<_, i64>(0),
+        ) {
+            Ok(count) => count > 0,
+            Err(_) => false,
+        };
+
+        let has_text_chunks_table = match db.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='text_chunks'",
+            rusqlite::params![],
+            |row| row.get::<_, i64>(0),
+        ) {
+            Ok(count) => count > 0,
+            Err(_) => false,
+        };
+
+        let has_vec_text_chunks_table = match db.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='vec_text_chunks'",
+            rusqlite::params![],
+            |row| row.get::<_, i64>(0),
+        ) {
+            Ok(count) => count > 0,
+            Err(_) => false,
+        };
+
+        Ok(has_nomic_metadata
+            && has_schema_version
+            && has_text_chunks_table
+            && has_vec_text_chunks_table)
     }
 
     /// Check if database has any existing tables
@@ -151,6 +198,7 @@ impl SchemaService {
 
         // Create main images table optimized for Nomic embeddings
         self.create_nomic_images_table(db)?;
+        self.create_text_chunks_table(db)?;
 
         // Create jobs table for persistent job tracking
         self.create_jobs_table(db)?;
@@ -172,6 +220,7 @@ impl SchemaService {
 
         // Create virtual table for Nomic 768-dim embeddings
         self.create_nomic_virtual_table(db)?;
+        self.create_text_chunks_virtual_table(db)?;
 
         // Set schema metadata
         self.set_schema_metadata(db)?;
@@ -183,11 +232,15 @@ impl SchemaService {
     /// Recreate database for version upgrade (clean slate)
     pub fn recreate_database_for_upgrade(&self, db: &Connection) -> Result<()> {
         app_log_warn!("🗑️ SCHEMA: Recreating database for Nomic model upgrade");
-        app_log_warn!("💡 REASON: Embedding dimensions/models changed - old embeddings incompatible");
+        app_log_warn!(
+            "💡 REASON: Embedding dimensions/models changed - old embeddings incompatible"
+        );
 
         // Drop all existing tables (clean slate)
         let _ = db.execute("DROP TABLE IF EXISTS vec_images", rusqlite::params![]);
+        let _ = db.execute("DROP TABLE IF EXISTS vec_text_chunks", rusqlite::params![]);
         let _ = db.execute("DROP TABLE IF EXISTS images", rusqlite::params![]);
+        let _ = db.execute("DROP TABLE IF EXISTS text_chunks", rusqlite::params![]);
         let _ = db.execute("DROP TABLE IF EXISTS schema_info", rusqlite::params![]);
 
         // Create fresh schema for Nomic models
@@ -246,6 +299,35 @@ impl SchemaService {
         Ok(())
     }
 
+    /// Create text chunk table for semantic document retrieval
+    pub fn create_text_chunks_table(&self, db: &Connection) -> Result<()> {
+        db.execute(
+            "CREATE TABLE text_chunks (
+                id TEXT PRIMARY KEY,
+                file_path TEXT NOT NULL,
+                parent_file_path TEXT,
+                file_name TEXT,
+                mime_type TEXT,
+                chunk_index INTEGER NOT NULL,
+                chunk_text TEXT NOT NULL,
+                char_start INTEGER,
+                char_end INTEGER,
+                token_estimate INTEGER,
+                metadata TEXT,
+                embedding BLOB,
+                drive_uuid TEXT,
+                created_at TEXT,
+                updated_at TEXT,
+                last_indexed_at TEXT,
+                FOREIGN KEY (drive_uuid) REFERENCES drives(uuid) ON DELETE SET NULL
+            )",
+            rusqlite::params![],
+        )?;
+
+        app_log_info!("✅ SCHEMA: text_chunks table created (chunk-level text embeddings)");
+        Ok(())
+    }
+
     /// Create virtual table optimized for Nomic embeddings
     pub fn create_nomic_virtual_table(&self, db: &Connection) -> Result<()> {
         let create_vec_table_result = db.execute(
@@ -257,11 +339,35 @@ impl SchemaService {
 
         match create_vec_table_result {
             Ok(_) => {
-                app_log_info!("✅ SQLITE: Nomic-optimized vector search table created (768-dim, cosine)");
+                app_log_info!(
+                    "✅ SQLITE: Nomic-optimized vector search table created (768-dim, cosine)"
+                );
             }
             Err(e) => {
                 app_log_warn!("⚠️ SQLITE: Could not create vector table: {}", e);
-                app_log_info!("📝 SQLITE: Will use manual distance calculations for Nomic embeddings");
+                app_log_info!(
+                    "📝 SQLITE: Will use manual distance calculations for Nomic embeddings"
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Create vector table for text chunk embeddings
+    pub fn create_text_chunks_virtual_table(&self, db: &Connection) -> Result<()> {
+        let create_vec_table_result = db.execute(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS vec_text_chunks USING vec0(
+                embedding float[768] distance_metric=cosine
+            )",
+            rusqlite::params![],
+        );
+
+        match create_vec_table_result {
+            Ok(_) => app_log_info!("✅ SQLITE: text chunk vector table created (768-dim, cosine)"),
+            Err(e) => {
+                app_log_error!("❌ SQLITE: Failed to create text chunk vector table: {}", e);
+                return Err(anyhow!("Failed to create text chunk vector table: {}", e));
             }
         }
 
@@ -291,6 +397,12 @@ impl SchemaService {
             rusqlite::params![app_version, now, now],
         )?;
 
+        db.execute(
+            "INSERT OR REPLACE INTO schema_info (key, value, created_at, updated_at)
+             VALUES ('schema_version', ?, ?, ?)",
+            rusqlite::params![SCHEMA_VERSION, now, now],
+        )?;
+
         // **Record Nomic model info**
         db.execute(
             "INSERT OR REPLACE INTO schema_info (key, value, created_at, updated_at)
@@ -310,13 +422,40 @@ impl SchemaService {
 
     /// Create database indexes
     pub fn create_indexes(&self, db: &Connection) -> Result<()> {
-        db.execute("CREATE INDEX IF NOT EXISTS idx_file_path ON images(file_path)", rusqlite::params![])?;
-        db.execute("CREATE INDEX IF NOT EXISTS idx_source_type ON images(source_type)", rusqlite::params![])?;
-        db.execute("CREATE INDEX IF NOT EXISTS idx_created_at ON images(created_at)", rusqlite::params![])?;
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_file_path ON images(file_path)",
+            rusqlite::params![],
+        )?;
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_source_type ON images(source_type)",
+            rusqlite::params![],
+        )?;
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_created_at ON images(created_at)",
+            rusqlite::params![],
+        )?;
 
         // Drive-related indexes
-        db.execute("CREATE INDEX IF NOT EXISTS idx_images_drive_uuid ON images(drive_uuid)", rusqlite::params![])?;
-        db.execute("CREATE INDEX IF NOT EXISTS idx_images_relative_path ON images(relative_path)", rusqlite::params![])?;
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_images_drive_uuid ON images(drive_uuid)",
+            rusqlite::params![],
+        )?;
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_images_relative_path ON images(relative_path)",
+            rusqlite::params![],
+        )?;
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_text_chunks_file_path ON text_chunks(file_path)",
+            rusqlite::params![],
+        )?;
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_text_chunks_mime_type ON text_chunks(mime_type)",
+            rusqlite::params![],
+        )?;
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_text_chunks_drive_uuid ON text_chunks(drive_uuid)",
+            rusqlite::params![],
+        )?;
 
         Ok(())
     }
@@ -334,7 +473,9 @@ impl SchemaService {
         };
 
         if !table_exists {
-            app_log_warn!("⚠️ JOBS TABLE: Missing jobs table, creating for backwards compatibility");
+            app_log_warn!(
+                "⚠️ JOBS TABLE: Missing jobs table, creating for backwards compatibility"
+            );
             self.create_jobs_table(db)?;
             app_log_info!("✅ JOBS TABLE: Jobs table created successfully");
         } else {
@@ -421,13 +562,18 @@ impl SchemaService {
 
         self.create_jobs_indexes(db)?;
 
-        app_log_info!("✅ SCHEMA: Jobs table created for persistent job tracking with retry support");
+        app_log_info!(
+            "✅ SCHEMA: Jobs table created for persistent job tracking with retry support"
+        );
         Ok(())
     }
 
     fn create_jobs_indexes(&self, db: &Connection) -> Result<()> {
         // Replace legacy uniqueness index (target_path only) with type-aware uniqueness.
-        let _ = db.execute("DROP INDEX IF EXISTS idx_jobs_unique_active_target", rusqlite::params![]);
+        let _ = db.execute(
+            "DROP INDEX IF EXISTS idx_jobs_unique_active_target",
+            rusqlite::params![],
+        );
 
         let indexes = [
             ("idx_jobs_status", "CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status)"),
@@ -445,7 +591,11 @@ impl SchemaService {
             match db.execute(sql, rusqlite::params![]) {
                 Ok(_) => app_log_debug!("✅ INDEX: Created jobs table index: {}", index_name),
                 Err(e) => {
-                    app_log_warn!("⚠️ INDEX: Failed to create jobs table index {}: {}", index_name, e);
+                    app_log_warn!(
+                        "⚠️ INDEX: Failed to create jobs table index {}: {}",
+                        index_name,
+                        e
+                    );
                 }
             }
         }
@@ -509,17 +659,33 @@ impl SchemaService {
 
         // Create indexes for drive tables
         let drive_indexes = [
-            ("idx_drives_status", "CREATE INDEX IF NOT EXISTS idx_drives_status ON drives(status)"),
-            ("idx_drives_last_seen", "CREATE INDEX IF NOT EXISTS idx_drives_last_seen ON drives(last_seen)"),
-            ("idx_drive_mounts_uuid", "CREATE INDEX IF NOT EXISTS idx_drive_mounts_uuid ON drive_mounts(drive_uuid)"),
-            ("idx_drive_mounts_path", "CREATE INDEX IF NOT EXISTS idx_drive_mounts_path ON drive_mounts(mount_path)"),
+            (
+                "idx_drives_status",
+                "CREATE INDEX IF NOT EXISTS idx_drives_status ON drives(status)",
+            ),
+            (
+                "idx_drives_last_seen",
+                "CREATE INDEX IF NOT EXISTS idx_drives_last_seen ON drives(last_seen)",
+            ),
+            (
+                "idx_drive_mounts_uuid",
+                "CREATE INDEX IF NOT EXISTS idx_drive_mounts_uuid ON drive_mounts(drive_uuid)",
+            ),
+            (
+                "idx_drive_mounts_path",
+                "CREATE INDEX IF NOT EXISTS idx_drive_mounts_path ON drive_mounts(mount_path)",
+            ),
         ];
 
         for (index_name, sql) in drive_indexes.iter() {
             match db.execute(sql, rusqlite::params![]) {
                 Ok(_) => app_log_debug!("✅ INDEX: Created drive table index: {}", index_name),
                 Err(e) => {
-                    app_log_warn!("⚠️ INDEX: Failed to create drive table index {}: {}", index_name, e);
+                    app_log_warn!(
+                        "⚠️ INDEX: Failed to create drive table index {}: {}",
+                        index_name,
+                        e
+                    );
                     // Don't fail the entire operation for index creation failures
                 }
             }
@@ -582,8 +748,14 @@ impl SchemaService {
         match create_transcriptions_result {
             Ok(_) => app_log_info!("✅ TRANSCRIPTIONS: Transcriptions table created successfully"),
             Err(e) => {
-                app_log_error!("❌ TRANSCRIPTIONS: Failed to create transcriptions table: {}", e);
-                return Err(anyhow::anyhow!("Failed to create transcriptions table: {}", e));
+                app_log_error!(
+                    "❌ TRANSCRIPTIONS: Failed to create transcriptions table: {}",
+                    e
+                );
+                return Err(anyhow::anyhow!(
+                    "Failed to create transcriptions table: {}",
+                    e
+                ));
             }
         }
 
@@ -609,9 +781,14 @@ impl SchemaService {
         );
 
         match create_app_installations_result {
-            Ok(_) => app_log_info!("✅ APP INSTALLATION: App installations table created successfully"),
+            Ok(_) => {
+                app_log_info!("✅ APP INSTALLATION: App installations table created successfully")
+            }
             Err(e) => {
-                app_log_error!("❌ APP INSTALLATION: Failed to create app_installations table: {}", e);
+                app_log_error!(
+                    "❌ APP INSTALLATION: Failed to create app_installations table: {}",
+                    e
+                );
                 return Err(anyhow!("Failed to create app_installations table: {}", e));
             }
         }
@@ -634,7 +811,10 @@ impl SchemaService {
         match create_app_settings_result {
             Ok(_) => app_log_info!("✅ APP INSTALLATION: App settings table created successfully"),
             Err(e) => {
-                app_log_error!("❌ APP INSTALLATION: Failed to create app_settings table: {}", e);
+                app_log_error!(
+                    "❌ APP INSTALLATION: Failed to create app_settings table: {}",
+                    e
+                );
                 return Err(anyhow!("Failed to create app_settings table: {}", e));
             }
         }
@@ -654,7 +834,10 @@ impl SchemaService {
         match create_app_logs_result {
             Ok(_) => app_log_info!("✅ APP INSTALLATION: App logs table created successfully"),
             Err(e) => {
-                app_log_error!("❌ APP INSTALLATION: Failed to create app_logs table: {}", e);
+                app_log_error!(
+                    "❌ APP INSTALLATION: Failed to create app_logs table: {}",
+                    e
+                );
                 return Err(anyhow!("Failed to create app_logs table: {}", e));
             }
         }
@@ -673,7 +856,11 @@ impl SchemaService {
             match db.execute(sql, rusqlite::params![]) {
                 Ok(_) => app_log_debug!("✅ INDEX: Created app table index: {}", index_name),
                 Err(e) => {
-                    app_log_warn!("⚠️ INDEX: Failed to create app table index {}: {}", index_name, e);
+                    app_log_warn!(
+                        "⚠️ INDEX: Failed to create app table index {}: {}",
+                        index_name,
+                        e
+                    );
                     // Don't fail the entire operation for index creation failures
                 }
             }
@@ -709,8 +896,14 @@ impl SchemaService {
         }
 
         // Create indexes for generations table
-        db.execute("CREATE INDEX IF NOT EXISTS idx_generations_created_at ON generations(created_at)", rusqlite::params![])?;
-        db.execute("CREATE INDEX IF NOT EXISTS idx_generations_source ON generations(source)", rusqlite::params![])?;
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_generations_created_at ON generations(created_at)",
+            rusqlite::params![],
+        )?;
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_generations_source ON generations(source)",
+            rusqlite::params![],
+        )?;
         db.execute("CREATE INDEX IF NOT EXISTS idx_generations_file_path ON generations(generated_file_path)", rusqlite::params![])?;
 
         app_log_info!("✅ GENERATIONS: Video generation tracking ready");
@@ -730,7 +923,9 @@ impl SchemaService {
         };
 
         if !table_exists {
-            app_log_warn!("⚠️ GENERATIONS: Missing generations table, creating for backwards compatibility");
+            app_log_warn!(
+                "⚠️ GENERATIONS: Missing generations table, creating for backwards compatibility"
+            );
             self.create_generations_table(db)?;
             app_log_info!("✅ GENERATIONS: Generations table created successfully");
         } else {
@@ -788,7 +983,10 @@ impl SchemaService {
             if !app_id_column_exists {
                 app_log_warn!("⚠️ APP INSTALLATION: Missing app_id column in app_settings table, adding for backwards compatibility");
                 // Add app_id column to existing table
-                db.execute("ALTER TABLE app_settings ADD COLUMN app_id INTEGER", rusqlite::params![])?;
+                db.execute(
+                    "ALTER TABLE app_settings ADD COLUMN app_id INTEGER",
+                    rusqlite::params![],
+                )?;
                 app_log_info!("✅ APP INSTALLATION: Added app_id column to app_settings table");
             } else {
                 app_log_debug!("✅ APP INSTALLATION: App settings table already has app_id column");
@@ -806,7 +1004,9 @@ impl SchemaService {
         };
 
         if !app_logs_exists {
-            app_log_warn!("⚠️ APP INSTALLATION: Missing app_logs table, creating for backwards compatibility");
+            app_log_warn!(
+                "⚠️ APP INSTALLATION: Missing app_logs table, creating for backwards compatibility"
+            );
             self.create_app_tables(db)?;
             app_log_info!("✅ APP INSTALLATION: App logs table created successfully");
         } else {
@@ -835,10 +1035,13 @@ impl SchemaService {
 
             for row in rows {
                 let (key, value, updated_at) = row?;
-                info.insert(key, serde_json::json!({
-                    "value": value,
-                    "updated_at": updated_at
-                }));
+                info.insert(
+                    key,
+                    serde_json::json!({
+                        "value": value,
+                        "updated_at": updated_at
+                    }),
+                );
             }
         }
 
@@ -865,7 +1068,8 @@ mod tests {
     #[test]
     fn test_schema_service_creation() {
         let temp_dir = tempdir().unwrap();
-        let db_service = DatabaseService::new_with_path(Some(temp_dir.path().to_path_buf())).unwrap();
+        let db_service =
+            DatabaseService::new_with_path(Some(temp_dir.path().to_path_buf())).unwrap();
         let schema_service = SchemaService::new(Arc::new(db_service));
         assert!(schema_service.db_service.get_connection().lock().is_ok());
     }
@@ -873,7 +1077,8 @@ mod tests {
     #[test]
     fn test_create_fresh_schema() {
         let temp_dir = tempdir().unwrap();
-        let db_service = DatabaseService::new_with_path(Some(temp_dir.path().to_path_buf())).unwrap();
+        let db_service =
+            DatabaseService::new_with_path(Some(temp_dir.path().to_path_buf())).unwrap();
         let schema_service = SchemaService::new(Arc::new(db_service));
         let connection = schema_service.db_service.get_connection();
         let db = connection.lock().unwrap();
@@ -885,7 +1090,8 @@ mod tests {
         // Verify tables were created
         let tables = [
             "images",
-            "jobs", 
+            "text_chunks",
+            "jobs",
             "drives",
             "drive_mounts",
             "transcriptions",
@@ -893,15 +1099,19 @@ mod tests {
             "app_installations",
             "app_settings",
             "app_logs",
-            "generations"
+            "generations",
+            "vec_images",
+            "vec_text_chunks",
         ];
 
         for table in &tables {
-            let count: i64 = db.query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
-                rusqlite::params![table],
-                |row| row.get(0),
-            ).unwrap();
+            let count: i64 = db
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
+                    rusqlite::params![table],
+                    |row| row.get(0),
+                )
+                .unwrap();
             assert_eq!(count, 1, "Table {} should exist", table);
         }
     }
@@ -909,7 +1119,8 @@ mod tests {
     #[test]
     fn test_check_nomic_schema() {
         let temp_dir = tempdir().unwrap();
-        let db_service = DatabaseService::new_with_path(Some(temp_dir.path().to_path_buf())).unwrap();
+        let db_service =
+            DatabaseService::new_with_path(Some(temp_dir.path().to_path_buf())).unwrap();
         let schema_service = SchemaService::new(Arc::new(db_service));
         let connection = schema_service.db_service.get_connection();
         let db = connection.lock().unwrap();
@@ -927,7 +1138,8 @@ mod tests {
     #[test]
     fn test_check_existing_tables() {
         let temp_dir = tempdir().unwrap();
-        let db_service = DatabaseService::new_with_path(Some(temp_dir.path().to_path_buf())).unwrap();
+        let db_service =
+            DatabaseService::new_with_path(Some(temp_dir.path().to_path_buf())).unwrap();
         let schema_service = SchemaService::new(Arc::new(db_service));
         let connection = schema_service.db_service.get_connection();
         let db = connection.lock().unwrap();
@@ -937,7 +1149,11 @@ mod tests {
         assert!(!has_tables);
 
         // Create some tables and check again
-        db.execute("CREATE TABLE images (id TEXT PRIMARY KEY)", rusqlite::params![]).unwrap();
+        db.execute(
+            "CREATE TABLE images (id TEXT PRIMARY KEY)",
+            rusqlite::params![],
+        )
+        .unwrap();
         let has_tables = schema_service.check_existing_tables(&db).unwrap();
         assert!(has_tables);
     }
@@ -945,7 +1161,8 @@ mod tests {
     #[test]
     fn test_jobs_table_exists() {
         let temp_dir = tempdir().unwrap();
-        let db_service = DatabaseService::new_with_path(Some(temp_dir.path().to_path_buf())).unwrap();
+        let db_service =
+            DatabaseService::new_with_path(Some(temp_dir.path().to_path_buf())).unwrap();
         let schema_service = SchemaService::new(Arc::new(db_service));
         let connection = schema_service.db_service.get_connection();
         let db = connection.lock().unwrap();
@@ -963,7 +1180,8 @@ mod tests {
     #[test]
     fn test_ensure_jobs_table_exists() {
         let temp_dir = tempdir().unwrap();
-        let db_service = DatabaseService::new_with_path(Some(temp_dir.path().to_path_buf())).unwrap();
+        let db_service =
+            DatabaseService::new_with_path(Some(temp_dir.path().to_path_buf())).unwrap();
         let schema_service = SchemaService::new(Arc::new(db_service));
         let connection = schema_service.db_service.get_connection();
         let db = connection.lock().unwrap();
@@ -976,4 +1194,4 @@ mod tests {
         let result = schema_service.ensure_jobs_table_exists(&db);
         assert!(result.is_ok());
     }
-} 
+}

@@ -1,8 +1,8 @@
-use anyhow::{anyhow, Result};
-use std::path::PathBuf;
-use std::fs;
-use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use crate::app_log_info;
+use anyhow::{anyhow, Result};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use std::fs;
+use std::path::PathBuf;
 #[cfg(test)]
 use tempfile;
 
@@ -20,8 +20,8 @@ pub struct EncryptionKeyService {
 impl EncryptionKeyService {
     /// Create a new encryption key service for database encryption
     pub fn new() -> Self {
-        let app_data_dir = crate::utils::path_utils::get_app_data_dir()
-            .expect("Failed to get app data directory");
+        let app_data_dir =
+            crate::utils::path_utils::get_app_data_dir().expect("Failed to get app data directory");
 
         Self {
             app_data_dir,
@@ -37,7 +37,8 @@ impl EncryptionKeyService {
         let temp_dir = tempfile::tempdir().expect("Failed to create temp directory for testing");
 
         // Ensure the directory exists
-        std::fs::create_dir_all(temp_dir.path()).expect("Failed to create temp directory structure");
+        std::fs::create_dir_all(temp_dir.path())
+            .expect("Failed to create temp directory structure");
 
         Self {
             app_data_dir: temp_dir.path().to_path_buf(),
@@ -118,22 +119,21 @@ impl EncryptionKeyService {
     fn obfuscate_key(&self, key: &str) -> String {
         let encoded = BASE64.encode(key.as_bytes());
         // Simple XOR with a fixed value for basic obfuscation
-        let obfuscated: String = encoded.chars()
-            .map(|c| (c as u8 ^ 0x42) as char)
-            .collect();
+        let obfuscated: String = encoded.chars().map(|c| (c as u8 ^ 0x42) as char).collect();
         obfuscated
     }
 
     /// Deobfuscate key from app storage
     fn deobfuscate_key(&self, obfuscated: &str) -> Result<String> {
-        let deobfuscated: String = obfuscated.chars()
+        let deobfuscated: String = obfuscated
+            .chars()
             .map(|c| (c as u8 ^ 0x42) as char)
             .collect();
 
-        let decoded = BASE64.decode(deobfuscated.as_bytes())
+        let decoded = BASE64
+            .decode(deobfuscated.as_bytes())
             .map_err(|e| anyhow!("Failed to decode key: {}", e))?;
 
-        String::from_utf8(decoded)
-            .map_err(|e| anyhow!("Failed to convert key to string: {}", e))
+        String::from_utf8(decoded).map_err(|e| anyhow!("Failed to convert key to string: {}", e))
     }
 }

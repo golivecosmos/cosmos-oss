@@ -1,10 +1,10 @@
 // use log::{info, error, debug, warn}; // Unused imports
-use std::path::PathBuf;
-use std::sync::OnceLock;
+use chrono::Utc;
+use serde::{Deserialize, Serialize};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
-use chrono::Utc;
-use serde::{Serialize, Deserialize};
+use std::path::PathBuf;
+use std::sync::OnceLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogEntry {
@@ -58,20 +58,20 @@ impl AppLogger {
         // Get app data directory
         let app_dir = crate::utils::path_utils::get_app_data_dir()
             .unwrap_or_else(|_| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-        
+
         // Create logs directory
         let logs_dir = app_dir.join("logs");
         if !logs_dir.exists() {
             let _ = std::fs::create_dir_all(&logs_dir);
         }
-        
+
         // Generate session ID
         let session_id = uuid::Uuid::new_v4().to_string();
-        
+
         // Create log file paths
         let log_file_path = logs_dir.join("app.log");
         let error_log_path = logs_dir.join("errors.log");
-        
+
         Self {
             log_file_path,
             error_log_path,
@@ -80,56 +80,58 @@ impl AppLogger {
             max_log_files: 5,
         }
     }
-    
+
     pub fn get_log_file_path(&self) -> &PathBuf {
         &self.log_file_path
     }
-    
+
     pub fn get_session_id(&self) -> &str {
         &self.session_id
     }
-    
+
     /// Write a structured log entry
     pub fn write_log_entry(&self, entry: &LogEntry) -> Result<(), std::io::Error> {
         // Rotate logs if needed
         self.rotate_logs_if_needed()?;
-        
+
         // Write to main log file
         let mut file = OpenOptions::new()
             .create(true)
             .append(true)
             .open(&self.log_file_path)?;
-            
-        let log_line = format!("[{}] [{}] {}\n", 
-            entry.timestamp, entry.level, entry.message);
+
+        let log_line = format!(
+            "[{}] [{}] {}\n",
+            entry.timestamp, entry.level, entry.message
+        );
         file.write_all(log_line.as_bytes())?;
         file.flush()?;
-        
+
         // Also write errors to separate error log
         if entry.level == "ERROR" {
             let mut error_file = OpenOptions::new()
                 .create(true)
                 .append(true)
                 .open(&self.error_log_path)?;
-            
+
             let error_entry = serde_json::to_string(entry).unwrap_or_else(|_| log_line.clone());
             error_file.write_all(format!("{}\n", error_entry).as_bytes())?;
             error_file.flush()?;
         }
-        
+
         Ok(())
     }
-    
+
     /// Get recent log entries for error reporting
     pub fn get_recent_logs(&self, count: usize) -> Vec<LogEntry> {
         use std::io::{BufRead, BufReader};
-        
+
         let mut logs = Vec::new();
-        
+
         if let Ok(file) = File::open(&self.log_file_path) {
             let reader = BufReader::new(file);
             let lines: Vec<String> = reader.lines().filter_map(|l| l.ok()).collect();
-            
+
             // Take the last `count` lines
             for line in lines.iter().rev().take(count).rev() {
                 if let Ok(entry) = self.parse_log_line(line) {
@@ -137,24 +139,24 @@ impl AppLogger {
                 }
             }
         }
-        
+
         logs
     }
-    
+
     /// Parse a log line back into a LogEntry
     fn parse_log_line(&self, line: &str) -> Result<LogEntry, serde_json::Error> {
         // Try to parse as JSON first (for structured logs)
         if let Ok(entry) = serde_json::from_str::<LogEntry>(line) {
             return Ok(entry);
         }
-        
+
         // Fallback: parse simple format [timestamp] [level] message
         let parts: Vec<&str> = line.splitn(3, "] ").collect();
         if parts.len() >= 3 {
             let timestamp = parts[0].trim_start_matches('[');
             let level = parts[1].trim_start_matches('[');
             let message = parts[2];
-            
+
             Ok(LogEntry {
                 timestamp: timestamp.to_string(),
                 level: level.to_string(),
@@ -179,7 +181,7 @@ impl AppLogger {
             })
         }
     }
-    
+
     /// Rotate logs if they exceed size limit
     fn rotate_logs_if_needed(&self) -> Result<(), std::io::Error> {
         if let Ok(metadata) = std::fs::metadata(&self.log_file_path) {
@@ -187,27 +189,27 @@ impl AppLogger {
                 self.rotate_log_file(&self.log_file_path)?;
             }
         }
-        
+
         if let Ok(metadata) = std::fs::metadata(&self.error_log_path) {
             if metadata.len() > self.max_log_size {
                 self.rotate_log_file(&self.error_log_path)?;
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Rotate a specific log file
     fn rotate_log_file(&self, log_path: &PathBuf) -> Result<(), std::io::Error> {
         let log_dir = log_path.parent().unwrap();
         let log_name = log_path.file_stem().unwrap().to_str().unwrap();
         let log_ext = log_path.extension().unwrap_or_default().to_str().unwrap();
-        
+
         // Shift existing rotated files
         for i in (1..self.max_log_files).rev() {
             let old_path = log_dir.join(format!("{}.{}.{}", log_name, i, log_ext));
             let new_path = log_dir.join(format!("{}.{}.{}", log_name, i + 1, log_ext));
-            
+
             if old_path.exists() {
                 if i + 1 >= self.max_log_files {
                     // Delete the oldest file
@@ -217,14 +219,14 @@ impl AppLogger {
                 }
             }
         }
-        
+
         // Move current log to .1
         let rotated_path = log_dir.join(format!("{}.1.{}", log_name, log_ext));
         let _ = std::fs::rename(log_path, &rotated_path);
-        
+
         Ok(())
     }
-    
+
     /// Collect system information for error reports
     pub fn collect_system_info(&self) -> SystemInfo {
         SystemInfo {
@@ -239,7 +241,7 @@ impl AppLogger {
             uptime: Self::get_uptime(),
         }
     }
-    
+
     fn get_os_version() -> String {
         #[cfg(target_os = "macos")]
         {
@@ -250,7 +252,7 @@ impl AppLogger {
                 }
             }
         }
-        
+
         #[cfg(target_os = "windows")]
         {
             use std::process::Command;
@@ -260,30 +262,39 @@ impl AppLogger {
                 }
             }
         }
-        
+
         #[cfg(target_os = "linux")]
         {
             if let Ok(contents) = std::fs::read_to_string("/etc/os-release") {
                 for line in contents.lines() {
                     if line.starts_with("PRETTY_NAME=") {
-                        return line.split('=').nth(1).unwrap_or("Unknown").trim_matches('"').to_string();
+                        return line
+                            .split('=')
+                            .nth(1)
+                            .unwrap_or("Unknown")
+                            .trim_matches('"')
+                            .to_string();
                     }
                 }
             }
         }
-        
+
         "Unknown".to_string()
     }
-    
+
     fn get_rust_version() -> String {
         std::env::var("RUSTC_VERSION").unwrap_or_else(|_| "unknown".to_string())
     }
-    
+
     fn get_memory_usage() -> Option<u64> {
         #[cfg(target_os = "macos")]
         {
             use std::process::Command;
-            if let Ok(output) = Command::new("ps").args(&["-o", "rss=", "-p"]).arg(std::process::id().to_string()).output() {
+            if let Ok(output) = Command::new("ps")
+                .args(&["-o", "rss=", "-p"])
+                .arg(std::process::id().to_string())
+                .output()
+            {
                 if let Ok(rss_str) = String::from_utf8(output.stdout) {
                     if let Ok(rss_kb) = rss_str.trim().parse::<u64>() {
                         return Some(rss_kb * 1024); // Convert KB to bytes
@@ -293,14 +304,14 @@ impl AppLogger {
         }
         None
     }
-    
+
     fn get_disk_space() -> Option<u64> {
         if let Ok(app_dir) = crate::utils::path_utils::get_app_data_dir() {
             #[cfg(unix)]
             {
                 use std::ffi::CString;
                 use std::mem;
-                
+
                 if let Ok(path_cstr) = CString::new(app_dir.to_string_lossy().as_bytes()) {
                     unsafe {
                         let mut statvfs: libc::statvfs = mem::zeroed();
@@ -314,7 +325,7 @@ impl AppLogger {
         }
         None
     }
-    
+
     fn get_uptime() -> Option<u64> {
         #[cfg(target_os = "macos")]
         {
@@ -335,7 +346,7 @@ impl AppLogger {
         }
         None
     }
-    
+
     /// Create a comprehensive error report
     pub fn create_error_report(
         &self,
@@ -359,27 +370,27 @@ impl AppLogger {
             app_state,
         }
     }
-    
+
     /// Save error report to file
     pub fn save_error_report(&self, report: &ErrorReport) -> Result<PathBuf, std::io::Error> {
         let reports_dir = self.log_file_path.parent().unwrap().join("error_reports");
         if !reports_dir.exists() {
             std::fs::create_dir_all(&reports_dir)?;
         }
-        
+
         let report_file = reports_dir.join(format!("error_report_{}.json", report.id));
         let report_json = serde_json::to_string_pretty(report)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-            
+
         std::fs::write(&report_file, report_json)?;
         Ok(report_file)
     }
-    
+
     /// Get all log files for packaging
     pub fn get_all_log_files(&self) -> Vec<PathBuf> {
         let mut files = Vec::new();
         let log_dir = self.log_file_path.parent().unwrap();
-        
+
         if let Ok(entries) = std::fs::read_dir(log_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
@@ -392,7 +403,7 @@ impl AppLogger {
                 }
             }
         }
-        
+
         files
     }
 }
@@ -407,12 +418,12 @@ macro_rules! app_log_info {
         {
             let message = format!($($arg)*);
             log::info!("{}", message);
-            
+
             // Only print to console in debug builds or for important messages
             if cfg!(debug_assertions) || message.contains("ERROR") || message.contains("WARN") || message.contains("STARTUP") {
                 println!("ℹ️  INFO: {}", message);
             }
-            
+
             if let Some(logger) = crate::utils::logger::LOGGER.get() {
                 let entry = crate::utils::logger::LogEntry {
                     timestamp: chrono::Utc::now().to_rfc3339(),
@@ -436,12 +447,12 @@ macro_rules! app_log_debug {
         {
             let message = format!($($arg)*);
             log::debug!("{}", message);
-            
+
             // Only print debug messages in debug builds
             if cfg!(debug_assertions) {
                 println!("🔍 DEBUG: {}", message);
             }
-            
+
             // Only write debug logs to file in debug builds
             if cfg!(debug_assertions) {
                 if let Some(logger) = crate::utils::logger::LOGGER.get() {
@@ -468,10 +479,10 @@ macro_rules! app_log_warn {
         {
             let message = format!($($arg)*);
             log::warn!("{}", message);
-            
+
             // Always print warnings to console
             println!("⚠️  WARN: {}", message);
-            
+
             if let Some(logger) = crate::utils::logger::LOGGER.get() {
                 let entry = crate::utils::logger::LogEntry {
                     timestamp: chrono::Utc::now().to_rfc3339(),
@@ -495,10 +506,10 @@ macro_rules! app_log_error {
         {
             let message = format!($($arg)*);
             log::error!("{}", message);
-            
+
             // Always print errors to console
             println!("❌ ERROR: {}", message);
-            
+
             if let Some(logger) = crate::utils::logger::LOGGER.get() {
                 let entry = crate::utils::logger::LogEntry {
                     timestamp: chrono::Utc::now().to_rfc3339(),
@@ -514,4 +525,4 @@ macro_rules! app_log_error {
             }
         }
     };
-} 
+}

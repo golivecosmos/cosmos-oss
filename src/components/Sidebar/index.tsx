@@ -202,7 +202,7 @@ export function Sidebar({
   return (
     <aside
       className={cn(
-        "flex flex-col dark:bg-darkBg border-r dark:border-darkBgHighlight border-gray transition-all duration-300 relative max-h-screen",
+        "h-full min-h-0 overflow-hidden flex flex-col dark:bg-darkBg border-r dark:border-darkBgHighlight border-gray transition-all duration-300 relative",
         isCollapsed ? "w-12 delay-50" : "w-64 delay-0"
       )}
       style={{ width: isCollapsed ? undefined : `${sidebarWidth}px` }}
@@ -232,7 +232,7 @@ export function Sidebar({
 
       <div className={
         cn(
-          "w-full h-full transition-opacity duration-150",
+          "w-full h-full min-h-0 flex flex-col transition-opacity duration-150",
           isCollapsed ? "opacity-0 delay-0" : "opacity-100 delay-150",
         )
       }>
@@ -247,7 +247,7 @@ export function Sidebar({
         {/* Navigation */}
         <div
           className={cn(
-            "overflow-auto py-4 h-[calc(100vh-2rem)]",
+            "flex-1 min-h-0 overflow-y-auto overscroll-contain py-4",
             isCollapsed && "overflow-hidden"
           )}
           onKeyDown={handleSidebarKeyDown}

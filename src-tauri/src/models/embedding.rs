@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use serde_json;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -11,7 +11,7 @@ impl From<Vec<u8>> for EmbeddingVector {
             bytes
                 .chunks_exact(4)
                 .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
-                .collect()
+                .collect(),
         )
     }
 }
@@ -36,41 +36,41 @@ pub struct ImageVectorData {
 pub struct ImageVectorDataResponse {
     /// Unique identifier for the image
     pub id: String,
-    
+
     /// Full path to the file
     pub file_path: String,
-    
+
     /// Metadata as a JSON string containing image attributes:
     /// dimensions: { width, height }, color_type, aspect_ratio, is_directory, fs_size, etc.
     pub metadata: String,
-    
+
     /// Similarity score (higher is better match)
     pub score: f32,
-    
+
     /// Current status of the image (e.g., "indexed", "pending", etc.)
     pub status: String,
-    
+
     /// ISO 8601 timestamp when the image was first indexed
     pub created_at: String,
-    
+
     /// ISO 8601 timestamp when the image was last updated
     pub updated_at: String,
-    
+
     /// ISO 8601 timestamp when the image was last indexed (may be null)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_indexed_at: Option<String>,
-    
+
     /// MIME type of the file (e.g., "image/png", "image/jpeg")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mime_type: Option<String>,
-    
+
     /// Directory path containing the file
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_file_path: Option<String>,
-    
+
     /// Comma-separated list of tags assigned to the image
     pub tags: String,
-    
+
     /// Add video frame specific fields
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timestamp: Option<f64>,
@@ -80,7 +80,7 @@ pub struct ImageVectorDataResponse {
     pub frame_number: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub video_duration: Option<f64>,
-    
+
     /// Drive information for files on external drives
     #[serde(skip_serializing_if = "Option::is_none")]
     pub drive_uuid: Option<String>,
@@ -92,6 +92,18 @@ pub struct ImageVectorDataResponse {
     pub drive_physical_location: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub drive_status: Option<String>,
+
+    /// Source type descriptor (e.g., "video_frame", "text_chunk")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_type: Option<String>,
+
+    /// Text chunk index for text semantic search results
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chunk_index: Option<i64>,
+
+    /// Best matching snippet for text semantic search results
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snippet: Option<String>,
 }
 
 impl From<ImageVectorData> for ImageVectorDataResponse {
@@ -117,6 +129,9 @@ impl From<ImageVectorData> for ImageVectorDataResponse {
             drive_custom_name: None,
             drive_physical_location: None,
             drive_status: None,
+            source_type: None,
+            chunk_index: None,
+            snippet: None,
         }
     }
 }
@@ -128,19 +143,19 @@ impl ImageVectorDataResponse {
         if self.timestamp.is_some() && self.video_duration.is_some() {
             return true;
         }
-        
+
         // Check mime type
         if let Some(mime) = &self.mime_type {
             if mime == "video/frame" {
                 return true;
             }
         }
-        
+
         // Check ID format (frames have specific ID format)
         if self.id.contains(":frame:") {
             return true;
         }
-        
+
         // Parse metadata to check for source_type
         if let Ok(metadata) = serde_json::from_str::<serde_json::Value>(&self.metadata) {
             if let Some(source_type) = metadata.get("source_type").and_then(|v| v.as_str()) {
@@ -149,7 +164,7 @@ impl ImageVectorDataResponse {
                 }
             }
         }
-        
+
         false
     }
 }
@@ -157,10 +172,10 @@ impl ImageVectorDataResponse {
 /// Structure to store metadata about video frames
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VideoFrameMetadata {
-    pub video_path: String,        // Path to the source video file
-    pub timestamp: f64,            // Timestamp in seconds where the frame occurs
-    pub frame_number: usize,       // Frame number in the video
-    pub video_duration: f64,       // Total duration of the video in seconds
-    pub video_width: u32,          // Width of the video
-    pub video_height: u32,         // Height of the video
+    pub video_path: String,  // Path to the source video file
+    pub timestamp: f64,      // Timestamp in seconds where the frame occurs
+    pub frame_number: usize, // Frame number in the video
+    pub video_duration: f64, // Total duration of the video in seconds
+    pub video_width: u32,    // Width of the video
+    pub video_height: u32,   // Height of the video
 }

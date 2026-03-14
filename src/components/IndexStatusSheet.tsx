@@ -575,51 +575,51 @@ export function IndexStatusSheet({ isOpen, onClose }: IndexStatusSheetProps) {
               </span>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1 rounded-lg border border-gray-200 dark:border-darkBgHighlight bg-gray-50/90 dark:bg-darkBgMid/70 p-1 shadow-sm">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handleQueueAction(queuePaused ? 'resume' : 'stop')}
-              disabled={queueActionLoading !== null}
-              title={queuePaused ? 'Resume queue processing' : 'Stop queue processing'}
-              className={`h-8 px-3 rounded-md font-semibold transition-all ${
-                queuePaused
-                  ? 'bg-green-600 text-white hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-400'
-                  : 'bg-slate-900 text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white'
-              }`}
-            >
-              {queuePaused ? <PlayCircle className="h-4 w-4 mr-1" /> : <StopCircle className="h-4 w-4 mr-1" />}
-              {queuePaused ? (queueActionLoading === 'resume' ? 'Resuming...' : 'Resume') : (queueActionLoading === 'stop' ? 'Stopping...' : 'Stop')}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handleQueueAction('clear')}
-              disabled={queueActionLoading !== null}
-              title="Clear pending and running jobs"
-              className="h-8 px-2.5 rounded-md text-amber-700 dark:text-yellowHighlight font-semibold hover:bg-amber-100 dark:hover:bg-yellowShadow/40 hover:text-amber-800 border border-transparent hover:border-amber-200 dark:hover:border-customYellow/50"
-            >
-              <Trash2 className="h-4 w-4 mr-1" />
-              {queueActionLoading === 'clear' ? 'Clearing...' : 'Clear Queue'}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handleQueueAction('clear_all')}
-              disabled={queueActionLoading !== null}
-              title="Clear all jobs"
-              className="h-8 px-2.5 rounded-md text-red-700 dark:text-customRed font-semibold hover:bg-red-100 dark:hover:bg-redShadow/40 hover:text-red-800 border border-transparent hover:border-red-200 dark:hover:border-customRed/50"
-            >
-              <Trash2 className="h-4 w-4 mr-1" />
-              {queueActionLoading === 'clear_all' ? 'Clearing...' : 'Clear All'}
-            </Button>
+          <div className="flex items-start gap-2">
+            <div className="flex items-center gap-1.5 rounded-2xl border border-slate-200/90 dark:border-darkBgHighlight bg-slate-100/80 dark:bg-darkBgMid/70 p-1.5 shadow-[0_6px_18px_rgba(15,23,42,0.08)] dark:shadow-none">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleQueueAction(queuePaused ? 'resume' : 'stop')}
+                disabled={queueActionLoading !== null}
+                title={queuePaused ? 'Resume queue processing' : 'Stop queue processing'}
+                className={`h-9 px-4 rounded-xl font-semibold tracking-tight transition-all ${
+                  queuePaused
+                    ? 'bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-400'
+                    : 'bg-slate-900 text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white'
+                }`}
+              >
+                {queuePaused ? <PlayCircle className="h-4 w-4 mr-1.5" /> : <StopCircle className="h-4 w-4 mr-1.5" />}
+                {queuePaused ? (queueActionLoading === 'resume' ? 'Resuming...' : 'Resume') : (queueActionLoading === 'stop' ? 'Stopping...' : 'Stop')}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleQueueAction('clear')}
+                disabled={queueActionLoading !== null}
+                title="Clear pending and running jobs"
+                className="h-9 px-3 rounded-xl text-amber-700 dark:text-yellowHighlight font-semibold tracking-tight bg-transparent hover:bg-amber-100/90 dark:hover:bg-yellowShadow/40 hover:text-amber-800 border border-transparent hover:border-amber-200 dark:hover:border-customYellow/50"
+              >
+                <Trash2 className="h-4 w-4 mr-1.5" />
+                {queueActionLoading === 'clear' ? 'Clearing...' : 'Clear Queue'}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleQueueAction('clear_all')}
+                disabled={queueActionLoading !== null}
+                title="Clear all jobs"
+                className="h-9 px-3 rounded-xl text-rose-700 dark:text-customRed font-semibold tracking-tight bg-transparent hover:bg-rose-100/90 dark:hover:bg-redShadow/40 hover:text-rose-800 border border-transparent hover:border-rose-200 dark:hover:border-customRed/50"
+              >
+                <Trash2 className="h-4 w-4 mr-1.5" />
+                {queueActionLoading === 'clear_all' ? 'Clearing...' : 'Clear All'}
+              </Button>
             </div>
             <Button
               variant="ghost"
               size="icon"
               onClick={onClose}
-              className="h-8 w-8 rounded-md text-slate-500 hover:text-slate-800 hover:bg-slate-100 dark:text-customGray dark:hover:text-text dark:hover:bg-darkBgHighlight/60"
+              className="h-9 w-9 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 dark:text-customGray dark:hover:text-text dark:hover:bg-darkBgHighlight/60"
             >
               <X className="h-4 w-4" />
             </Button>

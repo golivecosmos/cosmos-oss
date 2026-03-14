@@ -1,9 +1,9 @@
-use anyhow::{anyhow, Result};
-use std::sync::Arc;
-use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc};
 use crate::services::database_service::DatabaseService;
 use crate::{app_log_debug, app_log_info};
+use anyhow::{anyhow, Result};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 /// Video Generation Record
 #[derive(Debug, Serialize, Deserialize)]
@@ -88,7 +88,10 @@ impl GenerationsService {
             ],
         )?;
 
-        app_log_info!("✅ GENERATIONS: Created generation record with ID: {}", generation_id);
+        app_log_info!(
+            "✅ GENERATIONS: Created generation record with ID: {}",
+            generation_id
+        );
         Ok(generation_id)
     }
 
@@ -108,10 +111,17 @@ impl GenerationsService {
         )?;
 
         if rows_affected == 0 {
-            return Err(anyhow!("Generation record with ID {} not found", generation_id));
+            return Err(anyhow!(
+                "Generation record with ID {} not found",
+                generation_id
+            ));
         }
 
-        app_log_info!("✅ GENERATIONS: Updated generation {} with file path: {}", generation_id, file_path);
+        app_log_info!(
+            "✅ GENERATIONS: Updated generation {} with file path: {}",
+            generation_id,
+            file_path
+        );
         Ok(())
     }
 
@@ -148,7 +158,10 @@ impl GenerationsService {
             result.push(generation?);
         }
 
-        app_log_debug!("📊 GENERATIONS: Retrieved {} generation records", result.len());
+        app_log_debug!(
+            "📊 GENERATIONS: Retrieved {} generation records",
+            result.len()
+        );
         Ok(result)
     }
 
@@ -182,11 +195,17 @@ impl GenerationsService {
 
         match generation {
             Ok(gen) => {
-                app_log_debug!("📊 GENERATIONS: Retrieved generation record: {}", generation_id);
+                app_log_debug!(
+                    "📊 GENERATIONS: Retrieved generation record: {}",
+                    generation_id
+                );
                 Ok(Some(gen))
             }
             Err(rusqlite::Error::QueryReturnedNoRows) => {
-                app_log_debug!("📊 GENERATIONS: Generation record not found: {}", generation_id);
+                app_log_debug!(
+                    "📊 GENERATIONS: Generation record not found: {}",
+                    generation_id
+                );
                 Ok(None)
             }
             Err(e) => Err(anyhow!("Failed to get generation: {}", e)),
@@ -205,10 +224,16 @@ impl GenerationsService {
         )?;
 
         if rows_affected == 0 {
-            return Err(anyhow!("Generation record with ID {} not found", generation_id));
+            return Err(anyhow!(
+                "Generation record with ID {} not found",
+                generation_id
+            ));
         }
 
-        app_log_info!("🗑️ GENERATIONS: Deleted generation record: {}", generation_id);
+        app_log_info!(
+            "🗑️ GENERATIONS: Deleted generation record: {}",
+            generation_id
+        );
         Ok(())
     }
 
@@ -230,7 +255,7 @@ impl GenerationsService {
         let mut stmt = db.prepare(
             "SELECT source, COUNT(*) as count
              FROM generations
-             GROUP BY source"
+             GROUP BY source",
         )?;
 
         let source_rows = stmt.query_map(rusqlite::params![], |row| {
@@ -270,27 +295,34 @@ mod tests {
     #[test]
     fn test_generations_service_creation() {
         let temp_dir = tempdir().unwrap();
-        let db_service = DatabaseService::new_with_path(Some(temp_dir.path().to_path_buf())).unwrap();
+        let db_service =
+            DatabaseService::new_with_path(Some(temp_dir.path().to_path_buf())).unwrap();
         let generations_service = GenerationsService::new(Arc::new(db_service));
-        assert!(generations_service.db_service.get_connection().lock().is_ok());
+        assert!(generations_service
+            .db_service
+            .get_connection()
+            .lock()
+            .is_ok());
     }
 
     #[test]
     fn test_create_and_retrieve_generation() {
         let temp_dir = tempdir().unwrap();
-        let db_service = DatabaseService::new_with_path(Some(temp_dir.path().to_path_buf())).unwrap();
+        let db_service =
+            DatabaseService::new_with_path(Some(temp_dir.path().to_path_buf())).unwrap();
         let generations_service = GenerationsService::new(Arc::new(db_service));
 
         // Create a generation
-        let generation_id = generations_service.create_generation(
-            "Test prompt",
-            "{\"test\": \"json\"}",
-            "veo3"
-        ).unwrap();
+        let generation_id = generations_service
+            .create_generation("Test prompt", "{\"test\": \"json\"}", "veo3")
+            .unwrap();
 
         // Retrieve the generation
-        let generation = generations_service.get_generation_by_id(&generation_id).unwrap().unwrap();
-        
+        let generation = generations_service
+            .get_generation_by_id(&generation_id)
+            .unwrap()
+            .unwrap();
+
         assert_eq!(generation.user_prompt, "Test prompt");
         assert_eq!(generation.json_prompt, "{\"test\": \"json\"}");
         assert_eq!(generation.source, "veo3");
@@ -300,33 +332,45 @@ mod tests {
     #[test]
     fn test_update_generation_file_path() {
         let temp_dir = tempdir().unwrap();
-        let db_service = DatabaseService::new_with_path(Some(temp_dir.path().to_path_buf())).unwrap();
+        let db_service =
+            DatabaseService::new_with_path(Some(temp_dir.path().to_path_buf())).unwrap();
         let generations_service = GenerationsService::new(Arc::new(db_service));
 
         // Create a generation
-        let generation_id = generations_service.create_generation(
-            "Test prompt",
-            "{\"test\": \"json\"}",
-            "veo3"
-        ).unwrap();
+        let generation_id = generations_service
+            .create_generation("Test prompt", "{\"test\": \"json\"}", "veo3")
+            .unwrap();
 
         // Update with file path
-        generations_service.update_generation_file_path(&generation_id, "/path/to/video.mp4").unwrap();
+        generations_service
+            .update_generation_file_path(&generation_id, "/path/to/video.mp4")
+            .unwrap();
 
         // Retrieve and verify
-        let generation = generations_service.get_generation_by_id(&generation_id).unwrap().unwrap();
-        assert_eq!(generation.generated_file_path, Some("/path/to/video.mp4".to_string()));
+        let generation = generations_service
+            .get_generation_by_id(&generation_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            generation.generated_file_path,
+            Some("/path/to/video.mp4".to_string())
+        );
     }
 
     #[test]
     fn test_get_all_generations() {
         let temp_dir = tempdir().unwrap();
-        let db_service = DatabaseService::new_with_path(Some(temp_dir.path().to_path_buf())).unwrap();
+        let db_service =
+            DatabaseService::new_with_path(Some(temp_dir.path().to_path_buf())).unwrap();
         let generations_service = GenerationsService::new(Arc::new(db_service));
 
         // Create multiple generations
-        generations_service.create_generation("Prompt 1", "{\"test1\": \"json\"}", "veo3").unwrap();
-        generations_service.create_generation("Prompt 2", "{\"test2\": \"json\"}", "veo3").unwrap();
+        generations_service
+            .create_generation("Prompt 1", "{\"test1\": \"json\"}", "veo3")
+            .unwrap();
+        generations_service
+            .create_generation("Prompt 2", "{\"test2\": \"json\"}", "veo3")
+            .unwrap();
 
         // Get all generations
         let generations = generations_service.get_all_generations().unwrap();
@@ -334,4 +378,4 @@ mod tests {
         assert_eq!(generations[0].user_prompt, "Prompt 2"); // Newest first
         assert_eq!(generations[1].user_prompt, "Prompt 1");
     }
-} 
+}

@@ -62,7 +62,10 @@ pub async fn transcribe_audio_file(
         "file_path": clean_path,
         "status": "started"
     });
-    app_log_info!("🔔 Emitting transcription_started event for: {}", clean_path);
+    app_log_info!(
+        "🔔 Emitting transcription_started event for: {}",
+        clean_path
+    );
     if let Err(e) = app_handle.emit("transcription_started", &transcription_started_data) {
         app_log_error!("Failed to emit transcription_started event: {}", e);
     } else {
@@ -105,8 +108,13 @@ pub async fn transcribe_audio_file(
                     "segments_count": result.segments.len()
                 }
             });
-            app_log_info!("🔔 Emitting transcription_completed event for: {}", clean_path);
-            if let Err(e) = app_handle.emit("transcription_completed", &transcription_completed_data) {
+            app_log_info!(
+                "🔔 Emitting transcription_completed event for: {}",
+                clean_path
+            );
+            if let Err(e) =
+                app_handle.emit("transcription_completed", &transcription_completed_data)
+            {
                 app_log_error!("Failed to emit transcription_completed event: {}", e);
             } else {
                 app_log_info!("✅ Successfully emitted transcription_completed event");
@@ -125,7 +133,9 @@ pub async fn transcribe_audio_file(
                 "error": error
             });
             app_log_info!("🔔 Emitting transcription_failed event for: {}", clean_path);
-            if let Err(emit_err) = app_handle.emit("transcription_failed", &transcription_failed_data) {
+            if let Err(emit_err) =
+                app_handle.emit("transcription_failed", &transcription_failed_data)
+            {
                 app_log_error!("Failed to emit transcription_failed event: {}", emit_err);
             } else {
                 app_log_info!("✅ Successfully emitted transcription_failed event");

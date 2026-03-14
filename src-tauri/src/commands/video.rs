@@ -1,12 +1,12 @@
-use serde::{Deserialize, Serialize};
-use tauri::State;
-use crate::services::startup::AppState;
 use crate::services::app_installation_service::AppInstallationService;
 use crate::services::generations_service::GenerationsService;
-use std::path::{Path, PathBuf};
+use crate::services::startup::AppState;
+use anyhow;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Write;
-use anyhow;
+use std::path::{Path, PathBuf};
+use tauri::State;
 
 // Custom deserializer to handle null values in JSON
 fn null_to_default<'de, D>(deserializer: D) -> Result<String, D::Error>
@@ -103,53 +103,104 @@ pub struct AestheticSettings {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Character {
-    #[serde(default = "default_character_name", deserialize_with = "null_to_default")]
+    #[serde(
+        default = "default_character_name",
+        deserialize_with = "null_to_default"
+    )]
     pub name: String,
-    #[serde(default = "default_character_gender", deserialize_with = "null_to_default")]
+    #[serde(
+        default = "default_character_gender",
+        deserialize_with = "null_to_default"
+    )]
     pub gender: String,
-    #[serde(default = "default_character_age", deserialize_with = "null_to_default")]
+    #[serde(
+        default = "default_character_age",
+        deserialize_with = "null_to_default"
+    )]
     pub age: String,
-    #[serde(default = "default_character_appearance", deserialize_with = "null_to_default")]
+    #[serde(
+        default = "default_character_appearance",
+        deserialize_with = "null_to_default"
+    )]
     pub appearance: String,
 }
 
-fn default_character_name() -> String { "Character".to_string() }
-fn default_character_gender() -> String { "unspecified".to_string() }
-fn default_character_age() -> String { "adult".to_string() }
-fn default_character_appearance() -> String { "person".to_string() }
+fn default_character_name() -> String {
+    "Character".to_string()
+}
+fn default_character_gender() -> String {
+    "unspecified".to_string()
+}
+fn default_character_age() -> String {
+    "adult".to_string()
+}
+fn default_character_appearance() -> String {
+    "person".to_string()
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Product {
     #[serde(default = "default_product_name", deserialize_with = "null_to_default")]
     pub name: String,
-    #[serde(default = "default_product_color", deserialize_with = "null_to_default")]
+    #[serde(
+        default = "default_product_color",
+        deserialize_with = "null_to_default"
+    )]
     pub color: String,
     #[serde(default = "default_product_features")]
     pub features: Vec<String>,
 }
 
-fn default_product_name() -> String { "Product".to_string() }
-fn default_product_color() -> String { "default".to_string() }
-fn default_product_features() -> Vec<String> { vec![] }
+fn default_product_name() -> String {
+    "Product".to_string()
+}
+fn default_product_color() -> String {
+    "default".to_string()
+}
+fn default_product_features() -> Vec<String> {
+    vec![]
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Branding {
-    #[serde(default = "default_branding_logo_placement", deserialize_with = "null_to_default")]
+    #[serde(
+        default = "default_branding_logo_placement",
+        deserialize_with = "null_to_default"
+    )]
     pub logo_placement: String,
-    #[serde(default = "default_branding_tagline", deserialize_with = "null_to_default")]
+    #[serde(
+        default = "default_branding_tagline",
+        deserialize_with = "null_to_default"
+    )]
     pub tagline: String,
 }
 
-fn default_branding_logo_placement() -> String { "bottom-right".to_string() }
-fn default_branding_tagline() -> String { "".to_string() }
+fn default_branding_logo_placement() -> String {
+    "bottom-right".to_string()
+}
+fn default_branding_tagline() -> String {
+    "".to_string()
+}
 
-fn default_voiceover_gender() -> String { "female".to_string() }
-fn default_voiceover_language() -> String { "en-US".to_string() }
-fn default_voiceover_lines() -> Vec<String> { vec![] }
+fn default_voiceover_gender() -> String {
+    "female".to_string()
+}
+fn default_voiceover_language() -> String {
+    "en-US".to_string()
+}
+fn default_voiceover_lines() -> Vec<String> {
+    vec![]
+}
 
-fn default_music_genre() -> String { "ambient".to_string() }
-fn default_music_bpm() -> u32 { 90 }
-fn default_music_mood() -> String { "neutral".to_string() }
+fn default_music_genre() -> String {
+    "ambient".to_string()
+}
+fn default_music_bpm() -> u32 {
+    90
+}
+fn default_music_mood() -> String {
+    "neutral".to_string()
+}
 
 fn default_voiceover_settings() -> VoiceoverSettings {
     VoiceoverSettings {
@@ -167,7 +218,9 @@ fn default_music_settings() -> MusicSettings {
     }
 }
 
-fn default_sound_effects() -> Vec<String> { vec![] }
+fn default_sound_effects() -> Vec<String> {
+    vec![]
+}
 
 impl Default for VoiceoverSettings {
     fn default() -> Self {
@@ -203,9 +256,15 @@ pub struct VideoAudio {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct VoiceoverSettings {
-    #[serde(default = "default_voiceover_gender", deserialize_with = "null_to_default")]
+    #[serde(
+        default = "default_voiceover_gender",
+        deserialize_with = "null_to_default"
+    )]
     pub gender: String,
-    #[serde(default = "default_voiceover_language", deserialize_with = "null_to_default")]
+    #[serde(
+        default = "default_voiceover_language",
+        deserialize_with = "null_to_default"
+    )]
     pub language: String,
     #[serde(default = "default_voiceover_lines")]
     pub lines: Vec<String>,
@@ -259,10 +318,7 @@ fn categorize_google_api_error(
     }
 }
 
-async fn google_api_error_from_response(
-    response: reqwest::Response,
-    context: &str,
-) -> String {
+async fn google_api_error_from_response(response: reqwest::Response, context: &str) -> String {
     let status = response.status();
     let error_data: serde_json::Value = response
         .json()
@@ -276,9 +332,7 @@ async fn google_api_error_from_response(
 
 // Get Veo3 API key from installed apps
 async fn get_veo3_api_key(app_state: &AppState) -> Result<String, String> {
-    let app_service = AppInstallationService::new(
-        app_state.sqlite_service.get_database_service(),
-    );
+    let app_service = AppInstallationService::new(app_state.sqlite_service.get_database_service());
 
     // Get all installed apps and find Veo3 app in one blocking operation
     let veo3_app = tokio::task::spawn_blocking(move || {
@@ -314,7 +368,14 @@ async fn delay(ms: u64) {
     tokio::time::sleep(tokio::time::Duration::from_millis(ms)).await;
 }
 
-async fn generate_detailed_prompt(simple_prompt: &str, duration_seconds: Option<u32>, style: Option<String>, model: Option<String>, api_key: &str, aspect_ratio: Option<String>) -> Result<DetailedPrompt, String> {
+async fn generate_detailed_prompt(
+    simple_prompt: &str,
+    duration_seconds: Option<u32>,
+    style: Option<String>,
+    model: Option<String>,
+    api_key: &str,
+    aspect_ratio: Option<String>,
+) -> Result<DetailedPrompt, String> {
     println!("🤖 Generating detailed prompt from: {}", simple_prompt);
 
     if api_key.is_empty() {
@@ -326,7 +387,7 @@ async fn generate_detailed_prompt(simple_prompt: &str, duration_seconds: Option<
     let model = model.as_deref().unwrap_or("veo-3.1-fast-generate-preview");
 
     let prompt_text = format!(
-      r#"Create a detailed JSON prompt for video generation based on this simple description: "{}"
+        r#"Create a detailed JSON prompt for video generation based on this simple description: "{}"
 
       IMPORTANT REQUIREMENTS:
       - Duration must be exactly {} seconds
@@ -398,13 +459,23 @@ async fn generate_detailed_prompt(simple_prompt: &str, duration_seconds: Option<
       }}
 
       Return only the JSON object, no additional text or explanation."#,
-              simple_prompt, duration, style, model, duration, style, style, aspect_ratio.unwrap_or_else(|| "16:9".to_string())
+        simple_prompt,
+        duration,
+        style,
+        model,
+        duration,
+        style,
+        style,
+        aspect_ratio.unwrap_or_else(|| "16:9".to_string())
     );
 
     let client = reqwest::Client::new();
 
     let response = client
-        .post(&format!("{}/models/gemini-2.5-flash:generateContent", BASE_URL))
+        .post(&format!(
+            "{}/models/gemini-2.5-flash:generateContent",
+            BASE_URL
+        ))
         .header("x-goog-api-key", api_key)
         .header("Content-Type", "application/json")
         .json(&serde_json::json!({
@@ -426,7 +497,9 @@ async fn generate_detailed_prompt(simple_prompt: &str, duration_seconds: Option<
         return Err(google_api_error_from_response(response, "Gemini prompt generation").await);
     }
 
-    let data: serde_json::Value = response.json().await
+    let data: serde_json::Value = response
+        .json()
+        .await
         .map_err(|e| format!("Failed to parse response: {}", e))?;
 
     let generated_text = data["candidates"][0]["content"]["parts"][0]["text"]
@@ -465,8 +538,16 @@ async fn generate_video(
         Some(prompt_data.prompt.aesthetic.aspect_ratio.clone())
     };
     let is_veo2 = model.starts_with("veo-2");
-    let ar_to_use = if is_veo2 { aspect_ratio.clone().or(ar_from_prompt) } else { None };
-    if let Some(ref ar) = ar_to_use { println!("📝 Aspect ratio (included): {}", ar); } else { println!("📝 Aspect ratio omitted for this model"); }
+    let ar_to_use = if is_veo2 {
+        aspect_ratio.clone().or(ar_from_prompt)
+    } else {
+        None
+    };
+    if let Some(ref ar) = ar_to_use {
+        println!("📝 Aspect ratio (included): {}", ar);
+    } else {
+        println!("📝 Aspect ratio omitted for this model");
+    }
 
     let client = reqwest::Client::new();
 
@@ -476,8 +557,12 @@ async fn generate_video(
         "prompt".to_string(),
         serde_json::Value::String(serde_json::to_string(prompt_data).unwrap()),
     );
-    if let Some(img) = image.clone() { instance.insert("image".to_string(), img); }
-    if let Some(ar) = ar_to_use { instance.insert("aspectRatio".to_string(), serde_json::Value::String(ar)); }
+    if let Some(img) = image.clone() {
+        instance.insert("image".to_string(), img);
+    }
+    if let Some(ar) = ar_to_use {
+        instance.insert("aspectRatio".to_string(), serde_json::Value::String(ar));
+    }
 
     let request_body = serde_json::json!({
         "instances": [serde_json::Value::Object(instance)]
@@ -497,7 +582,9 @@ async fn generate_video(
         return Err(google_api_error_from_response(response, "Video generation request").await);
     }
 
-    let data: serde_json::Value = response.json().await
+    let data: serde_json::Value = response
+        .json()
+        .await
         .map_err(|e| format!("Failed to parse response: {}", e))?;
 
     let operation_name = data["name"]
@@ -514,23 +601,32 @@ async fn generate_video(
             .map_err(|e| format!("Status check failed: {}", e))?;
 
         if !status_response.status().is_success() {
-            return Err(google_api_error_from_response(status_response, "Video generation status check").await);
+            return Err(google_api_error_from_response(
+                status_response,
+                "Video generation status check",
+            )
+            .await);
         }
 
-        let status_data: serde_json::Value = status_response.json().await
+        let status_data: serde_json::Value = status_response
+            .json()
+            .await
             .map_err(|e| format!("Failed to parse status response: {}", e))?;
 
         // Check if there was an error in the operation
         if let Some(error) = status_data.get("error") {
-            return Err(format!("Operation failed: {}",
-                error["message"].as_str().unwrap_or("Unknown error")));
+            return Err(format!(
+                "Operation failed: {}",
+                error["message"].as_str().unwrap_or("Unknown error")
+            ));
         }
 
         // Check the "done" field
         if let Some(done) = status_data.get("done") {
             if done.as_bool().unwrap_or(false) {
                 // Extract the download URI from the final response
-                let video_uri = status_data["response"]["generateVideoResponse"]["generatedSamples"][0]["video"]["uri"]
+                let video_uri = status_data["response"]["generateVideoResponse"]
+                    ["generatedSamples"][0]["video"]["uri"]
                     .as_str()
                     .ok_or("Failed to extract video URI from response")?;
 
@@ -547,7 +643,9 @@ async fn generate_video(
                 }
 
                 // Save the video to file
-                let video_bytes = download_response.bytes().await
+                let video_bytes = download_response
+                    .bytes()
+                    .await
                     .map_err(|e| format!("Failed to read video bytes: {}", e))?;
 
                 let mut file = fs::File::create(output_file)
@@ -568,24 +666,35 @@ pub async fn generate_video_prompt(
     request: VideoGenerationRequest,
     app_state: State<'_, AppState>,
 ) -> Result<VideoGenerationResponse, String> {
-
     // Get Veo3 API key from installed apps
     let api_key = tokio::time::timeout(
         tokio::time::Duration::from_secs(30),
-        get_veo3_api_key(&app_state)
-    ).await
-        .map_err(|_| "Timeout getting Veo3 API key".to_string())??;
+        get_veo3_api_key(&app_state),
+    )
+    .await
+    .map_err(|_| "Timeout getting Veo3 API key".to_string())??;
 
     // Generate detailed prompt (include selected model so it is embedded in the JSON)
-    let detailed_prompt = generate_detailed_prompt(&request.prompt, request.duration_seconds, request.style, request.model.clone(), &api_key, request.aspect_ratio.clone()).await?;
+    let detailed_prompt = generate_detailed_prompt(
+        &request.prompt,
+        request.duration_seconds,
+        request.style,
+        request.model.clone(),
+        &api_key,
+        request.aspect_ratio.clone(),
+    )
+    .await?;
 
     // Create generation record in database
-    let generations_service = GenerationsService::new(app_state.sqlite_service.get_database_service());
-    let generation_id = generations_service.create_generation(
-        &request.prompt,
-        &serde_json::to_string_pretty(&detailed_prompt).unwrap(),
-        "veo3"
-    ).map_err(|e| format!("Failed to create generation record: {}", e))?;
+    let generations_service =
+        GenerationsService::new(app_state.sqlite_service.get_database_service());
+    let generation_id = generations_service
+        .create_generation(
+            &request.prompt,
+            &serde_json::to_string_pretty(&detailed_prompt).unwrap(),
+            "veo3",
+        )
+        .map_err(|e| format!("Failed to create generation record: {}", e))?;
     // Get desktop path
     let desktop_path = dirs::desktop_dir()
         .ok_or("Could not find desktop directory")?
@@ -627,7 +736,9 @@ pub async fn generate_video_prompt(
     let api_key_clone = api_key.clone();
     let generation_id_clone = generation_id.clone();
     let generations_service_clone = generations_service;
-    let selected_model = request.model.unwrap_or_else(|| "veo-3.1-fast-generate-preview".to_string());
+    let selected_model = request
+        .model
+        .unwrap_or_else(|| "veo-3.1-fast-generate-preview".to_string());
     let selected_model_clone = selected_model.clone();
     let image_opt: Option<serde_json::Value> = request.image.clone();
     let aspect_ratio_opt: Option<String> = request.aspect_ratio.clone();
@@ -640,10 +751,14 @@ pub async fn generate_video_prompt(
             &selected_model_clone,
             image_opt,
             aspect_ratio_opt,
-        ).await {
+        )
+        .await
+        {
             Ok(video_path) => {
                 // Update generation record with file path
-                if let Err(e) = generations_service_clone.update_generation_file_path(&generation_id_clone, &video_path) {
+                if let Err(e) = generations_service_clone
+                    .update_generation_file_path(&generation_id_clone, &video_path)
+                {
                     println!("⚠️ Failed to update generation record: {}", e);
                 }
 
@@ -716,9 +831,11 @@ pub async fn get_generated_json_prompt(
 pub async fn get_all_generations(
     app_state: State<'_, AppState>,
 ) -> Result<Vec<crate::services::generations_service::Generation>, String> {
-    let generations_service = GenerationsService::new(app_state.sqlite_service.get_database_service());
+    let generations_service =
+        GenerationsService::new(app_state.sqlite_service.get_database_service());
 
-    generations_service.get_all_generations()
+    generations_service
+        .get_all_generations()
         .map_err(|e| format!("Failed to get generations: {}", e))
 }
 
@@ -727,20 +844,21 @@ pub async fn get_generation_by_id(
     generation_id: String,
     app_state: State<'_, AppState>,
 ) -> Result<Option<crate::services::generations_service::Generation>, String> {
-    let generations_service = GenerationsService::new(app_state.sqlite_service.get_database_service());
+    let generations_service =
+        GenerationsService::new(app_state.sqlite_service.get_database_service());
 
-    generations_service.get_generation_by_id(&generation_id)
+    generations_service
+        .get_generation_by_id(&generation_id)
         .map_err(|e| format!("Failed to get generation: {}", e))
 }
 
 use crate::ffmpeg_thumbnail::get_bundled_ffmpeg_path;
+use dirs;
 use std::process::Command as ProcessCommand;
 use uuid::Uuid;
-use dirs;
 
 fn get_cosmos_videos_dir() -> Result<PathBuf, String> {
-    let desktop_dir = dirs::desktop_dir()
-        .ok_or("Could not find Desktop directory")?;
+    let desktop_dir = dirs::desktop_dir().ok_or("Could not find Desktop directory")?;
 
     let cosmos_videos_dir = desktop_dir.join("cosmos_videos");
 
@@ -807,10 +925,12 @@ pub async fn edit_video(request: VideoEditRequest) -> Result<String, String> {
     } else {
         let cosmos_dir = get_cosmos_videos_dir()?;
         let input_path = Path::new(&request.input_path);
-        let stem = input_path.file_stem()
+        let stem = input_path
+            .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("output");
-        let extension = input_path.extension()
+        let extension = input_path
+            .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("mp4");
 
@@ -822,9 +942,17 @@ pub async fn edit_video(request: VideoEditRequest) -> Result<String, String> {
             suffix.push_str("_resized");
         }
 
-        cosmos_dir.join(format!("{}{}_{}.{}", stem, suffix,
-            Uuid::new_v4().to_string().chars().take(8).collect::<String>(),
-            extension))
+        cosmos_dir.join(format!(
+            "{}{}_{}.{}",
+            stem,
+            suffix,
+            Uuid::new_v4()
+                .to_string()
+                .chars()
+                .take(8)
+                .collect::<String>(),
+            extension
+        ))
     };
 
     // Build ffmpeg command
@@ -850,7 +978,10 @@ pub async fn edit_video(request: VideoEditRequest) -> Result<String, String> {
     if let (Some(width), Some(height)) = (request.width, request.height) {
         if request.maintain_aspect_ratio.unwrap_or(true) {
             // Scale maintaining aspect ratio (fit within bounds)
-            filters.push(format!("scale={}:{}:force_original_aspect_ratio=decrease", width, height));
+            filters.push(format!(
+                "scale={}:{}:force_original_aspect_ratio=decrease",
+                width, height
+            ));
         } else {
             // Scale to exact dimensions
             filters.push(format!("scale={}:{}", width, height));
@@ -888,8 +1019,10 @@ pub async fn edit_video(request: VideoEditRequest) -> Result<String, String> {
                 let x_offset = max_x_offset * (1.0 + crop_x);
                 let y_offset = max_y_offset * (1.0 - crop_y); // Invert Y for intuitive direction
 
-                let crop_filter = format!("crop={}:{}:{}:{}",
-                    crop_w, crop_h,
+                let crop_filter = format!(
+                    "crop={}:{}:{}:{}",
+                    crop_w,
+                    crop_h,
                     x_offset.round() as i32,
                     y_offset.round() as i32
                 );
@@ -903,7 +1036,10 @@ pub async fn edit_video(request: VideoEditRequest) -> Result<String, String> {
             }
         } else {
             // Pad to aspect ratio (black bars)
-            filters.push(format!("pad=ih*{}:ih:(ow-iw)/2:(oh-ih)/2:black", target_w / target_h));
+            filters.push(format!(
+                "pad=ih*{}:ih:(ow-iw)/2:(oh-ih)/2:black",
+                target_w / target_h
+            ));
         }
     }
 
@@ -939,7 +1075,8 @@ pub async fn edit_video(request: VideoEditRequest) -> Result<String, String> {
     cmd.arg("-y"); // Overwrite if exists
 
     // Execute ffmpeg
-    let output = cmd.output()
+    let output = cmd
+        .output()
         .map_err(|e| format!("Failed to execute ffmpeg: {}", e))?;
 
     if !output.status.success() {
@@ -974,14 +1111,25 @@ pub async fn trim_video(request: TrimVideoRequest) -> Result<String, String> {
     } else {
         let cosmos_dir = get_cosmos_videos_dir()?;
         let input_path = Path::new(&request.input_path);
-        let stem = input_path.file_stem()
+        let stem = input_path
+            .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("output");
-        let extension = input_path.extension()
+        let extension = input_path
+            .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("mp4");
 
-        cosmos_dir.join(format!("{}_trimmed_{}.{}", stem, Uuid::new_v4().to_string().chars().take(8).collect::<String>(), extension))
+        cosmos_dir.join(format!(
+            "{}_trimmed_{}.{}",
+            stem,
+            Uuid::new_v4()
+                .to_string()
+                .chars()
+                .take(8)
+                .collect::<String>(),
+            extension
+        ))
     };
 
     // Build ffmpeg command
@@ -1011,7 +1159,8 @@ pub async fn trim_video(request: TrimVideoRequest) -> Result<String, String> {
     cmd.arg("-y"); // Overwrite output file if exists
 
     // Execute ffmpeg
-    let output = cmd.output()
+    let output = cmd
+        .output()
         .map_err(|e| format!("Failed to execute ffmpeg: {}", e))?;
 
     if !output.status.success() {
@@ -1032,9 +1181,11 @@ pub async fn delete_generation(
     generation_id: String,
     app_state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let generations_service = GenerationsService::new(app_state.sqlite_service.get_database_service());
+    let generations_service =
+        GenerationsService::new(app_state.sqlite_service.get_database_service());
 
-    generations_service.delete_generation(&generation_id)
+    generations_service
+        .delete_generation(&generation_id)
         .map_err(|e| format!("Failed to delete generation: {}", e))
 }
 
@@ -1042,9 +1193,11 @@ pub async fn delete_generation(
 pub async fn get_generation_stats(
     app_state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
-    let generations_service = GenerationsService::new(app_state.sqlite_service.get_database_service());
+    let generations_service =
+        GenerationsService::new(app_state.sqlite_service.get_database_service());
 
-    generations_service.get_generation_stats()
+    generations_service
+        .get_generation_stats()
         .map_err(|e| format!("Failed to get generation stats: {}", e))
 }
 
@@ -1083,8 +1236,7 @@ pub async fn send_video_to_studio(video_path: String) -> Result<String, String> 
     }
 
     // Get desktop path and create cosmos_videos directory
-    let desktop_path = dirs::desktop_dir()
-        .ok_or("Could not find desktop directory")?;
+    let desktop_path = dirs::desktop_dir().ok_or("Could not find desktop directory")?;
     let cosmos_videos_path = desktop_path.join("cosmos_videos");
 
     // Create directory if it doesn't exist
@@ -1097,7 +1249,8 @@ pub async fn send_video_to_studio(video_path: String) -> Result<String, String> 
     let mut counter = 1;
 
     while destination_path.exists() {
-        let stem = source_path.file_stem()
+        let stem = source_path
+            .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("video");
         let new_name = format!("{}_{}.{}", stem, counter, extension);
@@ -1128,8 +1281,7 @@ pub async fn is_video_in_studio(video_path: String) -> Result<bool, String> {
         .to_string();
 
     // Get desktop path and cosmos_videos directory
-    let desktop_path = dirs::desktop_dir()
-        .ok_or("Could not find desktop directory")?;
+    let desktop_path = dirs::desktop_dir().ok_or("Could not find desktop directory")?;
     let cosmos_videos_path = desktop_path.join("cosmos_videos");
 
     // Check if the file exists in cosmos_videos directory

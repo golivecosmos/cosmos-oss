@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Clone)]
 pub struct FileItem {
@@ -28,4 +28,4 @@ pub struct FileInfo {
     pub created_at: DateTime<Utc>,
     pub modified_at: DateTime<Utc>,
     pub frame_number: Option<u32>,
-} 
+}

@@ -9,8 +9,7 @@ fn create_test_audio_service() -> AudioService {
 
 /// Create a temporary audio file for testing
 async fn create_test_audio_file(format: &str) -> NamedTempFile {
-    let mut temp_file = NamedTempFile::new()
-        .expect("Should create temporary file");
+    let mut temp_file = NamedTempFile::new().expect("Should create temporary file");
 
     // Write minimal valid audio data (silence)
     let audio_data = match format {
@@ -19,8 +18,7 @@ async fn create_test_audio_file(format: &str) -> NamedTempFile {
         _ => vec![0u8; 1024], // Fallback to empty data
     };
 
-    std::io::Write::write_all(&mut temp_file, &audio_data)
-        .expect("Should write test audio data");
+    std::io::Write::write_all(&mut temp_file, &audio_data).expect("Should write test audio data");
 
     temp_file
 }
@@ -38,11 +36,11 @@ fn create_minimal_wav() -> Vec<u8> {
     // Format chunk
     wav_data.extend_from_slice(b"fmt ");
     wav_data.extend_from_slice(&(16u32).to_le_bytes()); // Chunk size
-    wav_data.extend_from_slice(&(1u16).to_le_bytes());  // Audio format (PCM)
-    wav_data.extend_from_slice(&(1u16).to_le_bytes());  // Channels (mono)
+    wav_data.extend_from_slice(&(1u16).to_le_bytes()); // Audio format (PCM)
+    wav_data.extend_from_slice(&(1u16).to_le_bytes()); // Channels (mono)
     wav_data.extend_from_slice(&(16000u32).to_le_bytes()); // Sample rate
     wav_data.extend_from_slice(&(32000u32).to_le_bytes()); // Byte rate
-    wav_data.extend_from_slice(&(2u16).to_le_bytes());  // Block align
+    wav_data.extend_from_slice(&(2u16).to_le_bytes()); // Block align
     wav_data.extend_from_slice(&(16u16).to_le_bytes()); // Bits per sample
 
     // Data chunk
@@ -66,7 +64,10 @@ async fn test_audio_service_creation() {
     let audio_service = create_test_audio_service();
 
     // Service should be created but not available until model is loaded
-    assert!(!audio_service.is_available(), "Service should not be available without loaded model");
+    assert!(
+        !audio_service.is_available(),
+        "Service should not be available without loaded model"
+    );
 }
 
 #[tokio::test]
@@ -86,7 +87,11 @@ async fn test_validate_supported_audio_formats() {
         let result = audio_service.validate_audio_file(&file_path);
 
         // Should succeed for supported formats (validation only checks extension and existence)
-        assert!(result.is_ok(), "Should validate supported format: {}", format);
+        assert!(
+            result.is_ok(),
+            "Should validate supported format: {}",
+            format
+        );
     }
 }
 
@@ -141,7 +146,16 @@ fn test_transcription_result_structure() {
 #[test]
 fn test_transcription_segment_word_level_granularity() {
     // Test that segments can represent word-level granularity
-    let words = vec!["This", "is", "a", "test", "of", "word", "level", "transcription"];
+    let words = vec![
+        "This",
+        "is",
+        "a",
+        "test",
+        "of",
+        "word",
+        "level",
+        "transcription",
+    ];
     let mut segments = Vec::new();
 
     for (i, word) in words.iter().enumerate() {
@@ -172,15 +186,22 @@ fn test_transcription_segment_word_level_granularity() {
 
         // Duration should be reasonable for a word (< 1 second)
         let duration = segment.end - segment.start;
-        assert!(duration > 0.0 && duration <= 1.0,
-            "Word '{}' duration should be 0-1 seconds: {}", segment.text, duration);
+        assert!(
+            duration > 0.0 && duration <= 1.0,
+            "Word '{}' duration should be 0-1 seconds: {}",
+            segment.text,
+            duration
+        );
 
         // Verify sequential timing (allow for exact matches or small overlap)
         if i > 0 {
-            let prev_end = result.segments[i-1].end;
-            assert!(segment.start >= prev_end || (prev_end - segment.start).abs() < 0.001,
+            let prev_end = result.segments[i - 1].end;
+            assert!(
+                segment.start >= prev_end || (prev_end - segment.start).abs() < 0.001,
                 "Segment timing should be sequential: prev_end={:.3}, curr_start={:.3}",
-                prev_end, segment.start);
+                prev_end,
+                segment.start
+            );
         }
     }
 }
@@ -267,26 +288,41 @@ fn test_word_level_timestamp_accuracy() {
         let duration = segment.end - segment.start;
 
         // Most words should be under 500ms for good UX
-        assert!(duration <= 1.0,
+        assert!(
+            duration <= 1.0,
             "Word '{}' duration too long for precise navigation: {:.2}s",
-            segment.text, duration);
+            segment.text,
+            duration
+        );
 
         // Minimum duration should be reasonable (20ms)
-        assert!(duration >= 0.02,
+        assert!(
+            duration >= 0.02,
             "Word '{}' duration too short: {:.2}s",
-            segment.text, duration);
+            segment.text,
+            duration
+        );
     }
 
     // Verify sequential timing with no gaps
     for i in 1..segments.len() {
-        let prev_end = segments[i-1].end;
+        let prev_end = segments[i - 1].end;
         let curr_start = segments[i].start;
 
         // Should be continuous or have minimal gap
         let gap = curr_start - prev_end;
-        assert!(gap >= 0.0, "No negative gaps allowed between '{}' and '{}'",
-            segments[i-1].text, segments[i].text);
-        assert!(gap <= 0.1, "Gap too large between '{}' and '{}': {:.2}s",
-            segments[i-1].text, segments[i].text, gap);
+        assert!(
+            gap >= 0.0,
+            "No negative gaps allowed between '{}' and '{}'",
+            segments[i - 1].text,
+            segments[i].text
+        );
+        assert!(
+            gap <= 0.1,
+            "Gap too large between '{}' and '{}': {:.2}s",
+            segments[i - 1].text,
+            segments[i].text,
+            gap
+        );
     }
 }

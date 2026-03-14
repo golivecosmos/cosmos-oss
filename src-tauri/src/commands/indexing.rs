@@ -1,19 +1,22 @@
-use tauri::{Emitter, State};
-use crate::AppState;
-use crate::constants::{is_supported_media_extension, is_supported_video_extension};
-use crate::app_log_info;
-use crate::app_log_error;
-use crate::app_log_warn;
 use crate::app_log_debug;
-use std::sync::Arc;
-use std::collections::{HashMap, HashSet};
-use crate::services::sqlite_service::SqliteVectorService;
+use crate::app_log_error;
+use crate::app_log_info;
+use crate::app_log_warn;
+use crate::constants::{
+    is_supported_image_extension, is_supported_media_extension, is_supported_text_extension,
+    is_supported_video_extension,
+};
 use crate::services::embedding_service::EmbeddingService;
+use crate::services::sqlite_service::SqliteVectorService;
 use crate::services::video_service::VideoService;
-use tokio::sync::Semaphore;
-use std::sync::OnceLock;
+use crate::AppState;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::sync::OnceLock;
 use std::time::Duration;
+use tauri::{Emitter, State};
+use tokio::sync::Semaphore;
 
 // **CONSTANTS FOR BATCH PROCESSING**
 
@@ -32,15 +35,15 @@ static TRANSCRIPTION_SEMAPHORE: OnceLock<Arc<Semaphore>> = OnceLock::new();
 static QUEUE_PROCESSING_PAUSED: AtomicBool = AtomicBool::new(false);
 
 pub fn get_video_semaphore() -> Arc<Semaphore> {
-    VIDEO_SEMAPHORE.get_or_init(|| {
-        Arc::new(Semaphore::new(MAX_CONCURRENT_VIDEOS))
-    }).clone()
+    VIDEO_SEMAPHORE
+        .get_or_init(|| Arc::new(Semaphore::new(MAX_CONCURRENT_VIDEOS)))
+        .clone()
 }
 
 pub fn get_transcription_semaphore() -> Arc<Semaphore> {
-    TRANSCRIPTION_SEMAPHORE.get_or_init(|| {
-        Arc::new(Semaphore::new(MAX_CONCURRENT_TRANSCRIPTIONS))
-    }).clone()
+    TRANSCRIPTION_SEMAPHORE
+        .get_or_init(|| Arc::new(Semaphore::new(MAX_CONCURRENT_TRANSCRIPTIONS)))
+        .clone()
 }
 
 pub fn set_queue_processing_paused(paused: bool) {
@@ -120,14 +123,14 @@ pub struct VideoProgressInfo {
 /// Audio transcription-specific progress information
 #[derive(Clone, serde::Serialize)]
 pub struct TranscriptionProgressInfo {
-    pub current_phase: String,        // "validation", "conversion", "transcription", "storing"
-    pub audio_duration: f64,          // Total audio duration in seconds
-    pub progress_percentage: f64,     // 0-100
-    pub segments_processed: usize,    // Number of transcription segments completed
+    pub current_phase: String, // "validation", "conversion", "transcription", "storing"
+    pub audio_duration: f64,   // Total audio duration in seconds
+    pub progress_percentage: f64, // 0-100
+    pub segments_processed: usize, // Number of transcription segments completed
     pub total_segments: Option<usize>, // Total expected segments (if known)
     pub estimated_time_remaining: f64, // Estimated seconds remaining
-    pub current_operation: String,    // Human readable current operation
-    pub model_name: String,           // Which model is being used
+    pub current_operation: String, // Human readable current operation
+    pub model_name: String,    // Which model is being used
     pub detected_language: Option<String>, // Auto-detected language
 }
 
@@ -149,23 +152,55 @@ pub fn categorize_error(error: &str) -> &'static str {
 
     // Temporary errors that might succeed on retry
     let temp_keywords = [
-        "timeout", "connection", "network", "busy", "locked",
-        "memory", "temporary", "ffmpeg not available", "temporarily",
-        "resource temporarily", "try again", "out of memory", "lock timeout",
-        "file creation failed", "server temporarily", "unreachable", "unavailable",
-        "process crashed", "disk full", "refused"
+        "timeout",
+        "connection",
+        "network",
+        "busy",
+        "locked",
+        "memory",
+        "temporary",
+        "ffmpeg not available",
+        "temporarily",
+        "resource temporarily",
+        "try again",
+        "out of memory",
+        "lock timeout",
+        "file creation failed",
+        "server temporarily",
+        "unreachable",
+        "unavailable",
+        "process crashed",
+        "disk full",
+        "refused",
     ];
 
     // Permanent errors unlikely to succeed on retry
     let perm_keywords = [
-        "not found", "permission denied", "corrupted", "invalid format",
-        "unsupported", "decode", "format", "access denied", "could not be found",
-        "file not found", "invalid image", "invalid video", "malformed", "does not exist"
+        "not found",
+        "permission denied",
+        "corrupted",
+        "invalid format",
+        "unsupported",
+        "decode",
+        "format",
+        "access denied",
+        "could not be found",
+        "file not found",
+        "invalid image",
+        "invalid video",
+        "malformed",
+        "does not exist",
     ];
 
-    if temp_keywords.iter().any(|&keyword| error_lower.contains(keyword)) {
+    if temp_keywords
+        .iter()
+        .any(|&keyword| error_lower.contains(keyword))
+    {
         "temporary"
-    } else if perm_keywords.iter().any(|&keyword| error_lower.contains(keyword)) {
+    } else if perm_keywords
+        .iter()
+        .any(|&keyword| error_lower.contains(keyword))
+    {
         "permanent"
     } else {
         "unknown"
@@ -173,7 +208,10 @@ pub fn categorize_error(error: &str) -> &'static str {
 }
 
 fn file_name_from_path(path: &str) -> String {
-    match std::path::Path::new(path).file_name().and_then(|n| n.to_str()) {
+    match std::path::Path::new(path)
+        .file_name()
+        .and_then(|n| n.to_str())
+    {
         Some(name) => name.to_string(),
         None => {
             app_log_warn!("⚠️ Could not extract file name from path: {}", path);
@@ -183,20 +221,26 @@ fn file_name_from_path(path: &str) -> String {
 }
 
 fn is_hidden_or_system_name(name: &str) -> bool {
-    name.starts_with(".")
-        || name == "DS_Store"
-        || name == ".DS_Store"
-        || name == "Thumbs.db"
+    name.starts_with(".") || name == "DS_Store" || name == ".DS_Store" || name == "Thumbs.db"
 }
 
 /// Helper function to check if a file is already indexed
-pub async fn is_file_already_indexed(sqlite_service: &Arc<SqliteVectorService>, file_path: &str) -> Result<bool, String> {
+pub async fn is_file_already_indexed(
+    sqlite_service: &Arc<SqliteVectorService>,
+    file_path: &str,
+) -> Result<bool, String> {
     // Check if file exists in SQLite database
     match sqlite_service.file_exists(file_path) {
         Ok(exists) => Ok(exists),
         Err(e) => {
-            app_log_error!("Database error checking if file is indexed in SQLite: {}", e);
-            Err(format!("Database error checking indexed state for {}: {}", file_path, e))
+            app_log_error!(
+                "Database error checking if file is indexed in SQLite: {}",
+                e
+            );
+            Err(format!(
+                "Database error checking indexed state for {}: {}",
+                file_path, e
+            ))
         }
     }
 }
@@ -206,7 +250,10 @@ pub async fn is_file_already_indexed(sqlite_service: &Arc<SqliteVectorService>, 
 /// Index a single image file
 #[tauri::command]
 pub async fn index_image(path: String, state: State<'_, AppState>) -> Result<String, String> {
-    state.embedding_service.index_image_file(&path).await
+    state
+        .embedding_service
+        .index_image_file(&path)
+        .await
         .map_err(|e| format!("Failed to index image: {}", e))
 }
 
@@ -217,9 +264,8 @@ pub async fn index_file(
     path: String,
     _name: Option<String>,
     _is_directory: Option<bool>,
-    state: State<'_, AppState>
+    state: State<'_, AppState>,
 ) -> Result<String, String> {
-
     app_log_info!("🗂️ SINGLE FILE INDEX: Starting indexing for file: {}", path);
 
     // Create a single-file job
@@ -230,10 +276,10 @@ pub async fn index_file(
         Ok(true) => {
             app_log_info!("⚠️ File already indexed, skipping: {}", path);
             return Ok("File is already indexed".to_string());
-        },
+        }
         Ok(false) => {
             app_log_info!("✅ File not yet indexed, proceeding: {}", path);
-        },
+        }
         Err(e) => {
             app_log_error!("❌ Could not check if file is indexed for {}: {}", path, e);
             return Err(format!("Failed to verify indexed state: {}", e));
@@ -261,22 +307,38 @@ pub async fn index_file(
     // **NEW: No more progress events - database is the single source of truth**
 
     // Determine file type and index accordingly
-    let extension = path.split('.').last().map(|s| s.to_lowercase()).unwrap_or_default();
+    let extension = path
+        .split('.')
+        .last()
+        .map(|s| s.to_lowercase())
+        .unwrap_or_default();
     let mut errors = Vec::new();
     let mut failed_files = Vec::new();
 
     let result = if is_supported_video_extension(&extension) {
         // Index as video if FFmpeg is available
         if state.video_service.is_ffmpeg_available() {
-            state.embedding_service.index_video_file_with_mode(&path, None, true, Some(app_handle.clone())).await
+            state
+                .embedding_service
+                .index_video_file_with_mode(&path, None, true, Some(app_handle.clone()))
+                .await
                 .map_err(|e| e.to_string())
         } else {
             app_log_warn!("Skipping video file {} - FFmpeg not available", path);
             Err("FFmpeg not available for video processing".to_string())
         }
+    } else if is_supported_text_extension(&extension) {
+        state
+            .embedding_service
+            .index_text_file(&path)
+            .await
+            .map_err(|e| e.to_string())
     } else {
         // Index as image
-        state.embedding_service.index_image_file(&path).await
+        state
+            .embedding_service
+            .index_image_file(&path)
+            .await
             .map_err(|e| e.to_string())
     };
 
@@ -311,39 +373,52 @@ pub async fn index_file(
     if let Err(e) = state.sqlite_service.update_job_progress(
         &job_id,
         final_status,
-        Some(&format!("{}", if processed > 0 { "Completed" } else { "Failed" })),
+        Some(&format!(
+            "{}",
+            if processed > 0 { "Completed" } else { "Failed" }
+        )),
         Some(processed),
         Some(&errors),
-        Some(&failed_files_json)
+        Some(&failed_files_json),
     ) {
         app_log_error!("❌ JOB: Failed to update single file job completion: {}", e);
     } else {
-            // Emit job completion event
-            if let Ok(job_data) = state.sqlite_service.get_job_by_id(&job_id) {
-                emit_event_with_retry(&app_handle, "job_completed", &job_data).await;
-            }
+        // Emit job completion event
+        if let Ok(job_data) = state.sqlite_service.get_job_by_id(&job_id) {
+            emit_event_with_retry(&app_handle, "job_completed", &job_data).await;
         }
+    }
 
     // **NEW: No more final progress events - database has the latest state**
 
     if processed > 0 {
         Ok("File indexed successfully".to_string())
     } else {
-        Err("Failed to index file".to_string())
+        Err(errors
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "Failed to index file".to_string()))
     }
 }
 
 /// Index a video file with specific parameters
 #[tauri::command]
-pub async fn index_video(app_handle: tauri::AppHandle, path: String, fps: Option<f32>, fast_mode: Option<bool>, state: State<'_, AppState>) -> Result<String, String> {
-
+pub async fn index_video(
+    app_handle: tauri::AppHandle,
+    path: String,
+    fps: Option<f32>,
+    fast_mode: Option<bool>,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
     let fast_mode = fast_mode.unwrap_or(true); // Default to optimized mode
 
     app_log_info!("🎬 VIDEO INDEX: Starting video indexing for: {}", path);
 
     // Ensure FFmpeg is available
     if !state.video_service.is_ffmpeg_available() {
-        return Err("FFmpeg not available. Please install FFmpeg to enable video processing.".to_string());
+        return Err(
+            "FFmpeg not available. Please install FFmpeg to enable video processing.".to_string(),
+        );
     }
 
     // Send initial progress
@@ -371,7 +446,11 @@ pub async fn index_video(app_handle: tauri::AppHandle, path: String, fps: Option
     emit_event_with_retry(&app_handle, "bulk_index_progress", &initial_progress).await;
 
     // Index the video file with the specified frame rate and mode
-    match state.embedding_service.index_video_file_with_mode(&path, fps, fast_mode, Some(app_handle.clone())).await {
+    match state
+        .embedding_service
+        .index_video_file_with_mode(&path, fps, fast_mode, Some(app_handle.clone()))
+        .await
+    {
         Ok(video_id) => {
             // Send completion progress
             let final_progress = BulkIndexProgress {
@@ -396,9 +475,13 @@ pub async fn index_video(app_handle: tauri::AppHandle, path: String, fps: Option
 
             emit_event_with_retry(&app_handle, "bulk_index_progress", &final_progress).await;
 
-            app_log_info!("✅ VIDEO INDEX: Successfully indexed video: {} (ID: {})", path, video_id);
+            app_log_info!(
+                "✅ VIDEO INDEX: Successfully indexed video: {} (ID: {})",
+                path,
+                video_id
+            );
             Ok(format!("Video indexed successfully with ID: {}", video_id))
-        },
+        }
         Err(e) => {
             // Send error progress
             let error_progress = BulkIndexProgress {
@@ -432,10 +515,12 @@ pub async fn index_video(app_handle: tauri::AppHandle, path: String, fps: Option
 pub async fn index_directory(
     app_handle: tauri::AppHandle,
     path: String,
-    state: State<'_, AppState>
+    state: State<'_, AppState>,
 ) -> Result<String, String> {
-
-    app_log_info!("🗂️ QUEUE INDEX: Starting queue-based indexing for directory: {}", path);
+    app_log_info!(
+        "🗂️ QUEUE INDEX: Starting queue-based indexing for directory: {}",
+        path
+    );
 
     // Check if the path is a directory
     if !state.file_service.is_directory(&path) {
@@ -485,12 +570,16 @@ pub async fn index_directory(
         total_files += 1;
 
         // Check if file is already indexed (skip job creation)
-        let already_indexed = match is_file_already_indexed(&state.sqlite_service, &file_path).await {
+        let already_indexed = match is_file_already_indexed(&state.sqlite_service, &file_path).await
+        {
             Ok(result) => result,
             Err(e) => {
                 app_log_error!("❌ QUEUE: Aborting directory indexing due to indexed-state check failure for {}: {}", file_path, e);
-                return Err(format!("Failed checking indexed state for {}: {}", file_path, e));
-            },
+                return Err(format!(
+                    "Failed checking indexed state for {}: {}",
+                    file_path, e
+                ));
+            }
         };
 
         if already_indexed {
@@ -502,7 +591,11 @@ pub async fn index_directory(
         // Create indexing job for this file
         match state.sqlite_service.create_job("file", &file_path, Some(1)) {
             Ok(job_id) => {
-                app_log_info!("✅ QUEUE: Created indexing job {} for file: {}", job_id, file_name);
+                app_log_info!(
+                    "✅ QUEUE: Created indexing job {} for file: {}",
+                    job_id,
+                    file_name
+                );
                 created_jobs += 1;
                 batch_created_jobs += 1;
                 if job_emit_sample.len() < JOB_CREATED_EVENT_SAMPLE_LIMIT {
@@ -516,13 +609,18 @@ pub async fn index_directory(
                         "sample_job_ids": job_emit_sample,
                         "total_jobs_created_so_far": created_jobs
                     });
-                    emit_event_with_retry(&app_handle, "jobs_batch_created", &jobs_batch_payload).await;
+                    emit_event_with_retry(&app_handle, "jobs_batch_created", &jobs_batch_payload)
+                        .await;
                     batch_created_jobs = 0;
                     job_emit_sample = Vec::new();
                 }
             }
             Err(e) => {
-                app_log_error!("❌ QUEUE: Failed to create indexing job for {}: {}", file_path, e);
+                app_log_error!(
+                    "❌ QUEUE: Failed to create indexing job for {}: {}",
+                    file_path,
+                    e
+                );
             }
         }
     }
@@ -532,7 +630,11 @@ pub async fn index_directory(
         return Ok("No indexable files found in directory".to_string());
     }
 
-    app_log_info!("📋 QUEUE: Created {} indexing jobs ({} skipped)", created_jobs, skipped_files);
+    app_log_info!(
+        "📋 QUEUE: Created {} indexing jobs ({} skipped)",
+        created_jobs,
+        skipped_files
+    );
 
     if batch_created_jobs > 0 {
         let jobs_batch_payload = serde_json::json!({
@@ -570,9 +672,12 @@ mod indexing_command_tests {
 pub async fn transcribe_file(
     app_handle: tauri::AppHandle,
     path: String,
-    state: State<'_, AppState>
+    state: State<'_, AppState>,
 ) -> Result<String, String> {
-    app_log_info!("🎤 TRANSCRIBE FILE: Starting transcription for file: {}", path);
+    app_log_info!(
+        "🎤 TRANSCRIBE FILE: Starting transcription for file: {}",
+        path
+    );
 
     // Check if file exists
     if !std::path::Path::new(&path).exists() {
@@ -581,7 +686,11 @@ pub async fn transcribe_file(
 
     // Check if file has audio content
     let extension = path.split('.').last().unwrap_or_default().to_lowercase();
-    let has_audio = ["wav", "mp3", "m4a", "flac", "ogg", "aac", "wma", "mp4", "mov", "avi", "webm", "mkv", "flv", "wmv", "m4v"].contains(&extension.as_str());
+    let has_audio = [
+        "wav", "mp3", "m4a", "flac", "ogg", "aac", "wma", "mp4", "mov", "avi", "webm", "mkv",
+        "flv", "wmv", "m4v",
+    ]
+    .contains(&extension.as_str());
 
     if !has_audio {
         return Err("File does not contain audio content".to_string());
@@ -589,9 +698,16 @@ pub async fn transcribe_file(
 
     // Create transcription job
     let file_name = file_name_from_path(&path);
-    match state.sqlite_service.create_job("transcription", &path, Some(1)) {
+    match state
+        .sqlite_service
+        .create_job("transcription", &path, Some(1))
+    {
         Ok(job_id) => {
-            app_log_info!("🎤 QUEUE: Created transcription job {} for file: {}", job_id, file_name);
+            app_log_info!(
+                "🎤 QUEUE: Created transcription job {} for file: {}",
+                job_id,
+                file_name
+            );
 
             // Emit job created event
             if let Ok(job_data) = state.sqlite_service.get_job_by_id(&job_id) {
@@ -601,7 +717,11 @@ pub async fn transcribe_file(
             Ok(format!("Created transcription job for {}. Job will be processed automatically by background worker.", file_name))
         }
         Err(e) => {
-            app_log_error!("❌ QUEUE: Failed to create transcription job for {}: {}", path, e);
+            app_log_error!(
+                "❌ QUEUE: Failed to create transcription job for {}: {}",
+                path,
+                e
+            );
             Err(format!("Failed to create transcription job: {}", e))
         }
     }
@@ -617,7 +737,10 @@ pub async fn persistent_queue_worker(
     video_service: Arc<VideoService>,
     app_handle: tauri::AppHandle,
 ) {
-    app_log_info!("🔄 WORKER {}: Starting persistent background queue worker with batch processing", worker_id);
+    app_log_info!(
+        "🔄 WORKER {}: Starting persistent background queue worker with batch processing",
+        worker_id
+    );
 
     let mut idle_cycles = 0;
     let mut consecutive_errors = 0;
@@ -637,8 +760,12 @@ pub async fn persistent_queue_worker(
         // Exponential backoff on errors
         if consecutive_errors > 0 {
             let delay = std::cmp::min(30, 2_u64.pow(consecutive_errors as u32));
-            app_log_warn!("⚠️ WORKER {}: Backing off for {}s after {} consecutive errors",
-                worker_id, delay, consecutive_errors);
+            app_log_warn!(
+                "⚠️ WORKER {}: Backing off for {}s after {} consecutive errors",
+                worker_id,
+                delay,
+                consecutive_errors
+            );
             tokio::time::sleep(tokio::time::Duration::from_secs(delay)).await;
         }
 
@@ -646,7 +773,11 @@ pub async fn persistent_queue_worker(
         // Runs roughly every 5 minutes per worker (60 * 5s idle polling interval).
         if maintenance_cycles % 60 == (worker_id as u64 % 60) {
             if let Err(e) = sqlite_service.recover_orphaned_jobs(600) {
-                app_log_warn!("⚠️ WORKER {}: Failed to recover orphaned jobs: {}", worker_id, e);
+                app_log_warn!(
+                    "⚠️ WORKER {}: Failed to recover orphaned jobs: {}",
+                    worker_id,
+                    e
+                );
             }
         }
         if worker_id == 1 && maintenance_cycles % 720 == 0 {
@@ -659,16 +790,22 @@ pub async fn persistent_queue_worker(
         let claimed_jobs = match sqlite_service.claim_pending_jobs_atomic(worker_id, BATCH_SIZE) {
             Ok(jobs) => {
                 if jobs.len() > 0 {
-                    app_log_info!("🔄 WORKER {}: Atomically claimed {} pending jobs", worker_id, jobs.len());
+                    app_log_info!(
+                        "🔄 WORKER {}: Atomically claimed {} pending jobs",
+                        worker_id,
+                        jobs.len()
+                    );
 
                     // Log job IDs for debugging race conditions
-                    let job_ids: Vec<String> = jobs.iter()
+                    let job_ids: Vec<String> = jobs
+                        .iter()
                         .filter_map(|job| job["id"].as_str().map(|s| s.to_string()))
                         .collect();
                     app_log_debug!("🔄 WORKER {}: Claimed job IDs: {:?}", worker_id, job_ids);
                 } else {
                     // Only check for pending jobs occasionally to avoid spam
-                    if idle_cycles % 20 == 0 && worker_id == 1 { // Every ~2 minutes
+                    if idle_cycles % 20 == 0 && worker_id == 1 {
+                        // Every ~2 minutes
                         match sqlite_service.get_jobs_by_status("pending") {
                             Ok(pending_jobs) => {
                                 if pending_jobs.len() > 0 {
@@ -676,15 +813,23 @@ pub async fn persistent_queue_worker(
                                 }
                             }
                             Err(e) => {
-                                app_log_error!("❌ WORKER {}: Failed to check pending jobs count: {}", worker_id, e);
+                                app_log_error!(
+                                    "❌ WORKER {}: Failed to check pending jobs count: {}",
+                                    worker_id,
+                                    e
+                                );
                             }
                         }
                     }
                 }
                 jobs
-            },
+            }
             Err(e) => {
-                app_log_error!("❌ WORKER {}: Failed to claim pending jobs: {}", worker_id, e);
+                app_log_error!(
+                    "❌ WORKER {}: Failed to claim pending jobs: {}",
+                    worker_id,
+                    e
+                );
                 consecutive_errors += 1;
                 tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
                 continue;
@@ -722,8 +867,12 @@ pub async fn persistent_queue_worker(
             consecutive_errors = 0; // Reset error counter when successfully checking (even if empty)
 
             // Log occasional status updates when idle (only from worker 1 to avoid spam)
-            if idle_cycles % 60 == 0 && worker_id == 1 { // Every 5 minutes when idle
-                app_log_info!("💤 WORKERS: Idle, waiting for jobs... ({}m idle)", idle_cycles / 12);
+            if idle_cycles % 60 == 0 && worker_id == 1 {
+                // Every 5 minutes when idle
+                app_log_info!(
+                    "💤 WORKERS: Idle, waiting for jobs... ({}m idle)",
+                    idle_cycles / 12
+                );
             }
 
             // Sleep longer when no jobs are available
@@ -732,8 +881,12 @@ pub async fn persistent_queue_worker(
         } else {
             // Reset counters when we have jobs
             if idle_cycles > 0 || consecutive_errors > 0 {
-                app_log_info!("🔄 WORKER {}: Processing {} jobs after {}m idle",
-                    worker_id, claimed_jobs.len(), idle_cycles / 12);
+                app_log_info!(
+                    "🔄 WORKER {}: Processing {} jobs after {}m idle",
+                    worker_id,
+                    claimed_jobs.len(),
+                    idle_cycles / 12
+                );
                 idle_cycles = 0;
                 consecutive_errors = 0;
             }
@@ -741,9 +894,10 @@ pub async fn persistent_queue_worker(
 
         // **🚀 GPU-OPTIMIZED BATCH PROCESSING**
         // Collect jobs by type for efficient processing
-        let mut batch_jobs = Vec::with_capacity(BATCH_SIZE);  // Image jobs for GPU batching
-        let mut video_jobs = Vec::new();                      // Video jobs for individual processing
-        let mut audio_jobs = Vec::new();                      // Audio jobs for transcription
+        let mut batch_jobs = Vec::with_capacity(BATCH_SIZE); // Image jobs for GPU batching
+        let mut video_jobs = Vec::new(); // Video jobs for individual processing
+        let mut audio_jobs = Vec::new(); // Audio jobs for transcription
+        let mut text_jobs = Vec::new(); // Text jobs for chunk embedding
 
         // Collect jobs for batch processing
         for job in claimed_jobs {
@@ -753,65 +907,126 @@ pub async fn persistent_queue_worker(
 
             // Double check job status - it might have been cancelled
             if job["status"] != "running" {
-                app_log_warn!("⏭️ WORKER {}: Skipping job {} because status is {}",
-                    worker_id, job_id, job["status"].as_str().unwrap_or("unknown"));
+                app_log_warn!(
+                    "⏭️ WORKER {}: Skipping job {} because status is {}",
+                    worker_id,
+                    job_id,
+                    job["status"].as_str().unwrap_or("unknown")
+                );
                 continue;
             }
 
             // Skip and retry when the source path is temporarily unavailable (e.g. disconnected drive).
             if !std::path::Path::new(file_path).exists() {
-                let missing_msg = format!("Source path unavailable (possibly disconnected drive): {}", file_path);
+                let missing_msg = format!(
+                    "Source path unavailable (possibly disconnected drive): {}",
+                    file_path
+                );
                 app_log_warn!("⚠️ WORKER {}: {}", worker_id, missing_msg);
                 if let Err(retry_err) = sqlite_service.schedule_job_retry(job_id, &missing_msg) {
-                    app_log_error!("❌ WORKER {}: Failed to schedule retry for missing path: {}", worker_id, retry_err);
+                    app_log_error!(
+                        "❌ WORKER {}: Failed to schedule retry for missing path: {}",
+                        worker_id,
+                        retry_err
+                    );
                     let _ = sqlite_service.update_job_progress(
-                        job_id, "failed", Some(&missing_msg), Some(0), Some(&vec![missing_msg.clone()]), None
+                        job_id,
+                        "failed",
+                        Some(&missing_msg),
+                        Some(0),
+                        Some(&vec![missing_msg.clone()]),
+                        None,
                     );
                 }
                 continue;
             }
 
             let file_name = file_name_from_path(file_path);
-            let extension = file_name.split('.').last().map(|s| s.to_lowercase()).unwrap_or_default();
+            let extension = file_name
+                .split('.')
+                .last()
+                .map(|s| s.to_lowercase())
+                .unwrap_or_default();
 
             // Route jobs based on job type first, then file extension
             if job_type == "transcription" {
                 // All transcription jobs go to audio processing pipeline
                 audio_jobs.push((job_id.to_string(), file_path.to_string()));
-            } else if ["mp4", "mov", "avi", "webm", "mkv", "flv", "wmv", "m4v"].contains(&extension.as_str()) {
+            } else if is_supported_video_extension(&extension) {
                 // Video files for indexing go to video processing
                 video_jobs.push((job_id.to_string(), file_path.to_string()));
-            } else if ["wav", "mp3", "m4a", "flac", "ogg", "aac", "wma"].contains(&extension.as_str()) {
+            } else if ["wav", "mp3", "m4a", "flac", "ogg", "aac", "wma"]
+                .contains(&extension.as_str())
+            {
                 // Pure audio files for indexing would go to audio processing, but we don't index audio files directly yet
                 // For now, skip audio-only files that aren't transcription jobs
                 app_log_warn!("⏭️ WORKER {}: Skipping pure audio file {} - audio indexing not implemented yet", worker_id, file_name);
                 let _ = sqlite_service.update_job_progress(
-                    job_id, "completed", Some("Skipped - audio indexing not implemented"), None, None, None
+                    job_id,
+                    "completed",
+                    Some("Skipped - audio indexing not implemented"),
+                    None,
+                    None,
+                    None,
                 );
-            } else {
-                // Default to image batch processing for all other files
+            } else if is_supported_text_extension(&extension) {
+                text_jobs.push((job_id.to_string(), file_path.to_string()));
+            } else if is_supported_image_extension(&extension) {
+                // Default to image batch processing for supported image files
                 batch_jobs.push((job_id.to_string(), file_path.to_string()));
+            } else {
+                app_log_warn!(
+                    "⏭️ WORKER {}: Unsupported file extension for semantic indexing: {}",
+                    worker_id,
+                    extension
+                );
+                let _ = sqlite_service.update_job_progress(
+                    job_id,
+                    "failed",
+                    Some("Unsupported file extension for semantic indexing"),
+                    Some(0),
+                    Some(&vec![format!("Unsupported extension: {}", extension)]),
+                    None,
+                );
             }
         }
 
         // **NEW: Limit concurrent video processing to prevent resource conflicts**
         if video_jobs.len() > MAX_CONCURRENT_VIDEOS {
-            app_log_warn!("⚠️ WORKER {}: Limiting video processing to {} concurrent videos (found {})",
-                worker_id, MAX_CONCURRENT_VIDEOS, video_jobs.len());
+            app_log_warn!(
+                "⚠️ WORKER {}: Limiting video processing to {} concurrent videos (found {})",
+                worker_id,
+                MAX_CONCURRENT_VIDEOS,
+                video_jobs.len()
+            );
 
             // Keep only the first MAX_CONCURRENT_VIDEOS videos, return others to pending
-            let videos_to_process = video_jobs.drain(..MAX_CONCURRENT_VIDEOS).collect::<Vec<_>>();
+            let videos_to_process = video_jobs
+                .drain(..MAX_CONCURRENT_VIDEOS)
+                .collect::<Vec<_>>();
             let videos_to_return = video_jobs;
 
             // Return excess videos to pending status
             for (job_id, _) in videos_to_return {
                 if let Err(e) = sqlite_service.update_job_progress(
-                    &job_id, "pending", Some("Returned to queue due to concurrent video limit"),
-                    None, None, None
+                    &job_id,
+                    "pending",
+                    Some("Returned to queue due to concurrent video limit"),
+                    None,
+                    None,
+                    None,
                 ) {
-                    app_log_error!("❌ WORKER {}: Failed to return video job to pending: {}", worker_id, e);
+                    app_log_error!(
+                        "❌ WORKER {}: Failed to return video job to pending: {}",
+                        worker_id,
+                        e
+                    );
                 } else {
-                    app_log_info!("🔄 WORKER {}: Returned video job {} to pending queue", worker_id, job_id);
+                    app_log_info!(
+                        "🔄 WORKER {}: Returned video job {} to pending queue",
+                        worker_id,
+                        job_id
+                    );
                 }
             }
 
@@ -819,16 +1034,20 @@ pub async fn persistent_queue_worker(
         }
 
         // **Log job processing summary**
-        let total_jobs_to_process = batch_jobs.len() + video_jobs.len() + audio_jobs.len();
+        let total_jobs_to_process =
+            batch_jobs.len() + video_jobs.len() + audio_jobs.len() + text_jobs.len();
         if total_jobs_to_process > 0 {
-            app_log_info!("📋 WORKER {}: Processing {} jobs: {} images, {} videos, {} transcriptions",
-                worker_id, total_jobs_to_process, batch_jobs.len(), video_jobs.len(), audio_jobs.len());
+            app_log_info!("📋 WORKER {}: Processing {} jobs: {} images, {} videos, {} transcriptions, {} text files",
+                worker_id, total_jobs_to_process, batch_jobs.len(), video_jobs.len(), audio_jobs.len(), text_jobs.len());
         }
 
         // **Process image batch with GPU acceleration**
         if !batch_jobs.is_empty() {
-            app_log_info!("🚀 WORKER {}: Processing GPU-accelerated batch of {} images",
-                worker_id, batch_jobs.len());
+            app_log_info!(
+                "🚀 WORKER {}: Processing GPU-accelerated batch of {} images",
+                worker_id,
+                batch_jobs.len()
+            );
             let batch_start = std::time::Instant::now();
 
             // Update job progress for all batch jobs
@@ -836,13 +1055,20 @@ pub async fn persistent_queue_worker(
                 if let Err(e) = sqlite_service.update_job_progress(
                     job_id,
                     "running",
-                    Some(&format!("Processing in GPU batch with {} other images", batch_jobs.len() - 1)),
+                    Some(&format!(
+                        "Processing in GPU batch with {} other images",
+                        batch_jobs.len() - 1
+                    )),
                     None,
                     None,
-                    None
+                    None,
                 ) {
-                    app_log_error!("❌ WORKER {}: Failed to update job progress for {}: {}",
-                        worker_id, job_id, e);
+                    app_log_error!(
+                        "❌ WORKER {}: Failed to update job progress for {}: {}",
+                        worker_id,
+                        job_id,
+                        e
+                    );
                 }
 
                 // Emit progress update
@@ -852,13 +1078,23 @@ pub async fn persistent_queue_worker(
             }
 
             // Process batch using GPU-accelerated embedding service
-            match embedding_service.index_image_files_batch(batch_jobs.iter().map(|(_, path)| path.clone()).collect()).await {
+            match embedding_service
+                .index_image_files_batch(batch_jobs.iter().map(|(_, path)| path.clone()).collect())
+                .await
+            {
                 Ok(batch_result) => {
                     let batch_time = batch_start.elapsed();
-                    app_log_info!("🚀 WORKER {}: GPU batch completed in {:.2}ms - {} successful, {} failed",
-                        worker_id, batch_time.as_millis(), batch_result.successful, batch_result.failed);
+                    app_log_info!(
+                        "🚀 WORKER {}: GPU batch completed in {:.2}ms - {} successful, {} failed",
+                        worker_id,
+                        batch_time.as_millis(),
+                        batch_result.successful,
+                        batch_result.failed
+                    );
 
-                    let error_by_path: HashMap<String, String> = batch_result.failed_details.iter()
+                    let error_by_path: HashMap<String, String> = batch_result
+                        .failed_details
+                        .iter()
                         .map(|(path, err)| (path.clone(), err.clone()))
                         .collect();
                     let failed_paths: HashSet<String> = error_by_path.keys().cloned().collect();
@@ -867,11 +1103,21 @@ pub async fn persistent_queue_worker(
                     for (job_id, file_path) in &batch_jobs {
                         if !failed_paths.contains(file_path) {
                             if let Err(e) = sqlite_service.update_job_progress(
-                                job_id, "completed", Some("GPU batch completed"), Some(1), None, None
+                                job_id,
+                                "completed",
+                                Some("GPU batch completed"),
+                                Some(1),
+                                None,
+                                None,
                             ) {
-                                app_log_error!("❌ WORKER {}: Failed to mark job as completed: {}", worker_id, e);
+                                app_log_error!(
+                                    "❌ WORKER {}: Failed to mark job as completed: {}",
+                                    worker_id,
+                                    e
+                                );
                             } else if let Ok(job_data) = sqlite_service.get_job_by_id(job_id) {
-                                emit_event_with_retry(&app_handle, "job_completed", &job_data).await;
+                                emit_event_with_retry(&app_handle, "job_completed", &job_data)
+                                    .await;
                             }
                             continue;
                         }
@@ -884,18 +1130,36 @@ pub async fn persistent_queue_worker(
 
                         let error_type = categorize_error(error_msg);
                         if error_type == "temporary" {
-                            if let Err(retry_err) = sqlite_service.schedule_job_retry(job_id, error_msg) {
-                                app_log_error!("❌ WORKER {}: Failed to schedule retry for batch job: {}", worker_id, retry_err);
+                            if let Err(retry_err) =
+                                sqlite_service.schedule_job_retry(job_id, error_msg)
+                            {
+                                app_log_error!(
+                                    "❌ WORKER {}: Failed to schedule retry for batch job: {}",
+                                    worker_id,
+                                    retry_err
+                                );
                                 let _ = sqlite_service.update_job_progress(
-                                    job_id, "failed", Some(&format!("GPU batch failed: {}", error_msg)),
-                                    Some(0), Some(&vec![error_msg.clone()]), None
+                                    job_id,
+                                    "failed",
+                                    Some(&format!("GPU batch failed: {}", error_msg)),
+                                    Some(0),
+                                    Some(&vec![error_msg.clone()]),
+                                    None,
                                 );
                             }
                         } else if let Err(e) = sqlite_service.update_job_progress(
-                            job_id, "failed", Some(&format!("GPU batch failed: {}", error_msg)),
-                            Some(0), Some(&vec![error_msg.clone()]), None
+                            job_id,
+                            "failed",
+                            Some(&format!("GPU batch failed: {}", error_msg)),
+                            Some(0),
+                            Some(&vec![error_msg.clone()]),
+                            None,
                         ) {
-                            app_log_error!("❌ WORKER {}: Failed to mark job as failed: {}", worker_id, e);
+                            app_log_error!(
+                                "❌ WORKER {}: Failed to mark job as failed: {}",
+                                worker_id,
+                                e
+                            );
                         }
 
                         if let Ok(job_data) = sqlite_service.get_job_by_id(job_id) {
@@ -910,11 +1174,91 @@ pub async fn persistent_queue_worker(
                     // Mark all jobs as failed
                     for (job_id, _) in &batch_jobs {
                         if let Err(e) = sqlite_service.update_job_progress(
-                            job_id, "failed", Some(&format!("Batch processing failed: {}", e)),
-                            Some(0), Some(&vec![e.to_string()]), None
+                            job_id,
+                            "failed",
+                            Some(&format!("Batch processing failed: {}", e)),
+                            Some(0),
+                            Some(&vec![e.to_string()]),
+                            None,
                         ) {
-                            app_log_error!("❌ WORKER {}: Failed to mark job as failed: {}", worker_id, e);
+                            app_log_error!(
+                                "❌ WORKER {}: Failed to mark job as failed: {}",
+                                worker_id,
+                                e
+                            );
                         }
+                    }
+                }
+            }
+        }
+
+        // Process text jobs with strict text-chunk indexing
+        for (job_id, file_path) in &text_jobs {
+            let file_name = file_name_from_path(file_path);
+            app_log_info!(
+                "📝 WORKER {}: Processing text file {}",
+                worker_id,
+                file_name
+            );
+
+            let result = embedding_service
+                .index_text_file(file_path)
+                .await
+                .map_err(|e| e.to_string());
+            match result {
+                Ok(_) => {
+                    if let Err(e) = sqlite_service.update_job_progress(
+                        job_id,
+                        "completed",
+                        Some("Text indexing completed"),
+                        Some(1),
+                        None,
+                        None,
+                    ) {
+                        app_log_error!(
+                            "❌ WORKER {}: Failed to mark text job as completed: {}",
+                            worker_id,
+                            e
+                        );
+                    } else if let Ok(job_data) = sqlite_service.get_job_by_id(job_id) {
+                        emit_event_with_retry(&app_handle, "job_completed", &job_data).await;
+                    }
+                }
+                Err(e) => {
+                    let error_type = categorize_error(&e);
+                    if error_type == "temporary" {
+                        if let Err(retry_err) = sqlite_service.schedule_job_retry(job_id, &e) {
+                            app_log_error!(
+                                "❌ WORKER {}: Failed to schedule retry for text job: {}",
+                                worker_id,
+                                retry_err
+                            );
+                            let _ = sqlite_service.update_job_progress(
+                                job_id,
+                                "failed",
+                                Some(&format!("Text indexing failed: {}", e)),
+                                Some(0),
+                                Some(&vec![e.clone()]),
+                                None,
+                            );
+                        }
+                    } else if let Err(update_err) = sqlite_service.update_job_progress(
+                        job_id,
+                        "failed",
+                        Some(&format!("Text indexing failed: {}", e)),
+                        Some(0),
+                        Some(&vec![e.clone()]),
+                        None,
+                    ) {
+                        app_log_error!(
+                            "❌ WORKER {}: Failed to update failed text job: {}",
+                            worker_id,
+                            update_err
+                        );
+                    }
+
+                    if let Ok(job_data) = sqlite_service.get_job_by_id(job_id) {
+                        emit_event_with_retry(&app_handle, "job_updated", &job_data).await;
                     }
                 }
             }
@@ -923,58 +1267,94 @@ pub async fn persistent_queue_worker(
         // **Process video jobs individually (still need FFmpeg)**
         for (job_id, file_path) in &video_jobs {
             let file_name = file_name_from_path(file_path);
-            app_log_info!("🔄 WORKER {}: Processing video {} individually", worker_id, file_name);
+            app_log_info!(
+                "🔄 WORKER {}: Processing video {} individually",
+                worker_id,
+                file_name
+            );
 
             // **FIXED: Use global semaphore to limit concurrent video processing**
             let video_semaphore = get_video_semaphore();
             let _permit = match video_semaphore.acquire().await {
                 Ok(permit) => permit,
                 Err(e) => {
-                    app_log_error!("❌ WORKER {}: Failed to acquire video semaphore: {}", worker_id, e);
+                    app_log_error!(
+                        "❌ WORKER {}: Failed to acquire video semaphore: {}",
+                        worker_id,
+                        e
+                    );
                     let sem_err = "Failed to acquire video processing permit".to_string();
                     if let Err(retry_err) = sqlite_service.schedule_job_retry(job_id, &sem_err) {
                         app_log_error!("❌ WORKER {}: Failed to schedule retry after video semaphore error: {}", worker_id, retry_err);
                         let _ = sqlite_service.update_job_progress(
-                            job_id, "failed", Some(&sem_err),
-                            Some(0), Some(&vec![sem_err.clone()]), None
+                            job_id,
+                            "failed",
+                            Some(&sem_err),
+                            Some(0),
+                            Some(&vec![sem_err.clone()]),
+                            None,
                         );
                     }
                     continue;
                 }
             };
 
-            app_log_info!("🎬 WORKER {}: Acquired video processing permit for {} (permits: {}/{})",
-                worker_id, file_name, MAX_CONCURRENT_VIDEOS - video_semaphore.available_permits(), MAX_CONCURRENT_VIDEOS);
+            app_log_info!(
+                "🎬 WORKER {}: Acquired video processing permit for {} (permits: {}/{})",
+                worker_id,
+                file_name,
+                MAX_CONCURRENT_VIDEOS - video_semaphore.available_permits(),
+                MAX_CONCURRENT_VIDEOS
+            );
 
             let video_start = std::time::Instant::now();
 
-            app_log_info!("🎬 WORKER {}: Starting in-memory video processing for {}", worker_id, file_name);
+            app_log_info!(
+                "🎬 WORKER {}: Starting in-memory video processing for {}",
+                worker_id,
+                file_name
+            );
 
             let result = if video_service.is_ffmpeg_available() {
-                embedding_service.index_video_file_with_mode(file_path, None, true, Some(app_handle.clone())).await
+                embedding_service
+                    .index_video_file_with_mode(file_path, None, true, Some(app_handle.clone()))
+                    .await
                     .map_err(|e| e.to_string())
             } else {
                 Err("FFmpeg not available for video processing".to_string())
             };
 
             let video_time = video_start.elapsed();
-            app_log_info!("⏱️ WORKER {}: Video {} processed in {:.2}ms",
-                worker_id, file_name, video_time.as_millis());
+            app_log_info!(
+                "⏱️ WORKER {}: Video {} processed in {:.2}ms",
+                worker_id,
+                file_name,
+                video_time.as_millis()
+            );
 
             // Update video job result
             match result {
                 Ok(_) => {
                     consecutive_errors = 0; // Reset on success
-                        if let Err(e) = sqlite_service.update_job_progress(
-                            job_id, "completed", Some("Video completed"), Some(1), None, None
-                        ) {
-                            app_log_error!("❌ WORKER {}: Failed to mark video job as completed: {}", worker_id, e);
-                        } else {
-                            if let Ok(job_data) = sqlite_service.get_job_by_id(job_id) {
-                                emit_event_with_retry(&app_handle, "job_completed", &job_data).await;
-                            }
+                    if let Err(e) = sqlite_service.update_job_progress(
+                        job_id,
+                        "completed",
+                        Some("Video completed"),
+                        Some(1),
+                        None,
+                        None,
+                    ) {
+                        app_log_error!(
+                            "❌ WORKER {}: Failed to mark video job as completed: {}",
+                            worker_id,
+                            e
+                        );
+                    } else {
+                        if let Ok(job_data) = sqlite_service.get_job_by_id(job_id) {
+                            emit_event_with_retry(&app_handle, "job_completed", &job_data).await;
                         }
                     }
+                }
                 Err(e) => {
                     consecutive_errors += 1;
 
@@ -983,64 +1363,114 @@ pub async fn persistent_queue_worker(
                     if error_type == "temporary" {
                         // Schedule automatic retry with exponential backoff
                         if let Err(retry_err) = sqlite_service.schedule_job_retry(job_id, &e) {
-                            app_log_error!("❌ WORKER {}: Failed to schedule retry for video job: {}", worker_id, retry_err);
+                            app_log_error!(
+                                "❌ WORKER {}: Failed to schedule retry for video job: {}",
+                                worker_id,
+                                retry_err
+                            );
                             // Fallback: mark as failed
                             let _ = sqlite_service.update_job_progress(
-                                job_id, "failed", Some(&format!("Video failed: {}", e)),
-                                Some(0), Some(&vec![e.clone()]), None
+                                job_id,
+                                "failed",
+                                Some(&format!("Video failed: {}", e)),
+                                Some(0),
+                                Some(&vec![e.clone()]),
+                                None,
                             );
                         }
                     } else {
                         // Permanent error - mark as failed immediately
                         if let Err(e) = sqlite_service.update_job_progress(
-                            job_id, "failed", Some(&format!("Video failed: {}", e)),
-                            Some(0), Some(&vec![e.clone()]), None
+                            job_id,
+                            "failed",
+                            Some(&format!("Video failed: {}", e)),
+                            Some(0),
+                            Some(&vec![e.clone()]),
+                            None,
                         ) {
-                            app_log_error!("❌ WORKER {}: Failed to mark video job as failed: {}", worker_id, e);
+                            app_log_error!(
+                                "❌ WORKER {}: Failed to mark video job as failed: {}",
+                                worker_id,
+                                e
+                            );
                         }
                     }
                 }
             }
 
-            app_log_info!("🎬 WORKER {}: Released video processing permit for {}", worker_id, file_name);
+            app_log_info!(
+                "🎬 WORKER {}: Released video processing permit for {}",
+                worker_id,
+                file_name
+            );
         }
 
         // **Process audio jobs for transcription individually**
         for (job_id, file_path) in &audio_jobs {
             let file_name = file_name_from_path(file_path);
-            app_log_info!("🔄 WORKER {}: Processing audio {} for transcription", worker_id, file_name);
+            app_log_info!(
+                "🔄 WORKER {}: Processing audio {} for transcription",
+                worker_id,
+                file_name
+            );
 
             // **Use global semaphore to limit concurrent transcription processing**
             let transcription_semaphore = get_transcription_semaphore();
             let _permit = match transcription_semaphore.acquire().await {
                 Ok(permit) => permit,
                 Err(e) => {
-                    app_log_error!("❌ WORKER {}: Failed to acquire transcription semaphore: {}", worker_id, e);
+                    app_log_error!(
+                        "❌ WORKER {}: Failed to acquire transcription semaphore: {}",
+                        worker_id,
+                        e
+                    );
                     let sem_err = "Failed to acquire transcription processing permit".to_string();
                     if let Err(retry_err) = sqlite_service.schedule_job_retry(job_id, &sem_err) {
                         app_log_error!("❌ WORKER {}: Failed to schedule retry after transcription semaphore error: {}", worker_id, retry_err);
                         let _ = sqlite_service.update_job_progress(
-                            job_id, "failed", Some(&sem_err),
-                            Some(0), Some(&vec![sem_err.clone()]), None
+                            job_id,
+                            "failed",
+                            Some(&sem_err),
+                            Some(0),
+                            Some(&vec![sem_err.clone()]),
+                            None,
                         );
                     }
                     continue;
                 }
             };
 
-            app_log_info!("🎤 WORKER {}: Acquired transcription processing permit for {} (permits: {}/{})",
-                worker_id, file_name, MAX_CONCURRENT_TRANSCRIPTIONS - transcription_semaphore.available_permits(), MAX_CONCURRENT_TRANSCRIPTIONS);
+            app_log_info!(
+                "🎤 WORKER {}: Acquired transcription processing permit for {} (permits: {}/{})",
+                worker_id,
+                file_name,
+                MAX_CONCURRENT_TRANSCRIPTIONS - transcription_semaphore.available_permits(),
+                MAX_CONCURRENT_TRANSCRIPTIONS
+            );
 
             let transcription_start = std::time::Instant::now();
 
             // Update job status to processing with transcription progress
             if let Err(e) = sqlite_service.update_job_progress(
-                job_id, "running", Some("Starting transcription"), None, None, None
+                job_id,
+                "running",
+                Some("Starting transcription"),
+                None,
+                None,
+                None,
             ) {
-                app_log_error!("❌ WORKER {}: Failed to update transcription job status: {}", worker_id, e);
+                app_log_error!(
+                    "❌ WORKER {}: Failed to update transcription job status: {}",
+                    worker_id,
+                    e
+                );
             }
 
-            app_log_info!("🎤 WORKER {}: Starting audio transcription for {}", worker_id, file_name);
+            app_log_info!(
+                "🎤 WORKER {}: Starting audio transcription for {}",
+                worker_id,
+                file_name
+            );
 
             // Get audio service from app state through embedding service
             let result = if let Some(audio_service_arc) = &embedding_service.audio_service {
@@ -1054,20 +1484,31 @@ pub async fn persistent_queue_worker(
                 let model_check_result = if !audio_service.is_available() {
                     match crate::services::download_service::DownloadService::get_whisper_status() {
                         crate::services::download_service::WhisperStatus::Ready => {
-                            app_log_info!("🎤 WORKER {}: Whisper model files found, loading model...", worker_id);
+                            app_log_info!(
+                                "🎤 WORKER {}: Whisper model files found, loading model...",
+                                worker_id
+                            );
                             match audio_service.load_model().await {
                                 Ok(_) => {
-                                    app_log_info!("✅ WORKER {}: Whisper model loaded successfully", worker_id);
+                                    app_log_info!(
+                                        "✅ WORKER {}: Whisper model loaded successfully",
+                                        worker_id
+                                    );
                                     Ok(())
                                 }
                                 Err(e) => {
-                                    app_log_error!("❌ WORKER {}: Failed to load Whisper model: {}", worker_id, e);
+                                    app_log_error!(
+                                        "❌ WORKER {}: Failed to load Whisper model: {}",
+                                        worker_id,
+                                        e
+                                    );
                                     Err(format!("Failed to load Whisper model: {}", e))
                                 }
                             }
                         }
                         _ => {
-                            let error = "Whisper model not ready. Please wait for download to complete.";
+                            let error =
+                                "Whisper model not ready. Please wait for download to complete.";
                             app_log_error!("❌ WORKER {}: {}", worker_id, error);
                             Err(error.to_string())
                         }
@@ -1081,22 +1522,38 @@ pub async fn persistent_queue_worker(
                     Ok(_) => {
                         // Validate audio file first
                         match audio_service.validate_audio_file(audio_path) {
-                    Ok(_) => {
-                        app_log_info!("✅ WORKER {}: Audio file validation passed for {}", worker_id, file_name);
+                            Ok(_) => {
+                                app_log_info!(
+                                    "✅ WORKER {}: Audio file validation passed for {}",
+                                    worker_id,
+                                    file_name
+                                );
 
-                        // Update progress: validation complete
-                        let _ = sqlite_service.update_job_progress(
-                            job_id, "running", Some("Validation complete, starting transcription"), None, None, None
-                        );
+                                // Update progress: validation complete
+                                let _ = sqlite_service.update_job_progress(
+                                    job_id,
+                                    "running",
+                                    Some("Validation complete, starting transcription"),
+                                    None,
+                                    None,
+                                    None,
+                                );
 
-                        // Perform transcription
-                        audio_service.transcribe_file(audio_path).await
-                            .map_err(|e| e.to_string())
-                        },
-                        Err(e) => {
-                            app_log_error!("❌ WORKER {}: Audio validation failed for {}: {}", worker_id, file_name, e);
-                            Err(format!("Audio validation failed: {}", e))
-                        }
+                                // Perform transcription
+                                audio_service
+                                    .transcribe_file(audio_path)
+                                    .await
+                                    .map_err(|e| e.to_string())
+                            }
+                            Err(e) => {
+                                app_log_error!(
+                                    "❌ WORKER {}: Audio validation failed for {}: {}",
+                                    worker_id,
+                                    file_name,
+                                    e
+                                );
+                                Err(format!("Audio validation failed: {}", e))
+                            }
                         }
                     }
                     Err(model_error) => {
@@ -1105,65 +1562,111 @@ pub async fn persistent_queue_worker(
                     }
                 }
             } else {
-                app_log_error!("❌ WORKER {}: AudioService not available for transcription", worker_id);
+                app_log_error!(
+                    "❌ WORKER {}: AudioService not available for transcription",
+                    worker_id
+                );
                 Err("AudioService not available".to_string())
             };
 
             let transcription_time = transcription_start.elapsed();
-            app_log_info!("⏱️ WORKER {}: Audio {} transcription processed in {:.2}ms",
-                worker_id, file_name, transcription_time.as_millis());
+            app_log_info!(
+                "⏱️ WORKER {}: Audio {} transcription processed in {:.2}ms",
+                worker_id,
+                file_name,
+                transcription_time.as_millis()
+            );
 
             // Update audio job result
             match result {
                 Ok(transcription_result) => {
                     consecutive_errors = 0; // Reset on success
 
-                    app_log_info!("✅ WORKER {}: Transcription completed for {}: {} segments, language: {:?}",
-                        worker_id, file_name, transcription_result.segments.len(), transcription_result.language);
+                    app_log_info!(
+                        "✅ WORKER {}: Transcription completed for {}: {} segments, language: {:?}",
+                        worker_id,
+                        file_name,
+                        transcription_result.segments.len(),
+                        transcription_result.language
+                    );
 
                     // Store transcription result (for now just log, later we'll integrate with database)
                     app_log_debug!("📝 TRANSCRIPTION: {}", transcription_result.text);
 
-                        if let Err(e) = sqlite_service.update_job_progress(
-                            job_id, "completed", Some("Transcription completed"), Some(1), None, None
-                        ) {
-                            app_log_error!("❌ WORKER {}: Failed to mark transcription job as completed: {}", worker_id, e);
-                        } else {
-                            if let Ok(job_data) = sqlite_service.get_job_by_id(job_id) {
-                                emit_event_with_retry(&app_handle, "job_completed", &job_data).await;
-                            }
+                    if let Err(e) = sqlite_service.update_job_progress(
+                        job_id,
+                        "completed",
+                        Some("Transcription completed"),
+                        Some(1),
+                        None,
+                        None,
+                    ) {
+                        app_log_error!(
+                            "❌ WORKER {}: Failed to mark transcription job as completed: {}",
+                            worker_id,
+                            e
+                        );
+                    } else {
+                        if let Ok(job_data) = sqlite_service.get_job_by_id(job_id) {
+                            emit_event_with_retry(&app_handle, "job_completed", &job_data).await;
                         }
                     }
+                }
                 Err(e) => {
                     consecutive_errors += 1;
 
-                    app_log_error!("❌ WORKER {}: Transcription failed for {}: {}", worker_id, file_name, e);
+                    app_log_error!(
+                        "❌ WORKER {}: Transcription failed for {}: {}",
+                        worker_id,
+                        file_name,
+                        e
+                    );
 
                     // **Check if error is retryable and schedule automatic retry**
                     let error_type = categorize_error(&e);
                     if error_type == "temporary" {
                         // Schedule automatic retry with exponential backoff
                         if let Err(retry_err) = sqlite_service.schedule_job_retry(job_id, &e) {
-                            app_log_error!("❌ WORKER {}: Failed to schedule retry for transcription job: {}", worker_id, retry_err);
+                            app_log_error!(
+                                "❌ WORKER {}: Failed to schedule retry for transcription job: {}",
+                                worker_id,
+                                retry_err
+                            );
                             // Fallback: mark as failed
                             let _ = sqlite_service.update_job_progress(
-                                job_id, "failed", Some(&format!("Transcription failed: {}", e)),
-                                Some(0), Some(&vec![e.to_string()]), None
+                                job_id,
+                                "failed",
+                                Some(&format!("Transcription failed: {}", e)),
+                                Some(0),
+                                Some(&vec![e.to_string()]),
+                                None,
                             );
                         }
                     } else {
                         // Permanent error - mark as failed immediately
                         if let Err(update_err) = sqlite_service.update_job_progress(
-                            job_id, "failed", Some(&format!("Transcription failed: {}", e)),
-                            Some(0), Some(&vec![e.to_string()]), None
+                            job_id,
+                            "failed",
+                            Some(&format!("Transcription failed: {}", e)),
+                            Some(0),
+                            Some(&vec![e.to_string()]),
+                            None,
                         ) {
-                            app_log_error!("❌ WORKER {}: Failed to mark transcription job as failed: {}", worker_id, update_err);
+                            app_log_error!(
+                                "❌ WORKER {}: Failed to mark transcription job as failed: {}",
+                                worker_id,
+                                update_err
+                            );
                         }
                     }
                 }
             }
 
-            app_log_info!("🎤 WORKER {}: Released transcription processing permit for {}", worker_id, file_name);
+            app_log_info!(
+                "🎤 WORKER {}: Released transcription processing permit for {}",
+                worker_id,
+                file_name
+            );
         }
 
         // Adaptive delay between batches based on workload
@@ -1191,7 +1694,10 @@ pub fn get_worker_count() -> usize {
 
 /// Clear search index
 #[tauri::command]
-pub async fn clear_search_index(app_handle: tauri::AppHandle, state: State<'_, AppState>) -> Result<String, String> {
+pub async fn clear_search_index(
+    app_handle: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
     app_log_info!("🗑️ CLEAR INDEX: Starting index cleanup");
 
     // Clear SQLite index
@@ -1203,7 +1709,7 @@ pub async fn clear_search_index(app_handle: tauri::AppHandle, state: State<'_, A
             emit_event_with_retry(&app_handle, "index_cleared", &()).await;
 
             Ok("Successfully cleared search index".to_string())
-        },
+        }
         Err(e) => {
             app_log_error!("❌ CLEAR INDEX: Failed to clear SQLite index: {}", e);
             Err(format!("Failed to clear search index: {}", e))

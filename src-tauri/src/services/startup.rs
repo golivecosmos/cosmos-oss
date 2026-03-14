@@ -30,7 +30,11 @@ pub struct AppState {
     pub video_service: Arc<VideoService>,
     pub download_service: Arc<DownloadService>,
     pub drive_service: Arc<DriveService>,
-    pub video_generation_status: Arc<tokio::sync::Mutex<std::collections::HashMap<String, crate::commands::video::VideoGenerationStatus>>>,
+    pub video_generation_status: Arc<
+        tokio::sync::Mutex<
+            std::collections::HashMap<String, crate::commands::video::VideoGenerationStatus>,
+        >,
+    >,
 }
 
 /// Manages application startup, service initialization, and background tasks
@@ -91,7 +95,9 @@ impl StartupManager {
             video_service,
             download_service,
             drive_service,
-            video_generation_status: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            video_generation_status: Arc::new(tokio::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
         };
 
         self.app_state = Some(app_state.clone());
@@ -137,7 +143,9 @@ impl StartupManager {
             video_service,
             download_service,
             drive_service,
-            video_generation_status: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            video_generation_status: Arc::new(tokio::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
         };
 
         self.app_state = Some(app_state.clone());
@@ -308,7 +316,9 @@ impl StartupManager {
 
     /// Initialize SQLite service for testing (uses in-memory database)
     #[cfg(test)]
-    pub fn initialize_sqlite_service_for_testing(&self) -> Result<Arc<SqliteVectorService>, String> {
+    pub fn initialize_sqlite_service_for_testing(
+        &self,
+    ) -> Result<Arc<SqliteVectorService>, String> {
         app_log_info!("🔧 STARTUP: Initializing SQLite vector service for testing");
 
         match SqliteVectorService::new_in_memory() {
@@ -317,8 +327,14 @@ impl StartupManager {
                 Ok(Arc::new(service))
             }
             Err(e) => {
-                app_log_error!("❌ Failed to initialize SQLite vector service for testing: {}", e);
-                Err(format!("Failed to initialize SQLite service for testing: {}", e))
+                app_log_error!(
+                    "❌ Failed to initialize SQLite vector service for testing: {}",
+                    e
+                );
+                Err(format!(
+                    "Failed to initialize SQLite service for testing: {}",
+                    e
+                ))
             }
         }
     }

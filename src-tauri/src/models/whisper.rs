@@ -1,3 +1,5 @@
+use crate::services::download_service::DownloadService;
+use crate::{app_log_debug, app_log_info};
 /// **WHISPER MODEL IMPLEMENTATION**
 ///
 /// Based on candle-rs whisper example but adapted for our architecture.
@@ -10,15 +12,12 @@
 /// ├── tokenizer.json           (Tokenizer)
 /// └── model.safetensors         (Whisper model weights)
 /// ```
-
 use anyhow::{Error as E, Result};
+use byteorder::{ByteOrder, LittleEndian};
 use candle_core::{Device, IndexOp, Tensor};
 use candle_nn::{ops::softmax, VarBuilder};
 use candle_transformers::models::whisper::{self as m, audio, Config};
-use crate::services::download_service::DownloadService;
-use crate::{app_log_info, app_log_debug};
 use tokenizers::Tokenizer;
-use byteorder::{ByteOrder, LittleEndian};
 
 /// Whisper model wrapper (similar to NomicModel)
 pub struct WhisperModel {
@@ -86,7 +85,7 @@ impl WhisperModel {
     /// Create a new WhisperModel
     pub fn new() -> Result<Self> {
         // Try to use GPU if available, fallback to CPU
-      let device = if Device::new_metal(0).is_ok() {
+        let device = if Device::new_metal(0).is_ok() {
             app_log_info!("🚀 GPU (Metal) detected, using GPU acceleration");
             Device::new_metal(0)?
         } else {
@@ -128,9 +127,8 @@ impl WhisperModel {
         app_log_debug!("✅ Loaded Whisper tokenizer");
 
         // Load model weights
-        let vb = unsafe {
-            VarBuilder::from_mmaped_safetensors(&[model_path], m::DTYPE, &self.device)?
-        };
+        let vb =
+            unsafe { VarBuilder::from_mmaped_safetensors(&[model_path], m::DTYPE, &self.device)? };
         let model = Model::Normal(m::model::Whisper::load(&vb, config.clone())?);
         app_log_debug!("✅ Loaded Whisper model weights");
 
@@ -148,27 +146,41 @@ impl WhisperModel {
     /// Transcribe audio data (main transcription method)
     pub fn transcribe_audio(&mut self, audio_data: &[f32]) -> Result<TranscriptionResult> {
         if !self.is_loaded() {
-            return Err(anyhow::anyhow!("Model not loaded. Call load_model() first."));
+            return Err(anyhow::anyhow!(
+                "Model not loaded. Call load_model() first."
+            ));
         }
 
         let config = self.config.as_ref().unwrap();
         let tokenizer = self.tokenizer.as_ref().unwrap();
         let model = self.model.as_mut().unwrap();
 
-        app_log_debug!("🔧 Processing {} audio samples ({:.1}s duration)",
-            audio_data.len(), audio_data.len() as f32 / 16000.0);
+        app_log_debug!(
+            "🔧 Processing {} audio samples ({:.1}s duration)",
+            audio_data.len(),
+            audio_data.len() as f32 / 16000.0
+        );
 
         // Validate audio data
         let audio_min = audio_data.iter().fold(f32::INFINITY, |a, &b| a.min(b));
         let audio_max = audio_data.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
         let audio_mean = audio_data.iter().sum::<f32>() / audio_data.len() as f32;
-        let audio_rms = (audio_data.iter().map(|&x| x * x).sum::<f32>() / audio_data.len() as f32).sqrt();
-        app_log_debug!("📊 Audio stats: min={:.3}, max={:.3}, mean={:.3}, rms={:.3}",
-            audio_min, audio_max, audio_mean, audio_rms);
+        let audio_rms =
+            (audio_data.iter().map(|&x| x * x).sum::<f32>() / audio_data.len() as f32).sqrt();
+        app_log_debug!(
+            "📊 Audio stats: min={:.3}, max={:.3}, mean={:.3}, rms={:.3}",
+            audio_min,
+            audio_max,
+            audio_mean,
+            audio_rms
+        );
 
         // Check if audio is too quiet or silent
         if audio_rms < 0.001 {
-            app_log_debug!("⚠️ Audio appears very quiet (RMS: {:.6}), may cause poor transcription", audio_rms);
+            app_log_debug!(
+                "⚠️ Audio appears very quiet (RMS: {:.6}), may cause poor transcription",
+                audio_rms
+            );
         }
 
         // Convert PCM to mel spectrogram using proper mel filters
@@ -191,12 +203,15 @@ impl WhisperModel {
             model,
             tokenizer,
             &self.device,
-            Some(lang_token), // Force English
+            Some(lang_token),       // Force English
             Some(Task::Transcribe), // Explicit transcribe task
             true,
         )?;
 
-        app_log_debug!("🔧 Starting decoder with mel spectrogram dims: {:?}", mel.dims());
+        app_log_debug!(
+            "🔧 Starting decoder with mel spectrogram dims: {:?}",
+            mel.dims()
+        );
         let segments = decoder.run(&mel)?;
         app_log_debug!("✅ Decoder completed, got {} segments", segments.len());
 
@@ -208,7 +223,10 @@ impl WhisperModel {
         for segment in segments {
             // Use word segments if timestamps are enabled, otherwise fall back to segment-level
             if !segment.dr.word_segments.is_empty() {
-                app_log_debug!("📝 Using {} word segments from decoder", segment.dr.word_segments.len());
+                app_log_debug!(
+                    "📝 Using {} word segments from decoder",
+                    segment.dr.word_segments.len()
+                );
                 for word_segment in &segment.dr.word_segments {
                     if !word_segment.text.trim().is_empty() {
                         transcription_segments.push(TranscriptionSegment {
@@ -266,10 +284,13 @@ impl WhisperModel {
         let mut mel_filters = vec![0f32; mel_bytes.len() / 4];
         LittleEndian::read_f32_into(mel_bytes, &mut mel_filters);
 
-        app_log_debug!("✅ Loaded {} mel filters for {} mel bins from candle binary file", mel_filters.len(), config.num_mel_bins);
+        app_log_debug!(
+            "✅ Loaded {} mel filters for {} mel bins from candle binary file",
+            mel_filters.len(),
+            config.num_mel_bins
+        );
         Ok(mel_filters)
     }
-
 }
 
 /// Decoder implementation (adapted from candle example)
@@ -334,7 +355,11 @@ impl<'a> Decoder<'a> {
     }
 
     // Parse tokens into word segments with timestamps
-    fn parse_tokens_with_timestamps(&self, tokens: &[u32], segment_start_time: f64) -> Vec<WordSegment> {
+    fn parse_tokens_with_timestamps(
+        &self,
+        tokens: &[u32],
+        segment_start_time: f64,
+    ) -> Vec<WordSegment> {
         let mut word_segments = Vec::new();
         let mut current_start_time = segment_start_time;
         let mut current_text_tokens = Vec::new();
@@ -362,7 +387,8 @@ impl<'a> Decoder<'a> {
                 && token != self.transcribe_token
                 && token != self.translate_token
                 && token != self.no_timestamps_token
-                && Some(token) != self.language_token {
+                && Some(token) != self.language_token
+            {
                 // Accumulate non-special tokens for text
                 current_text_tokens.push(token);
             }
@@ -456,7 +482,9 @@ impl<'a> Decoder<'a> {
 
         for i in 0..sample_len {
             let tokens_t = Tensor::new(tokens.as_slice(), mel.device())?.unsqueeze(0)?;
-            let ys = self.model.decoder_forward(&tokens_t, &audio_features, i == 0)?;
+            let ys = self
+                .model
+                .decoder_forward(&tokens_t, &audio_features, i == 0)?;
 
             if i == 0 {
                 let logits = self.model.decoder_final_linear(&ys.i(..1)?)?.i(0)?.i(0)?;
@@ -466,7 +494,8 @@ impl<'a> Decoder<'a> {
             }
 
             let (_, seq_len, _) = ys.dims3()?;
-            let logits = self.model
+            let logits = self
+                .model
                 .decoder_final_linear(&ys.i((..1, seq_len - 1..))?)?
                 .i(0)?
                 .i(0)?;
@@ -486,13 +515,15 @@ impl<'a> Decoder<'a> {
                 .i(next_token as usize)?
                 .to_scalar::<f32>()? as f64;
 
-            if next_token == self.eot_token || tokens.len() > self.model.config().max_target_positions {
+            if next_token == self.eot_token
+                || tokens.len() > self.model.config().max_target_positions
+            {
                 break;
             }
 
             // Detect repetition loops (same token repeated multiple times)
             if tokens.len() >= 10 {
-                let recent_tokens = &tokens[tokens.len()-10..];
+                let recent_tokens = &tokens[tokens.len() - 10..];
                 if recent_tokens.iter().all(|&t| t == next_token) {
                     app_log_debug!("⚠️ Detected repetition loop, breaking");
                     break;
@@ -520,7 +551,11 @@ impl<'a> Decoder<'a> {
         })
     }
 
-    fn decode_with_fallback(&mut self, segment: &Tensor, segment_start_time: f64) -> Result<DecodingResult> {
+    fn decode_with_fallback(
+        &mut self,
+        segment: &Tensor,
+        segment_start_time: f64,
+    ) -> Result<DecodingResult> {
         for (i, &_) in m::TEMPERATURES.iter().enumerate() {
             let dr = self.decode(segment, segment_start_time);
             if i == m::TEMPERATURES.len() - 1 {
@@ -553,23 +588,37 @@ impl<'a> Decoder<'a> {
             let mel_segment = mel.narrow(2, seek, segment_size)?;
             let segment_duration = (segment_size * m::HOP_LENGTH) as f64 / m::SAMPLE_RATE as f64;
 
-            app_log_debug!("🔧 Processing segment {} (frames {}-{}, time {:.1}s-{:.1}s)",
-                segment_count, seek, seek + segment_size, time_offset, time_offset + segment_duration);
+            app_log_debug!(
+                "🔧 Processing segment {} (frames {}-{}, time {:.1}s-{:.1}s)",
+                segment_count,
+                seek,
+                seek + segment_size,
+                time_offset,
+                time_offset + segment_duration
+            );
 
             let dr = self.decode_with_fallback(&mel_segment, time_offset)?;
             seek += segment_size;
             segment_count += 1;
 
             // For very short audio (< 10s), be more lenient with no_speech_threshold
-            let adjusted_no_speech_threshold = if content_frames < 1000 {  // ~10s
-                0.8  // More lenient for short audio
+            let adjusted_no_speech_threshold = if content_frames < 1000 {
+                // ~10s
+                0.8 // More lenient for short audio
             } else {
-                m::NO_SPEECH_THRESHOLD  // Standard threshold
+                m::NO_SPEECH_THRESHOLD // Standard threshold
             };
 
-            if dr.no_speech_prob > adjusted_no_speech_threshold && dr.avg_logprob < m::LOGPROB_THRESHOLD {
-                app_log_debug!("⏭️ Skipping segment {} (no_speech_prob={:.3} > {:.3}, avg_logprob={:.3})",
-                    segment_count - 1, dr.no_speech_prob, adjusted_no_speech_threshold, dr.avg_logprob);
+            if dr.no_speech_prob > adjusted_no_speech_threshold
+                && dr.avg_logprob < m::LOGPROB_THRESHOLD
+            {
+                app_log_debug!(
+                    "⏭️ Skipping segment {} (no_speech_prob={:.3} > {:.3}, avg_logprob={:.3})",
+                    segment_count - 1,
+                    dr.no_speech_prob,
+                    adjusted_no_speech_threshold,
+                    dr.avg_logprob
+                );
                 continue;
             }
 
@@ -595,7 +644,10 @@ impl<'a> Decoder<'a> {
 
 pub fn token_id(tokenizer: &Tokenizer, token: &str) -> candle_core::Result<u32> {
     match tokenizer.token_to_id(token) {
-        None => Err(candle_core::Error::Msg(format!("no token-id for {}", token))),
+        None => Err(candle_core::Error::Msg(format!(
+            "no token-id for {}",
+            token
+        ))),
         Some(id) => Ok(id),
     }
 }

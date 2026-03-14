@@ -4,8 +4,10 @@ use std::sync::Arc;
 
 /// Create a test SQLite service with in-memory database for speed
 fn create_test_sqlite_service() -> Arc<SqliteVectorService> {
-    Arc::new(SqliteVectorService::new_in_memory()
-        .expect("Failed to create in-memory test SQLite service"))
+    Arc::new(
+        SqliteVectorService::new_in_memory()
+            .expect("Failed to create in-memory test SQLite service"),
+    )
 }
 
 #[test]
@@ -242,14 +244,20 @@ fn test_error_categorization_edge_cases() {
     assert_eq!(categorize_error(&long_error), "temporary");
 
     // Special characters and unicode
-    assert_eq!(categorize_error("File not found: /path/with/émojis/🎬/video.mp4"), "permanent");
+    assert_eq!(
+        categorize_error("File not found: /path/with/émojis/🎬/video.mp4"),
+        "permanent"
+    );
 
     // Mixed case variations
     assert_eq!(categorize_error("FILE NOT FOUND"), "permanent");
     assert_eq!(categorize_error("Timeout OCCURRED"), "temporary");
 
     // Multiple keywords (should match first applicable)
-    assert_eq!(categorize_error("Connection timeout: file not found"), "temporary");
+    assert_eq!(
+        categorize_error("Connection timeout: file not found"),
+        "temporary"
+    );
 
     // Substring matches
     assert_eq!(categorize_error("timeouts are common"), "temporary");
@@ -269,8 +277,10 @@ fn test_error_categorization_prevents_infinite_retries() {
 
     for error in permanent_errors {
         assert_eq!(
-            categorize_error(error), "permanent",
-            "Error '{}' should be permanent to prevent infinite retries", error
+            categorize_error(error),
+            "permanent",
+            "Error '{}' should be permanent to prevent infinite retries",
+            error
         );
     }
 }
@@ -289,8 +299,10 @@ fn test_temporary_errors_justify_retry() {
 
     for error in retry_worthy_errors {
         assert_eq!(
-            categorize_error(error), "temporary",
-            "Error '{}' should be temporary since retry might succeed", error
+            categorize_error(error),
+            "temporary",
+            "Error '{}' should be temporary since retry might succeed",
+            error
         );
     }
 }

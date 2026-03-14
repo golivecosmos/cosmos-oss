@@ -4,8 +4,10 @@ use uuid::Uuid;
 
 /// Create a test SQLite service with in-memory database for speed
 fn create_test_sqlite_service() -> Arc<SqliteVectorService> {
-    Arc::new(SqliteVectorService::new_in_memory()
-        .expect("Failed to create in-memory test SQLite service"))
+    Arc::new(
+        SqliteVectorService::new_in_memory()
+            .expect("Failed to create in-memory test SQLite service"),
+    )
 }
 
 #[test]
@@ -13,17 +15,13 @@ fn test_add_drive_success() {
     let service = create_test_sqlite_service();
     let drive_uuid = Uuid::new_v4().to_string();
 
-    let result = service.add_drive(
-        &drive_uuid,
-        "Test Drive",
-        "/test/mount/path",
-        true
-    );
+    let result = service.add_drive(&drive_uuid, "Test Drive", "/test/mount/path", true);
 
     assert!(result.is_ok(), "Adding drive should succeed");
 
     // Verify the drive was added
-    let drive = service.get_drive_by_uuid(&drive_uuid)
+    let drive = service
+        .get_drive_by_uuid(&drive_uuid)
         .expect("Failed to get drive")
         .expect("Drive should exist");
 
@@ -53,7 +51,8 @@ fn test_get_drive_by_uuid_existing() {
     let drive_uuid = Uuid::new_v4().to_string();
 
     // Add a test drive
-    service.add_drive(&drive_uuid, "Test Drive", "/test/path", true)
+    service
+        .add_drive(&drive_uuid, "Test Drive", "/test/path", true)
         .expect("Failed to add drive");
 
     // Get the drive back
@@ -71,8 +70,14 @@ fn test_get_drive_by_uuid_nonexistent() {
     let nonexistent_uuid = Uuid::new_v4().to_string();
 
     let result = service.get_drive_by_uuid(&nonexistent_uuid);
-    assert!(result.is_ok(), "get_drive_by_uuid should succeed even for non-existent drive");
-    assert!(result.unwrap().is_none(), "Non-existent drive should return None");
+    assert!(
+        result.is_ok(),
+        "get_drive_by_uuid should succeed even for non-existent drive"
+    );
+    assert!(
+        result.unwrap().is_none(),
+        "Non-existent drive should return None"
+    );
 }
 
 #[test]
@@ -81,24 +86,26 @@ fn test_update_drive_metadata_success() {
     let drive_uuid = Uuid::new_v4().to_string();
 
     // Add a test drive
-    service.add_drive(&drive_uuid, "Original Drive", "/original/path", true)
+    service
+        .add_drive(&drive_uuid, "Original Drive", "/original/path", true)
         .expect("Failed to add drive");
 
     // Update metadata
-    let result = service.update_drive_metadata(
-        &drive_uuid,
-        Some("Custom Name"),
-        Some("Physical Location")
-    );
+    let result =
+        service.update_drive_metadata(&drive_uuid, Some("Custom Name"), Some("Physical Location"));
     assert!(result.is_ok(), "update_drive_metadata should succeed");
 
     // Verify the metadata was updated
-    let drive = service.get_drive_by_uuid(&drive_uuid)
+    let drive = service
+        .get_drive_by_uuid(&drive_uuid)
         .expect("Failed to get drive")
         .expect("Drive should exist");
 
     assert_eq!(drive["custom_name"].as_str(), Some("Custom Name"));
-    assert_eq!(drive["physical_location"].as_str(), Some("Physical Location"));
+    assert_eq!(
+        drive["physical_location"].as_str(),
+        Some("Physical Location")
+    );
     // Original fields should remain unchanged
     assert_eq!(drive["name"].as_str().unwrap(), "Original Drive");
 }
@@ -109,7 +116,8 @@ fn test_update_drive_metadata_partial() {
     let drive_uuid = Uuid::new_v4().to_string();
 
     // Add a test drive
-    service.add_drive(&drive_uuid, "Test Drive", "/test/path", true)
+    service
+        .add_drive(&drive_uuid, "Test Drive", "/test/path", true)
         .expect("Failed to add drive");
 
     // Update only custom name (None for location will overwrite any existing location)
@@ -117,7 +125,8 @@ fn test_update_drive_metadata_partial() {
     assert!(result1.is_ok(), "Partial update (name only) should succeed");
 
     // Verify the first update
-    let drive1 = service.get_drive_by_uuid(&drive_uuid)
+    let drive1 = service
+        .get_drive_by_uuid(&drive_uuid)
         .expect("Failed to get drive")
         .expect("Drive should exist");
 
@@ -126,10 +135,14 @@ fn test_update_drive_metadata_partial() {
 
     // Update only physical location (None for name will overwrite the custom name)
     let result2 = service.update_drive_metadata(&drive_uuid, None, Some("New Location"));
-    assert!(result2.is_ok(), "Partial update (location only) should succeed");
+    assert!(
+        result2.is_ok(),
+        "Partial update (location only) should succeed"
+    );
 
     // Verify the second update (custom_name will be None now)
-    let drive2 = service.get_drive_by_uuid(&drive_uuid)
+    let drive2 = service
+        .get_drive_by_uuid(&drive_uuid)
         .expect("Failed to get drive")
         .expect("Drive should exist");
 
@@ -142,12 +155,12 @@ fn test_update_drive_metadata_nonexistent() {
     let service = create_test_sqlite_service();
     let nonexistent_uuid = Uuid::new_v4().to_string();
 
-    let result = service.update_drive_metadata(
-        &nonexistent_uuid,
-        Some("Test Name"),
-        Some("Test Location")
+    let result =
+        service.update_drive_metadata(&nonexistent_uuid, Some("Test Name"), Some("Test Location"));
+    assert!(
+        result.is_ok(),
+        "update_drive_metadata succeeds even for non-existent drive (current implementation)"
     );
-    assert!(result.is_ok(), "update_drive_metadata succeeds even for non-existent drive (current implementation)");
 }
 
 #[test]
@@ -156,7 +169,8 @@ fn test_update_drive_status_success() {
     let drive_uuid = Uuid::new_v4().to_string();
 
     // Add a test drive
-    service.add_drive(&drive_uuid, "Test Drive", "/original/path", true)
+    service
+        .add_drive(&drive_uuid, "Test Drive", "/original/path", true)
         .expect("Failed to add drive");
 
     // Update status to connected with new mount path
@@ -164,7 +178,8 @@ fn test_update_drive_status_success() {
     assert!(result.is_ok(), "update_drive_status should succeed");
 
     // Verify the status was updated
-    let drive = service.get_drive_by_uuid(&drive_uuid)
+    let drive = service
+        .get_drive_by_uuid(&drive_uuid)
         .expect("Failed to get drive")
         .expect("Drive should exist");
 
@@ -178,7 +193,8 @@ fn test_update_drive_status_disconnected() {
     let drive_uuid = Uuid::new_v4().to_string();
 
     // Add a test drive
-    service.add_drive(&drive_uuid, "Test Drive", "/mount/path", true)
+    service
+        .add_drive(&drive_uuid, "Test Drive", "/mount/path", true)
         .expect("Failed to add drive");
 
     // Update status to disconnected (no mount path)
@@ -186,7 +202,8 @@ fn test_update_drive_status_disconnected() {
     assert!(result.is_ok(), "update_drive_status should succeed");
 
     // Verify the status was updated
-    let drive = service.get_drive_by_uuid(&drive_uuid)
+    let drive = service
+        .get_drive_by_uuid(&drive_uuid)
         .expect("Failed to get drive")
         .expect("Drive should exist");
 
@@ -204,17 +221,22 @@ fn test_get_all_drives() {
     let drive2_uuid = Uuid::new_v4().to_string();
     let drive3_uuid = Uuid::new_v4().to_string();
 
-    service.add_drive(&drive1_uuid, "Drive 1", "/path1", true)
+    service
+        .add_drive(&drive1_uuid, "Drive 1", "/path1", true)
         .expect("Failed to add drive 1");
-    service.add_drive(&drive2_uuid, "Drive 2", "/path2", false)
+    service
+        .add_drive(&drive2_uuid, "Drive 2", "/path2", false)
         .expect("Failed to add drive 2");
-    service.add_drive(&drive3_uuid, "Drive 3", "/path3", true)
+    service
+        .add_drive(&drive3_uuid, "Drive 3", "/path3", true)
         .expect("Failed to add drive 3");
 
     // Update metadata for some drives
-    service.update_drive_metadata(&drive1_uuid, Some("Custom Drive 1"), Some("Location 1"))
+    service
+        .update_drive_metadata(&drive1_uuid, Some("Custom Drive 1"), Some("Location 1"))
         .expect("Failed to update drive 1");
-    service.update_drive_status(&drive2_uuid, "disconnected", None)
+    service
+        .update_drive_status(&drive2_uuid, "disconnected", None)
         .expect("Failed to update drive 2 status");
 
     // Get all drives
@@ -225,9 +247,7 @@ fn test_get_all_drives() {
     assert_eq!(drives.len(), 3, "Should return 3 drives");
 
     // Verify all drives are included
-    let uuids: Vec<&str> = drives.iter()
-        .map(|d| d["uuid"].as_str().unwrap())
-        .collect();
+    let uuids: Vec<&str> = drives.iter().map(|d| d["uuid"].as_str().unwrap()).collect();
     assert!(uuids.contains(&drive1_uuid.as_str()));
     assert!(uuids.contains(&drive2_uuid.as_str()));
     assert!(uuids.contains(&drive3_uuid.as_str()));
@@ -238,10 +258,17 @@ fn test_get_all_drives_empty() {
     let service = create_test_sqlite_service();
 
     let result = service.get_all_drives();
-    assert!(result.is_ok(), "get_all_drives should succeed even when empty");
+    assert!(
+        result.is_ok(),
+        "get_all_drives should succeed even when empty"
+    );
 
     let drives = result.unwrap();
-    assert_eq!(drives.len(), 0, "Should return empty list when no drives exist");
+    assert_eq!(
+        drives.len(),
+        0,
+        "Should return empty list when no drives exist"
+    );
 }
 
 #[test]
@@ -250,7 +277,8 @@ fn test_drive_file_count_calculation() {
     let drive_uuid = Uuid::new_v4().to_string();
 
     // Add a test drive
-    service.add_drive(&drive_uuid, "Test Drive", "/test/path", true)
+    service
+        .add_drive(&drive_uuid, "Test Drive", "/test/path", true)
         .expect("Failed to add drive");
 
     // Initially, file count should be 0
@@ -272,20 +300,27 @@ fn test_drive_metadata_edge_cases() {
         &drive_uuid,
         "", // Empty name
         "", // Empty mount path
-        false
+        false,
     );
-    assert!(result.is_ok(), "Adding drive with empty strings should succeed");
+    assert!(
+        result.is_ok(),
+        "Adding drive with empty strings should succeed"
+    );
 
     // Update with edge case metadata
     let result = service.update_drive_metadata(
         &drive_uuid,
-        Some(""), // Empty custom name
-        Some("Very Long Location String ".repeat(50).as_str()) // Very long location
+        Some(""),                                               // Empty custom name
+        Some("Very Long Location String ".repeat(50).as_str()), // Very long location
     );
-    assert!(result.is_ok(), "Updating with edge case metadata should succeed");
+    assert!(
+        result.is_ok(),
+        "Updating with edge case metadata should succeed"
+    );
 
     // Verify the values were stored
-    let drive = service.get_drive_by_uuid(&drive_uuid)
+    let drive = service
+        .get_drive_by_uuid(&drive_uuid)
         .expect("Failed to get drive")
         .expect("Drive should exist");
 
@@ -299,27 +334,31 @@ fn test_concurrent_drive_operations() {
     let service_arc = Arc::new(service);
 
     // Create multiple drives concurrently
-    let handles: Vec<_> = (0..10).map(|i| {
-        let service = service_arc.clone();
-        std::thread::spawn(move || {
-            let uuid = Uuid::new_v4().to_string();
-            service.add_drive(
-                &uuid,
-                &format!("Drive {}", i),
-                &format!("/path/{}", i),
-                i % 2 == 0
-            )
+    let handles: Vec<_> = (0..10)
+        .map(|i| {
+            let service = service_arc.clone();
+            std::thread::spawn(move || {
+                let uuid = Uuid::new_v4().to_string();
+                service.add_drive(
+                    &uuid,
+                    &format!("Drive {}", i),
+                    &format!("/path/{}", i),
+                    i % 2 == 0,
+                )
+            })
         })
-    }).collect();
+        .collect();
 
     // Wait for all operations to complete
-    let results: Vec<_> = handles.into_iter()
-        .map(|h| h.join().unwrap())
-        .collect();
+    let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
 
     // All operations should succeed
     for (i, result) in results.iter().enumerate() {
-        assert!(result.is_ok(), "Concurrent drive creation {} should succeed", i);
+        assert!(
+            result.is_ok(),
+            "Concurrent drive creation {} should succeed",
+            i
+        );
     }
 
     // Verify all drives were created

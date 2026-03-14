@@ -1,5 +1,5 @@
-use tauri::command;
 use std::path::Path;
+use tauri::command;
 
 #[derive(Debug, serde::Serialize)]
 pub struct ThumbnailResult {
@@ -22,10 +22,13 @@ pub async fn generate_video_thumbnail(
     let timestamp = timestamp_seconds.unwrap_or(1.0);
 
     // Try cache first - this enables offline preview support!
-    match crate::thumbnail_cache::try_get_cached_thumbnail(&file_path, timestamp, width, height).await {
+    match crate::thumbnail_cache::try_get_cached_thumbnail(&file_path, timestamp, width, height)
+        .await
+    {
         Ok(Some(jpeg_data)) => {
             // Found in cache - return even if file is offline
-            let base64_data = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &jpeg_data);
+            let base64_data =
+                base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &jpeg_data);
             return ThumbnailResult {
                 success: true,
                 data: Some(base64_data),
@@ -67,7 +70,8 @@ async fn generate_ffmpeg_thumbnail_impl(
     // Use cached thumbnail generation with file system persistence
     match crate::thumbnail_cache::get_cached_thumbnail(&file_path, timestamp, width, height).await {
         Ok(jpeg_data) => {
-            let base64_data = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &jpeg_data);
+            let base64_data =
+                base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &jpeg_data);
             ThumbnailResult {
                 success: true,
                 data: Some(base64_data),
@@ -82,9 +86,6 @@ async fn generate_ffmpeg_thumbnail_impl(
             error: Some(error),
             width: None,
             height: None,
-        }
+        },
     }
 }
-
-
-

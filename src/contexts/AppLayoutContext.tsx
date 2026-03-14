@@ -6,6 +6,7 @@ import { resolve } from "@tauri-apps/api/path";
 import { FileItem } from "../components/FileTree";
 import { ReferenceImageData } from "../components/SearchBar";
 import { useSearch, SearchType } from "../hooks/useSearch";
+import { getErrorMessage } from "../utils/errorMessage";
 import {
   useIndexingJobs,
 } from "./IndexingJobsContext";
@@ -845,20 +846,20 @@ export const AppLayoutProvider: React.FC<AppLayoutProviderProps> = ({ children }
         })
       );
       if (isDirectory) {
-        toast.success("Added directory to search index queue");
         await invoke("index_directory", { path: absolutePath });
+        toast.success("Added directory to search index queue");
       } else {
-        toast.success("Added file to search index queue");
         await invoke("index_file", {
           path: absolutePath,
           name: absolutePath.split("/").pop() || "",
           isDirectory: false,
         });
+        toast.success("Added file to search index queue");
       }
       await loadIndexedCount();
     } catch (error) {
       console.error("Failed to index file/directory:", error);
-      toast.error("Failed to index file/directory");
+      toast.error(`Failed to index file/directory: ${getErrorMessage(error)}`);
     }
   };
 

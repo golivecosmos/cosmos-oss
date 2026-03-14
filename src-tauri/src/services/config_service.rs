@@ -1,9 +1,9 @@
+use crate::utils::path_utils;
+use crate::{app_log_debug, app_log_info, app_log_warn};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use crate::utils::path_utils;
-use crate::{app_log_info, app_log_warn, app_log_debug};
 
 /// User configuration data structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,7 +60,10 @@ impl ConfigService {
     /// Load existing config or create default
     fn load_or_create_config(config_path: &PathBuf) -> Result<UserConfig> {
         if config_path.exists() {
-            app_log_debug!("📋 CONFIG: Loading existing config from: {}", config_path.display());
+            app_log_debug!(
+                "📋 CONFIG: Loading existing config from: {}",
+                config_path.display()
+            );
 
             match fs::read_to_string(config_path) {
                 Ok(content) => {
@@ -72,7 +75,10 @@ impl ConfigService {
                             return Ok(config);
                         }
                         Err(e) => {
-                            app_log_warn!("⚠️ CONFIG: Failed to parse config file, creating new one: {}", e);
+                            app_log_warn!(
+                                "⚠️ CONFIG: Failed to parse config file, creating new one: {}",
+                                e
+                            );
                             // Backup corrupted config
                             let backup_path = config_path.with_extension("json.backup");
                             let _ = fs::copy(config_path, backup_path);
@@ -86,7 +92,10 @@ impl ConfigService {
         }
 
         // Create new config
-        app_log_info!("🆕 CONFIG: Creating new config file at: {}", config_path.display());
+        app_log_info!(
+            "🆕 CONFIG: Creating new config file at: {}",
+            config_path.display()
+        );
         let config = UserConfig::default();
 
         // Ensure directory exists
@@ -104,7 +113,10 @@ impl ConfigService {
 
     /// Save current config to disk
     pub fn save(&self) -> Result<()> {
-        app_log_debug!("💾 CONFIG: Saving config to: {}", self.config_path.display());
+        app_log_debug!(
+            "💾 CONFIG: Saving config to: {}",
+            self.config_path.display()
+        );
 
         let content = serde_json::to_string_pretty(&self.config)?;
         fs::write(&self.config_path, content)?;
@@ -122,8 +134,12 @@ impl ConfigService {
                 Ok(path)
             }
             None => {
-                let default_path = path_utils::get_app_data_dir()?.join(crate::constants::DATABASE_FILENAME);
-                app_log_debug!("📁 CONFIG: Using default DB path: {}", default_path.display());
+                let default_path =
+                    path_utils::get_app_data_dir()?.join(crate::constants::DATABASE_FILENAME);
+                app_log_debug!(
+                    "📁 CONFIG: Using default DB path: {}",
+                    default_path.display()
+                );
                 Ok(default_path)
             }
         }

@@ -11,6 +11,7 @@ Cosmos OSS is a cross-platform desktop application for local-first, AI-assisted 
 ## Snapshot of capabilities
 - Offline multimodal indexer built on FastEmbed (Nomic `nomic-embed-text-v1.5` + `nomic-embed-vision-v1.5`).
 - Vector + metadata search backed by SQLite/SQLCipher with `sqlite-vec` acceleration.
+- Chunk-level semantic text indexing for local documents (`txt`, `md`, `json`, `csv`, `log`, `xml`, `yml`, `yaml`, `toml`, `ini`, `conf`, `rtf`, `pdf`).
 - Optional Whisper-base transcription for audio clips.
 - Video generation helpers (Gemini/Veo3) once you add your own API key.
 - Quick menu for managing downloads, checking GPU availability, and packaging diagnostic logs.
@@ -27,6 +28,7 @@ Cosmos OSS is a cross-platform desktop application for local-first, AI-assisted 
 - **Node.js** 20.x and **pnpm** 9.x (install via `corepack enable` or `npm install -g pnpm`).
 - **Rust** stable toolchain (`rustup default stable`) plus the [Tauri prerequisites](https://tauri.app/v1/guides/getting-started/prerequisites) for your OS (Xcode CLT on macOS, Visual Studio Build Tools on Windows, `libgtk-3-dev` et al. on Linux).
 - **FFmpeg** available on `$PATH` for video thumbnailing.
+- **Poppler `pdftotext`** on `$PATH` if you want PDF text indexing.
 - **Git LFS** if you plan to check in large sample assets.
 
 ## Quick start (development)
@@ -70,6 +72,14 @@ Cosmos ships with Hugging Face URLs, but every model path can be overridden with
 | `COSMOS_VISION_MODEL_SLUG` | `nomic-embed-vision-v1.5/resolve/main` | Vision model folder |
 
 Set them before launching (`COSMOS_MODEL_BASE_URL=https://my.mirror pnpm dev`) to mirror artifacts behind a firewall.
+
+## Semantic Text Search (Hard-Cutover Mode)
+- Text search uses strict embedding retrieval over chunk vectors (`text_chunks` + `vec_text_chunks`).
+- Query embedding prefix: `search_query:`.
+- Document chunk embedding prefix: `search_document:`.
+- No filename fallback path is used when semantic text search fails.
+
+If you are upgrading from an older local database, reindex your files after pulling this version so text chunk vectors are populated.
 
 ## Optional integrations
 - **Gemini 2.5 + Veo3** video generation: open **Settings → App Store**, install “Google Gemini,” and paste your API key. The backend validates keys by calling `https://generativelanguage.googleapis.com/v1beta` directly; nothing is proxied.

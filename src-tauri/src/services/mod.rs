@@ -21,4 +21,4 @@ pub mod vector_service;
 pub mod video_service;
 
 #[cfg(test)]
-mod tests; 
+mod tests;

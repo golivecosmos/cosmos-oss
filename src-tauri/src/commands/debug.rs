@@ -1,6 +1,6 @@
-use tauri::State;
 use crate::services::startup::AppState;
-use crate::{app_log_info, app_log_error};
+use crate::{app_log_error, app_log_info};
+use tauri::State;
 
 #[cfg(debug_assertions)]
 #[tauri::command]
@@ -43,7 +43,9 @@ pub async fn recreate_sqlite_virtual_table(_state: State<'_, AppState>) -> Resul
 
 #[cfg(debug_assertions)]
 #[tauri::command]
-pub async fn get_database_schema_info(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+pub async fn get_database_schema_info(
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
     match state.sqlite_service.get_schema_info() {
         Ok(info) => {
             app_log_info!("📊 SCHEMA INFO: Retrieved schema information");
@@ -58,6 +60,8 @@ pub async fn get_database_schema_info(state: State<'_, AppState>) -> Result<serd
 
 #[cfg(not(debug_assertions))]
 #[tauri::command]
-pub async fn get_database_schema_info(_state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+pub async fn get_database_schema_info(
+    _state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
     Err("Debug commands disabled in production".to_string())
 }

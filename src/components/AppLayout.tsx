@@ -209,8 +209,8 @@ export const AppLayout = () => {
 
   return (
     <TooltipProvider>
-      <div className="h-screen flex flex-col scroll-y-auto overflow-auto custom-scroll">
-        <div className="flex-1 flex">
+      <div className="h-screen flex flex-col overflow-hidden">
+        <div className="flex-1 min-h-0 flex">
           <Sidebar
             onCreateFolder={handleCreateFolder}
             onDelete={handleDelete}
@@ -221,9 +221,9 @@ export const AppLayout = () => {
             isIndexingDisabled={!isIndexingAllowed()}
             onClearSearch={clearSearch}
           />
-          <div className="flex-1 bg-gray-50 dark:bg-darkBgMid overflow-y-hidden max-h-screen">
+          <div className="flex-1 min-h-0 bg-gray-50 dark:bg-darkBgMid overflow-hidden">
             {renderModelStatus()}
-            <div className="flex-1 h-full">
+            <div className="flex-1 h-full min-h-0">
               <Outlet />
             </div>
           </div>

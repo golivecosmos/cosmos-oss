@@ -1,12 +1,12 @@
-use anyhow::Result;
-use rusqlite::OptionalExtension;
-use std::sync::Arc;
-use crate::{app_log_info, app_log_debug, app_log_warn};
 use crate::services::database_service::DatabaseService;
+use crate::{app_log_debug, app_log_info, app_log_warn};
+use anyhow::Result;
 use chrono::{DateTime, Utc};
+use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::process::Command;
+use std::sync::Arc;
 use tauri::Emitter;
 use tokio::sync::RwLock;
 
@@ -296,7 +296,7 @@ impl DriveService {
                         last_known_drives = current_drive_map;
                     }
                     Err(_) => {
-                       // app_log_debug!("🔄 DRIVE: Monitoring error (will continue): {}", e);
+                        // app_log_debug!("🔄 DRIVE: Monitoring error (will continue): {}", e);
                     }
                 }
             }
@@ -313,12 +313,21 @@ impl DriveService {
     // ===== DATABASE-LEVEL DRIVE MANAGEMENT METHODS =====
 
     /// Update drive custom name and physical location
-    pub fn update_drive_metadata(&self, uuid: &str, custom_name: Option<&str>, physical_location: Option<&str>) -> Result<()> {
+    pub fn update_drive_metadata(
+        &self,
+        uuid: &str,
+        custom_name: Option<&str>,
+        physical_location: Option<&str>,
+    ) -> Result<()> {
         let connection = self.db_service.get_connection();
         let db = connection.lock().unwrap();
 
-        app_log_info!("🔄 DRIVE: Updating metadata for drive {}: name={:?}, location={:?}",
-            uuid, custom_name, physical_location);
+        app_log_info!(
+            "🔄 DRIVE: Updating metadata for drive {}: name={:?}, location={:?}",
+            uuid,
+            custom_name,
+            physical_location
+        );
 
         db.execute(
             "UPDATE drives SET custom_name = ?, physical_location = ?, last_seen = CURRENT_TIMESTAMP
@@ -335,7 +344,10 @@ impl DriveService {
         let connection = self.db_service.get_connection();
         let db = connection.lock().unwrap();
 
-        app_log_info!("🗑️ DRIVE: Checking drive {} for indexed content before deletion", uuid);
+        app_log_info!(
+            "🗑️ DRIVE: Checking drive {} for indexed content before deletion",
+            uuid
+        );
 
         // Check if drive has indexed files
         let indexed_count: usize = db.query_row(
@@ -345,7 +357,11 @@ impl DriveService {
         )?;
 
         if indexed_count > 0 {
-            app_log_warn!("⚠️ DRIVE: Cannot delete drive {} - it has {} indexed files", uuid, indexed_count);
+            app_log_warn!(
+                "⚠️ DRIVE: Cannot delete drive {} - it has {} indexed files",
+                uuid,
+                indexed_count
+            );
             return Err(anyhow::anyhow!(
                 "Cannot delete drive: it contains {} indexed files. Please remove indexed content first.",
                 indexed_count
@@ -355,10 +371,8 @@ impl DriveService {
         app_log_info!("🗑️ DRIVE: Deleting drive from database: {}", uuid);
 
         // Delete drive (safe to delete as it has no indexed content)
-        let rows_affected = db.execute(
-            "DELETE FROM drives WHERE uuid = ?",
-            rusqlite::params![uuid],
-        )?;
+        let rows_affected =
+            db.execute("DELETE FROM drives WHERE uuid = ?", rusqlite::params![uuid])?;
 
         if rows_affected > 0 {
             app_log_info!("✅ DRIVE: Deleted drive {} (no indexed content)", uuid);
@@ -393,27 +407,29 @@ impl DriveService {
                         0
                     ) as total_size_indexed
              FROM drives d
-             ORDER BY d.last_seen DESC"
+             ORDER BY d.last_seen DESC",
         )?;
 
-        let drives = stmt.query_map([], |row| {
-            Ok(serde_json::json!({
-                "uuid": row.get::<_, String>(0)?,
-                "name": row.get::<_, String>(1)?,
-                "custom_name": row.get::<_, Option<String>>(2)?,
-                "physical_location": row.get::<_, Option<String>>(3)?,
-                "last_mount_path": row.get::<_, Option<String>>(4)?,
-                "total_space": row.get::<_, i64>(5)?,
-                "free_space": row.get::<_, i64>(6)?,
-                "is_removable": row.get::<_, bool>(7)?,
-                "first_seen": row.get::<_, String>(8)?,
-                "last_seen": row.get::<_, String>(9)?,
-                "status": row.get::<_, String>(10)?,
-                "metadata": row.get::<_, String>(11)?,
-                "indexed_files_count": row.get::<_, i64>(12)?,
-                "total_size_indexed": row.get::<_, i64>(13)?
-            }))
-        })?.collect::<Result<Vec<_>, _>>()?;
+        let drives = stmt
+            .query_map([], |row| {
+                Ok(serde_json::json!({
+                    "uuid": row.get::<_, String>(0)?,
+                    "name": row.get::<_, String>(1)?,
+                    "custom_name": row.get::<_, Option<String>>(2)?,
+                    "physical_location": row.get::<_, Option<String>>(3)?,
+                    "last_mount_path": row.get::<_, Option<String>>(4)?,
+                    "total_space": row.get::<_, i64>(5)?,
+                    "free_space": row.get::<_, i64>(6)?,
+                    "is_removable": row.get::<_, bool>(7)?,
+                    "first_seen": row.get::<_, String>(8)?,
+                    "last_seen": row.get::<_, String>(9)?,
+                    "status": row.get::<_, String>(10)?,
+                    "metadata": row.get::<_, String>(11)?,
+                    "indexed_files_count": row.get::<_, i64>(12)?,
+                    "total_size_indexed": row.get::<_, i64>(13)?
+                }))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(drives)
     }
@@ -423,8 +439,9 @@ impl DriveService {
         let connection = self.db_service.get_connection();
         let db = connection.lock().unwrap();
 
-        let result = db.query_row(
-            "SELECT d.uuid, d.name, d.custom_name, d.physical_location, d.last_mount_path,
+        let result = db
+            .query_row(
+                "SELECT d.uuid, d.name, d.custom_name, d.physical_location, d.last_mount_path,
                     d.total_space, d.free_space, d.is_removable, d.first_seen, d.last_seen,
                     d.status, d.metadata,
                     (
@@ -443,32 +460,39 @@ impl DriveService {
                     ) as total_size_indexed
              FROM drives d
              WHERE d.uuid = ?",
-            rusqlite::params![uuid],
-            |row| {
-                Ok(serde_json::json!({
-                    "uuid": row.get::<_, String>(0)?,
-                    "name": row.get::<_, String>(1)?,
-                    "custom_name": row.get::<_, Option<String>>(2)?,
-                    "physical_location": row.get::<_, Option<String>>(3)?,
-                    "last_mount_path": row.get::<_, Option<String>>(4)?,
-                    "total_space": row.get::<_, i64>(5)?,
-                    "free_space": row.get::<_, i64>(6)?,
-                    "is_removable": row.get::<_, bool>(7)?,
-                    "first_seen": row.get::<_, String>(8)?,
-                    "last_seen": row.get::<_, String>(9)?,
-                    "status": row.get::<_, String>(10)?,
-                    "metadata": row.get::<_, String>(11)?,
-                    "indexed_files_count": row.get::<_, i64>(12)?,
-                    "total_size_indexed": row.get::<_, i64>(13)?
-                }))
-            }
-        ).optional()?;
+                rusqlite::params![uuid],
+                |row| {
+                    Ok(serde_json::json!({
+                        "uuid": row.get::<_, String>(0)?,
+                        "name": row.get::<_, String>(1)?,
+                        "custom_name": row.get::<_, Option<String>>(2)?,
+                        "physical_location": row.get::<_, Option<String>>(3)?,
+                        "last_mount_path": row.get::<_, Option<String>>(4)?,
+                        "total_space": row.get::<_, i64>(5)?,
+                        "free_space": row.get::<_, i64>(6)?,
+                        "is_removable": row.get::<_, bool>(7)?,
+                        "first_seen": row.get::<_, String>(8)?,
+                        "last_seen": row.get::<_, String>(9)?,
+                        "status": row.get::<_, String>(10)?,
+                        "metadata": row.get::<_, String>(11)?,
+                        "indexed_files_count": row.get::<_, i64>(12)?,
+                        "total_size_indexed": row.get::<_, i64>(13)?
+                    }))
+                },
+            )
+            .optional()?;
 
         Ok(result)
     }
 
     /// Add a new drive to the database
-    pub fn add_drive(&self, uuid: &str, name: &str, mount_path: &str, is_removable: bool) -> Result<()> {
+    pub fn add_drive(
+        &self,
+        uuid: &str,
+        name: &str,
+        mount_path: &str,
+        is_removable: bool,
+    ) -> Result<()> {
         let connection = self.db_service.get_connection();
         let db = connection.lock().unwrap();
 
@@ -492,7 +516,12 @@ impl DriveService {
     }
 
     /// Update drive connection status and last seen timestamp
-    pub fn update_drive_status_db(&self, uuid: &str, status: &str, mount_path: Option<&str>) -> Result<()> {
+    pub fn update_drive_status_db(
+        &self,
+        uuid: &str,
+        status: &str,
+        mount_path: Option<&str>,
+    ) -> Result<()> {
         let connection = self.db_service.get_connection();
         let db = connection.lock().unwrap();
 
@@ -526,25 +555,30 @@ mod tests {
 
     #[test]
     fn test_drive_service_creation() {
-        let db_service = DatabaseService::new_in_memory().expect("Failed to create database service");
+        let db_service =
+            DatabaseService::new_in_memory().expect("Failed to create database service");
         let db_service_arc = Arc::new(db_service);
         let _drive_service = DriveService::new(db_service_arc);
-        
+
         // Test that the service was created successfully
         assert!(true); // If we get here, the service was created successfully
     }
 
     #[test]
     fn test_drive_operations() {
-        let db_service = DatabaseService::new_in_memory().expect("Failed to create database service");
+        let db_service =
+            DatabaseService::new_in_memory().expect("Failed to create database service");
         let db_service_arc = Arc::new(db_service);
         let drive_service = DriveService::new(Arc::clone(&db_service_arc));
 
         // Initialize schema - create the drives tables
         let connection = db_service_arc.get_connection();
         let db = connection.lock().unwrap();
-        let schema_service = crate::services::schema_service::SchemaService::new(Arc::clone(&db_service_arc));
-        schema_service.create_drives_tables(&db).expect("Failed to create drives tables");
+        let schema_service =
+            crate::services::schema_service::SchemaService::new(Arc::clone(&db_service_arc));
+        schema_service
+            .create_drives_tables(&db)
+            .expect("Failed to create drives tables");
         drop(db);
 
         // Test adding a drive
@@ -554,32 +588,46 @@ mod tests {
         // Test getting all drives (simplified for unit test)
         let connection = db_service_arc.get_connection();
         let db = connection.lock().unwrap();
-        let drives_count: i64 = db.query_row(
-            "SELECT COUNT(*) FROM drives",
-            rusqlite::params![],
-            |row| row.get(0)
-        ).expect("Failed to count drives");
+        let drives_count: i64 = db
+            .query_row("SELECT COUNT(*) FROM drives", rusqlite::params![], |row| {
+                row.get(0)
+            })
+            .expect("Failed to count drives");
         assert_eq!(drives_count, 1, "Expected 1 drive, got {}", drives_count);
         drop(db);
 
         // Test getting drive by UUID (simplified for unit test)
         let connection = db_service_arc.get_connection();
         let db = connection.lock().unwrap();
-        let drive_name: String = db.query_row(
-            "SELECT name FROM drives WHERE uuid = ?",
-            rusqlite::params!["test-uuid"],
-            |row| row.get(0)
-        ).expect("Failed to get drive by UUID");
+        let drive_name: String = db
+            .query_row(
+                "SELECT name FROM drives WHERE uuid = ?",
+                rusqlite::params!["test-uuid"],
+                |row| row.get(0),
+            )
+            .expect("Failed to get drive by UUID");
         assert_eq!(drive_name, "Test Drive");
         drop(db);
 
         // Test updating drive metadata
-        let result = drive_service.update_drive_metadata("test-uuid", Some("Custom Name"), Some("Custom Location"));
-        assert!(result.is_ok(), "Failed to update drive metadata: {:?}", result);
+        let result = drive_service.update_drive_metadata(
+            "test-uuid",
+            Some("Custom Name"),
+            Some("Custom Location"),
+        );
+        assert!(
+            result.is_ok(),
+            "Failed to update drive metadata: {:?}",
+            result
+        );
 
         // Test updating drive status
         let result = drive_service.update_drive_status_db("test-uuid", "disconnected", None);
-        assert!(result.is_ok(), "Failed to update drive status: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "Failed to update drive status: {:?}",
+            result
+        );
 
         // Test getting indexed files count (skip for unit test since images table doesn't exist)
         // let count = drive_service.get_drive_indexed_files_count("test-uuid").expect("Failed to get indexed files count");
@@ -588,21 +636,23 @@ mod tests {
         // Test deleting drive (simplified for unit test)
         let connection = db_service_arc.get_connection();
         let db = connection.lock().unwrap();
-        let rows_affected = db.execute(
-            "DELETE FROM drives WHERE uuid = ?",
-            rusqlite::params!["test-uuid"],
-        ).expect("Failed to delete drive");
+        let rows_affected = db
+            .execute(
+                "DELETE FROM drives WHERE uuid = ?",
+                rusqlite::params!["test-uuid"],
+            )
+            .expect("Failed to delete drive");
         assert_eq!(rows_affected, 1, "Expected 1 row to be deleted");
         drop(db);
 
         // Verify drive was deleted (simplified for unit test)
         let connection = db_service_arc.get_connection();
         let db = connection.lock().unwrap();
-        let drives_count: i64 = db.query_row(
-            "SELECT COUNT(*) FROM drives",
-            rusqlite::params![],
-            |row| row.get(0)
-        ).expect("Failed to count drives");
+        let drives_count: i64 = db
+            .query_row("SELECT COUNT(*) FROM drives", rusqlite::params![], |row| {
+                row.get(0)
+            })
+            .expect("Failed to count drives");
         assert_eq!(drives_count, 0, "Expected 0 drives after deletion");
         drop(db);
     }

@@ -6,8 +6,10 @@ use tokio::sync::Semaphore;
 
 /// Create a test SQLite service with in-memory database for speed
 fn create_test_sqlite_service() -> Arc<SqliteVectorService> {
-    Arc::new(SqliteVectorService::new_in_memory()
-        .expect("Failed to create in-memory test SQLite service"))
+    Arc::new(
+        SqliteVectorService::new_in_memory()
+            .expect("Failed to create in-memory test SQLite service"),
+    )
 }
 
 #[tokio::test]
@@ -64,7 +66,8 @@ async fn test_batch_processing_adapts_to_memory_pressure() {
     assert!(
         batch_count >= expected_min_batches,
         "Should process in at least {} batches under memory pressure, got {}",
-        expected_min_batches, batch_count
+        expected_min_batches,
+        batch_count
     );
 }
 
@@ -88,7 +91,11 @@ async fn test_memory_efficient_job_claiming() {
     let long_path_base = "/very/long/path/with/many/segments".repeat(10);
     for i in 0..10 {
         sqlite_service
-            .create_job("file", &format!("{}/long_file_{}.jpg", long_path_base, i), Some(1))
+            .create_job(
+                "file",
+                &format!("{}/long_file_{}.jpg", long_path_base, i),
+                Some(1),
+            )
             .expect("Failed to create long path job");
         created_jobs += 1;
     }
@@ -131,7 +138,11 @@ async fn test_concurrent_memory_pressure_handling() {
     let job_count = 20;
     for i in 0..job_count {
         sqlite_service
-            .create_job("file", &format!("/test/concurrent_memory_{}.jpg", i), Some(1))
+            .create_job(
+                "file",
+                &format!("/test/concurrent_memory_{}.jpg", i),
+                Some(1),
+            )
             .expect("Failed to create concurrent memory test job");
     }
 
@@ -214,13 +225,15 @@ async fn test_resource_semaphore_under_memory_pressure() {
 
     // Verify all tasks completed
     assert_eq!(
-        completed_tasks.len(), task_count,
+        completed_tasks.len(),
+        task_count,
         "All tasks should complete under memory pressure"
     );
 
     // Verify semaphore is properly released
     assert_eq!(
-        semaphore.available_permits(), 2,
+        semaphore.available_permits(),
+        2,
         "All permits should be released after memory pressure"
     );
 }
@@ -239,7 +252,8 @@ fn test_memory_usage_estimates_are_reasonable() {
     assert!(
         batch_memory_estimate <= 50_000, // 50KB per batch
         "Batch memory usage too high: {} bytes (batch size: {})",
-        batch_memory_estimate, BATCH_SIZE
+        batch_memory_estimate,
+        BATCH_SIZE
     );
 
     // Total worker memory should be manageable
@@ -247,7 +261,8 @@ fn test_memory_usage_estimates_are_reasonable() {
     assert!(
         total_worker_memory <= 500_000, // 500KB total
         "Total worker memory too high: {} bytes ({} workers)",
-        total_worker_memory, WORKER_COUNT
+        total_worker_memory,
+        WORKER_COUNT
     );
 }
 
@@ -271,7 +286,11 @@ async fn test_memory_growth_bounds_with_large_batches() {
     let large_path = "/path/to/large/file/with/very/long/filename".repeat(5);
     for i in 0..large_files {
         sqlite_service
-            .create_job("file", &format!("{}/large_file_{}.mkv", large_path, i), Some(1))
+            .create_job(
+                "file",
+                &format!("{}/large_file_{}.mkv", large_path, i),
+                Some(1),
+            )
             .expect("Failed to create large file job");
     }
 
@@ -292,14 +311,16 @@ async fn test_memory_growth_bounds_with_large_batches() {
         assert!(
             claimed.len() <= max_safe_batch_size,
             "Batch size {} exceeds safe limit {}",
-            claimed.len(), max_safe_batch_size
+            claimed.len(),
+            max_safe_batch_size
         );
 
         processed_count += claimed.len();
     }
 
     assert_eq!(
-        processed_count, small_files + large_files,
+        processed_count,
+        small_files + large_files,
         "Should process all jobs with bounded memory growth"
     );
 }

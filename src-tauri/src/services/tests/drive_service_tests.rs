@@ -1,9 +1,9 @@
-use crate::services::drive_service::{DriveService, DriveInfo, DriveStatus};
 use crate::services::database_service::DatabaseService;
+use crate::services::drive_service::{DriveInfo, DriveService, DriveStatus};
+use chrono::Utc;
 use std::path::Path;
 use std::sync::Arc;
 use tempfile::tempdir;
-use chrono::Utc;
 
 #[test]
 fn test_drive_service_creation() {
@@ -19,7 +19,10 @@ async fn test_get_drive_for_path_none() {
 
     // Test with a regular system path that shouldn't be on external drive
     let result = drive_service.get_drive_for_path("/usr/bin/ls").await;
-    assert!(result.is_none(), "System paths should not be on external drives");
+    assert!(
+        result.is_none(),
+        "System paths should not be on external drives"
+    );
 }
 
 #[tokio::test]
@@ -46,7 +49,11 @@ async fn test_get_drive_for_path_invalid() {
 
     for path in invalid_paths {
         let result = drive_service.get_drive_for_path(path).await;
-        assert!(result.is_none(), "Invalid path '{}' should return None", path);
+        assert!(
+            result.is_none(),
+            "Invalid path '{}' should return None",
+            path
+        );
     }
 }
 
@@ -65,7 +72,10 @@ async fn test_detect_connected_drives() {
             for drive in drives {
                 assert!(!drive.uuid.is_empty(), "Drive UUID should not be empty");
                 assert!(!drive.name.is_empty(), "Drive name should not be empty");
-                assert!(!drive.mount_path.is_empty(), "Drive mount path should not be empty");
+                assert!(
+                    !drive.mount_path.is_empty(),
+                    "Drive mount path should not be empty"
+                );
                 // is_removable can be any boolean value
             }
         }
@@ -147,7 +157,10 @@ fn test_drive_info_edge_cases() {
         // The actual validation would happen at the service level
         assert!(drive.uuid.len() >= 0, "UUID length should be non-negative");
         assert!(drive.name.len() >= 0, "Name length should be non-negative");
-        assert!(drive.mount_path.len() >= 0, "Mount path length should be non-negative");
+        assert!(
+            drive.mount_path.len() >= 0,
+            "Mount path length should be non-negative"
+        );
     }
 }
 
@@ -170,8 +183,11 @@ async fn test_path_normalization() {
         let result = drive_service.get_drive_for_path(path).await;
         // We don't assert on the result since it depends on the actual system
         // but the function should handle various path formats gracefully
-        assert!(result.is_none() || result.is_some(),
-               "get_drive_for_path should return Option for path: {}", path);
+        assert!(
+            result.is_none() || result.is_some(),
+            "get_drive_for_path should return Option for path: {}",
+            path
+        );
     }
 }
 
@@ -185,17 +201,11 @@ async fn test_concurrent_drive_detection() {
     let service2 = drive_service.clone();
     let service3 = drive_service.clone();
 
-    let task1 = tokio::spawn(async move {
-        service1.detect_connected_drives().await
-    });
+    let task1 = tokio::spawn(async move { service1.detect_connected_drives().await });
 
-    let task2 = tokio::spawn(async move {
-        service2.detect_connected_drives().await
-    });
+    let task2 = tokio::spawn(async move { service2.detect_connected_drives().await });
 
-    let task3 = tokio::spawn(async move {
-        service3.detect_connected_drives().await
-    });
+    let task3 = tokio::spawn(async move { service3.detect_connected_drives().await });
 
     let (result1, result2, result3) = tokio::join!(task1, task2, task3);
 
@@ -232,8 +242,11 @@ async fn test_drive_path_matching() {
             let result = drive_service.get_drive_for_path(path).await;
             // Most system paths should not be on external drives
             // (though this could vary by system configuration)
-            assert!(result.is_none() || result.is_some(),
-                   "Path check should complete for: {}", path);
+            assert!(
+                result.is_none() || result.is_some(),
+                "Path check should complete for: {}",
+                path
+            );
         }
     }
 }
@@ -242,7 +255,8 @@ async fn test_drive_path_matching() {
 fn test_drive_service_memory_safety() {
     // Test that creating and dropping multiple drive services is safe
     for _ in 0..10 {
-        let db_service = DatabaseService::new_in_memory().expect("Failed to create database service");
+        let db_service =
+            DatabaseService::new_in_memory().expect("Failed to create database service");
         let _service = DriveService::new(Arc::new(db_service));
         // Service should be dropped safely
     }
@@ -261,11 +275,7 @@ fn test_macos_specific_functionality() {
     let _drive_service = DriveService::new(Arc::new(db_service));
 
     // Test macOS-specific paths
-    let macos_paths = vec![
-        "/Volumes",
-        "/Volumes/Macintosh HD",
-        "/System/Volumes/Data",
-    ];
+    let macos_paths = vec!["/Volumes", "/Volumes/Macintosh HD", "/System/Volumes/Data"];
 
     for path in macos_paths {
         if Path::new(path).exists() {

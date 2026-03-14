@@ -4,8 +4,8 @@ use std::collections::HashMap;
 
 /// Represents a single database migration
 pub struct Migration {
-    pub up_sql: Vec<String>,    // SQL statements to apply the migration
-    pub down_sql: Vec<String>,  // SQL statements to rollback the migration (optional)
+    pub up_sql: Vec<String>,   // SQL statements to apply the migration
+    pub down_sql: Vec<String>, // SQL statements to rollback the migration (optional)
 }
 
 impl Migration {
@@ -41,7 +41,7 @@ impl MigrationService {
             migrations: HashMap::new(),
             current_version: 0,
         };
-        
+
         // Register all migrations
         service.register_migrations();
         service
@@ -51,9 +51,9 @@ impl MigrationService {
     fn register_migrations(&mut self) {
         // Migration 1: Add drive_uuid and relative_path to images table
         let migration_1 = Migration::new(
-            1, 
-            "add_drive_columns_to_images", 
-            "Add drive_uuid and relative_path columns to images table"
+            1,
+            "add_drive_columns_to_images",
+            "Add drive_uuid and relative_path columns to images table",
         )
         .add_sql("ALTER TABLE images ADD COLUMN drive_uuid TEXT")
         .add_sql("ALTER TABLE images ADD COLUMN relative_path TEXT")
@@ -67,7 +67,7 @@ impl MigrationService {
         let migration_2 = Migration::new(
             2,
             "add_drive_support_to_jobs",
-            "Add drive_uuid and relative_path to jobs table"
+            "Add drive_uuid and relative_path to jobs table",
         )
         .add_sql("ALTER TABLE jobs ADD COLUMN drive_uuid TEXT")
         .add_sql("ALTER TABLE jobs ADD COLUMN relative_path TEXT")
@@ -108,11 +108,13 @@ impl MigrationService {
             return Ok(0); // No migrations have been applied
         }
 
-        let version = db.query_row(
-            "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
-            [],
-            |row| row.get::<_, u32>(0),
-        ).unwrap_or(0);
+        let version = db
+            .query_row(
+                "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
+                [],
+                |row| row.get::<_, u32>(0),
+            )
+            .unwrap_or(0);
 
         Ok(version)
     }
@@ -138,7 +140,7 @@ impl MigrationService {
         let mut stmt = db.prepare(
             "SELECT version, name, description, applied_at, execution_time_ms 
              FROM schema_migrations 
-             ORDER BY version ASC"
+             ORDER BY version ASC",
         )?;
 
         let rows = stmt.query_map([], |row| {
@@ -162,7 +164,7 @@ pub fn get_migration_info(db: &Connection) -> Result<serde_json::Value> {
     let current_version = migration_service.get_current_version(db)?;
     let needs_migration = migration_service.needs_migration(db)?;
     let history = migration_service.get_migration_history(db)?;
-    
+
     Ok(serde_json::json!({
         "current_version": current_version,
         "target_version": migration_service.current_version,

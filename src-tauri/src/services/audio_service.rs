@@ -1,8 +1,8 @@
+use crate::models::whisper::WhisperModel;
+use crate::services::download_service::{DownloadService, WhisperStatus};
+use crate::{app_log_debug, app_log_info};
 use anyhow::Result;
 use std::path::Path;
-use crate::{app_log_info, app_log_debug};
-use crate::services::download_service::{DownloadService, WhisperStatus};
-use crate::models::whisper::WhisperModel;
 
 /// Transcription result with basic info
 #[derive(Debug, Clone, serde::Serialize)]
@@ -38,7 +38,8 @@ impl AudioService {
 
     /// Check if audio transcription is available
     pub fn is_available(&self) -> bool {
-        matches!(DownloadService::get_whisper_status(), WhisperStatus::Ready) && self.whisper_model.is_some()
+        matches!(DownloadService::get_whisper_status(), WhisperStatus::Ready)
+            && self.whisper_model.is_some()
     }
 
     /// Load Whisper model
@@ -64,24 +65,25 @@ impl AudioService {
             .map(|ext| ext.to_lowercase());
 
         match extension.as_deref() {
-            Some("wav") | Some("mp3") | Some("mp4") | Some("m4a") | Some("flac") |
-            Some("ogg") | Some("mov") | Some("avi") | Some("mkv") | Some("webm") => {
+            Some("wav") | Some("mp3") | Some("mp4") | Some("m4a") | Some("flac") | Some("ogg")
+            | Some("mov") | Some("avi") | Some("mkv") | Some("webm") => {
                 app_log_debug!("✅ Supported audio/video format: {:?}", extension);
                 Ok(())
             }
-            Some(ext) => {
-                Err(anyhow::anyhow!("Unsupported audio/video format: {}", ext))
-            }
-            None => {
-                Err(anyhow::anyhow!("Could not determine audio/video format"))
-            }
+            Some(ext) => Err(anyhow::anyhow!("Unsupported audio/video format: {}", ext)),
+            None => Err(anyhow::anyhow!("Could not determine audio/video format")),
         }
     }
 
     /// Transcribe audio file using Whisper
     pub async fn transcribe_file(&mut self, file_path: &Path) -> Result<TranscriptionResult> {
         app_log_info!("🎤 Transcribing: {:?}", file_path);
-        app_log_debug!("🔍 File path absolute: {:?}", file_path.canonicalize().unwrap_or_else(|_| file_path.to_path_buf()));
+        app_log_debug!(
+            "🔍 File path absolute: {:?}",
+            file_path
+                .canonicalize()
+                .unwrap_or_else(|_| file_path.to_path_buf())
+        );
 
         // Validate the file first
         self.validate_audio_file(file_path)?;
@@ -94,24 +96,33 @@ impl AudioService {
 
         // Load and process audio file first
         let audio_data = self.load_audio_data(file_path)?;
-        let whisper_model = self.whisper_model.as_mut()
+        let whisper_model = self
+            .whisper_model
+            .as_mut()
             .ok_or_else(|| anyhow::anyhow!("Whisper model not available"))?;
         // Use WhisperModel to transcribe
         let whisper_result = whisper_model.transcribe_audio(&audio_data)?;
         // Convert to our format
         let result = TranscriptionResult {
             text: whisper_result.text,
-            segments: whisper_result.segments.into_iter().map(|seg| TranscriptionSegment {
-                start: seg.start,
-                end: seg.end,
-                text: seg.text,
-                confidence: seg.confidence,
-            }).collect(),
+            segments: whisper_result
+                .segments
+                .into_iter()
+                .map(|seg| TranscriptionSegment {
+                    start: seg.start,
+                    end: seg.end,
+                    text: seg.text,
+                    confidence: seg.confidence,
+                })
+                .collect(),
             duration: whisper_result.duration,
             language: whisper_result.language,
         };
 
-        app_log_info!("✅ Transcription completed: {} characters", result.text.len());
+        app_log_info!(
+            "✅ Transcription completed: {} characters",
+            result.text.len()
+        );
         Ok(result)
     }
 
@@ -119,6 +130,7 @@ impl AudioService {
     fn load_audio_data(&self, file_path: &Path) -> Result<Vec<f32>> {
         app_log_debug!("🔧 Loading audio data from: {:?}", file_path);
 
+        use std::fs::File;
         use symphonia::core::audio::SampleBuffer;
         use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
         use symphonia::core::errors::Error as SymphoniaError;
@@ -126,7 +138,6 @@ impl AudioService {
         use symphonia::core::io::MediaSourceStream;
         use symphonia::core::meta::MetadataOptions;
         use symphonia::core::probe::Hint;
-        use std::fs::File;
 
         // Open the file
         let file = File::open(file_path)
@@ -241,8 +252,11 @@ impl AudioService {
 
         // Get audio specification for resampling/conversion
         let spec = audio_spec.ok_or_else(|| anyhow::anyhow!("No audio specification available"))?;
-        app_log_debug!("🔍 Audio spec: channels={}, sample_rate={}",
-            spec.channels.count(), spec.rate);
+        app_log_debug!(
+            "🔍 Audio spec: channels={}, sample_rate={}",
+            spec.channels.count(),
+            spec.rate
+        );
 
         // Convert to mono if needed
         let mut audio_data = if spec.channels.count() > 1 {
@@ -257,7 +271,9 @@ impl AudioService {
         };
 
         // Normalize audio to [-1, 1] range
-        let max_val = audio_data.iter().fold(0.0f32, |max, &sample| max.max(sample.abs()));
+        let max_val = audio_data
+            .iter()
+            .fold(0.0f32, |max, &sample| max.max(sample.abs()));
         if max_val > 0.0 {
             app_log_debug!("🔧 Normalizing audio, max value: {}", max_val);
             for sample in audio_data.iter_mut() {

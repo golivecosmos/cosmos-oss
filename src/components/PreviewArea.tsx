@@ -147,6 +147,14 @@ export const PreviewArea: React.FC<PreviewAreaProps & {
       }
     };
 
+    const getParentDirectory = (filepath?: string | null): string | null => {
+      if (!filepath) return null;
+      const normalized = filepath.replace(/\\/g, "/");
+      const lastSlash = normalized.lastIndexOf("/");
+      if (lastSlash <= 0) return null;
+      return normalized.slice(0, lastSlash);
+    };
+
     // File type detection helper
     const getFileType = (filename: string): MediaFile["type"] => {
       const ext = filename.split(".").pop()?.toLowerCase() || "";
@@ -432,6 +440,17 @@ export const PreviewArea: React.FC<PreviewAreaProps & {
                 }
               }
 
+              // Derive parent directory from available sources when parent_file_path is missing.
+              const metadataVideoPath =
+                parsedMetadata.video_path ||
+                parsedMetadata.source_path ||
+                parsedMetadata.original_path ||
+                null;
+              const fallbackParentPath =
+                decodedParentPath ||
+                getParentDirectory(metadataVideoPath) ||
+                getParentDirectory(decodedFilePath);
+
               // Create the base metadata object
               const baseMetadata = {
                 size: parsedMetadata.fs_size || 0,
@@ -439,7 +458,7 @@ export const PreviewArea: React.FC<PreviewAreaProps & {
                 created: file.created_at || "",
                 lastIndexed: file.last_indexed_at || null,
                 mimeType: mimeType,
-                parentPath: decodedParentPath || null,
+                parentPath: fallbackParentPath || null,
                 tags: file.tags || null,
                 isDirectory: false,
                 score: file.score || 0,
@@ -485,7 +504,7 @@ export const PreviewArea: React.FC<PreviewAreaProps & {
                   frameNumber: file.frame_number,
                   videoDuration: file.video_duration,
                   parentPath:
-                    decodedParentPath || parsedMetadata.video_path,
+                    fallbackParentPath,
                   sourceType: "video_frame",
                 };
 
@@ -567,9 +586,16 @@ export const PreviewArea: React.FC<PreviewAreaProps & {
 
     // Load files when selected file or current directory changes
     useEffect(() => {
-      // Don't load directory files if we're showing indexed files or search results
-      if (selectedCollection === "indexed" || isSearchMode) {
-        console.log('Skipping file load - showing indexed files or search results');
+      // Skip direct filesystem loading while searching.
+      if (isSearchMode) {
+        console.log('Skipping file load - showing search results');
+        return;
+      }
+
+      // In indexed mode, only skip when we're at root. If currentDirectory is set,
+      // we intentionally drill into that filesystem directory.
+      if (selectedCollection === "indexed" && !currentDirectory) {
+        console.log('Skipping file load - showing indexed root');
         return;
       }
 
@@ -628,6 +654,13 @@ export const PreviewArea: React.FC<PreviewAreaProps & {
       selectedCollection,
       isSearchMode,
     ]);
+
+    // Restore indexed root listing when leaving a drilled directory.
+    useEffect(() => {
+      if (selectedCollection === "indexed" && !isSearchMode && !currentDirectory) {
+        setMediaFiles(processFilesForDisplay(indexedFiles));
+      }
+    }, [selectedCollection, isSearchMode, currentDirectory, indexedFiles, processFilesForDisplay]);
 
     const handleDirectorySelect = (directory: MediaFile) => {
       // Normalize the directory path by removing asset:// prefix if present

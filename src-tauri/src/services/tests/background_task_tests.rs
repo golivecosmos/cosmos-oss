@@ -1,36 +1,37 @@
-use crate::services::startup::AppState;
 use crate::commands::indexing::{get_worker_count, WORKER_COUNT};
 use crate::services::database_service::DatabaseService;
+use crate::services::startup::AppState;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::time::{timeout, sleep};
+use tokio::time::{sleep, timeout};
 
 /// Create ultra-lightweight mock for task coordination tests (no actual service logic)
-fn create_mock_task_state() -> (Arc<std::sync::atomic::AtomicBool>, Arc<std::sync::atomic::AtomicUsize>) {
+fn create_mock_task_state() -> (
+    Arc<std::sync::atomic::AtomicBool>,
+    Arc<std::sync::atomic::AtomicUsize>,
+) {
     (
         Arc::new(std::sync::atomic::AtomicBool::new(true)), // Mock "available" state
-        Arc::new(std::sync::atomic::AtomicUsize::new(0))    // Mock counter
+        Arc::new(std::sync::atomic::AtomicUsize::new(0)),   // Mock counter
     )
 }
 
 /// Create lightweight test services for background task testing
 fn create_test_app_state() -> AppState {
     use crate::services::{
-        audio_service::AudioService,
-        download_service::DownloadService,
-        drive_service::DriveService,
-        embedding_service::EmbeddingService,
-        file_service::FileService,
-        model_service::ModelService,
-        sqlite_service::SqliteVectorService,
-        video_service::VideoService,
+        audio_service::AudioService, download_service::DownloadService,
+        drive_service::DriveService, embedding_service::EmbeddingService,
+        file_service::FileService, model_service::ModelService,
+        sqlite_service::SqliteVectorService, video_service::VideoService,
     };
 
     // Create lightweight services - no model loading, in-memory DB
     let model_service = Arc::new(ModelService::new());
     let file_service = Arc::new(FileService::new());
-    let sqlite_service = Arc::new(SqliteVectorService::new_in_memory()
-        .expect("Failed to create in-memory test SQLite service"));
+    let sqlite_service = Arc::new(
+        SqliteVectorService::new_in_memory()
+            .expect("Failed to create in-memory test SQLite service"),
+    );
     let db_service = DatabaseService::new_in_memory().expect("Failed to create database service");
     let drive_service = Arc::new(DriveService::new(Arc::new(db_service)));
     let embedding_service = Arc::new(EmbeddingService::new(
@@ -51,7 +52,9 @@ fn create_test_app_state() -> AppState {
         video_service,
         download_service,
         drive_service,
-        video_generation_status: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+        video_generation_status: Arc::new(
+            tokio::sync::Mutex::new(std::collections::HashMap::new()),
+        ),
     }
 }
 
@@ -61,8 +64,14 @@ async fn test_worker_count_configuration() {
     let worker_count = get_worker_count();
 
     assert!(worker_count > 0, "Worker count should be positive");
-    assert!(worker_count <= 16, "Worker count should be reasonable for hardware");
-    assert_eq!(worker_count, WORKER_COUNT, "Worker count should match constant");
+    assert!(
+        worker_count <= 16,
+        "Worker count should be reasonable for hardware"
+    );
+    assert_eq!(
+        worker_count, WORKER_COUNT,
+        "Worker count should match constant"
+    );
 }
 
 #[tokio::test]
@@ -72,7 +81,8 @@ async fn test_background_worker_task_spawning() {
 
     // Test that we can spawn worker tasks
     let mut handles = Vec::new();
-    for worker_id in 1..=3 { // Test with 3 workers
+    for worker_id in 1..=3 {
+        // Test with 3 workers
         let available_clone = mock_available.clone();
 
         let handle = tokio::spawn(async move {
@@ -97,18 +107,17 @@ async fn test_service_cloning_for_workers() {
     let (mock_available, mock_counter) = create_mock_task_state();
 
     // Create multiple clones (simulating service cloning)
-    let available_clones: Vec<_> = (0..3)
-        .map(|_| mock_available.clone())
-        .collect();
+    let available_clones: Vec<_> = (0..3).map(|_| mock_available.clone()).collect();
 
-    let counter_clones: Vec<_> = (0..3)
-        .map(|_| mock_counter.clone())
-        .collect();
+    let counter_clones: Vec<_> = (0..3).map(|_| mock_counter.clone()).collect();
 
     // All clones should be functional
     for (i, available_clone) in available_clones.iter().enumerate() {
-        assert!(available_clone.load(std::sync::atomic::Ordering::SeqCst), 
-               "Clone {} should be available", i);
+        assert!(
+            available_clone.load(std::sync::atomic::Ordering::SeqCst),
+            "Clone {} should be available",
+            i
+        );
     }
 
     // Test that clones point to the same underlying data
@@ -163,12 +172,15 @@ async fn test_worker_error_isolation() {
         match worker_type {
             "panic" => assert!(result.is_err(), "Panicking worker should error"),
             _ => {
-                assert!(result.is_ok(), "Normal workers should succeed despite panic in other worker");
+                assert!(
+                    result.is_ok(),
+                    "Normal workers should succeed despite panic in other worker"
+                );
                 assert!(result.unwrap(), "Normal worker should return true");
             }
         }
     }
-    
+
     // Verify normal workers completed (counter should be 2)
     assert_eq!(mock_counter.load(std::sync::atomic::Ordering::SeqCst), 2);
 }
@@ -221,14 +233,16 @@ async fn test_background_task_resource_cleanup() {
     assert!(
         final_available_count <= initial_available_count + 1,
         "Available reference count should be close to initial: {} -> {}",
-        initial_available_count, final_available_count
+        initial_available_count,
+        final_available_count
     );
     assert!(
         final_counter_count <= initial_counter_count + 1,
         "Counter reference count should be close to initial: {} -> {}",
-        initial_counter_count, final_counter_count
+        initial_counter_count,
+        final_counter_count
     );
-    
+
     // Verify all workers executed
     assert_eq!(mock_counter.load(std::sync::atomic::Ordering::SeqCst), 5);
 }
@@ -300,7 +314,7 @@ async fn test_background_task_service_availability() {
         let _model_loaded = model_service.is_model_loaded();
         results.push(("model", true));
 
-        // Test file service - just verify it doesn't panic  
+        // Test file service - just verify it doesn't panic
         let _is_dir = file_service.is_directory("/");
         results.push(("file", true));
 
@@ -311,11 +325,17 @@ async fn test_background_task_service_availability() {
         results
     });
 
-    let results = handle.await.expect("Service availability test should complete");
+    let results = handle
+        .await
+        .expect("Service availability test should complete");
 
     // All services should be accessible
     for (service_name, is_available) in results {
-        assert!(is_available, "{} service should be available in background task", service_name);
+        assert!(
+            is_available,
+            "{} service should be available in background task",
+            service_name
+        );
     }
 }
 
@@ -329,16 +349,17 @@ async fn test_background_task_timeout_handling() {
     // Test quick operation (should not timeout)
     let quick_task = timeout(
         Duration::from_secs(1),
-        tokio::spawn(async move {
-            sqlite_service.get_schema_info()
-        })
+        tokio::spawn(async move { sqlite_service.get_schema_info() }),
     );
 
     let result = quick_task.await;
     assert!(result.is_ok(), "Quick background task should not timeout");
 
     let task_result = result.unwrap();
-    assert!(task_result.is_ok(), "Quick task should complete successfully");
+    assert!(
+        task_result.is_ok(),
+        "Quick task should complete successfully"
+    );
 }
 
 #[tokio::test]
@@ -361,7 +382,7 @@ async fn test_background_task_memory_pressure() {
             // Access mocks
             let is_available = available_clone.load(std::sync::atomic::Ordering::SeqCst);
             assert!(is_available, "Mock should work under memory pressure");
-            
+
             counter_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
             i
@@ -372,7 +393,9 @@ async fn test_background_task_memory_pressure() {
     // All tasks should complete successfully despite memory pressure
     let mut completed_tasks = Vec::new();
     for handle in handles {
-        let task_id = handle.await.expect("Task should complete under memory pressure");
+        let task_id = handle
+            .await
+            .expect("Task should complete under memory pressure");
         completed_tasks.push(task_id);
     }
 
@@ -383,7 +406,10 @@ async fn test_background_task_memory_pressure() {
     completed_tasks.sort();
     let expected: Vec<_> = (0..task_count).collect();
     assert_eq!(completed_tasks, expected);
-    
+
     // Verify all tasks incremented the counter
-    assert_eq!(mock_counter.load(std::sync::atomic::Ordering::SeqCst), task_count);
+    assert_eq!(
+        mock_counter.load(std::sync::atomic::Ordering::SeqCst),
+        task_count
+    );
 }

@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ViewMode, MediaFile } from './types';
 import { Button } from '../ui/button';
@@ -132,7 +132,6 @@ export function PreviewContainer({
 }: PreviewContainerProps) {
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
-  const [expandedDir, setExpandedDir] = useState<string | null>(null);
 
   const filteredFiles = files.filter(file => {
     if (fileTypeFilter === 'all') return true;
@@ -140,34 +139,6 @@ export function PreviewContainer({
     if (fileTypeFilter === 'video') return file.type === 'video' || file.metadata.isVideoFrame;
     return true;
   });
-
-  // Group files by parent directory when viewing AI Library (not search results)
-  let groupedFiles: Record<string, MediaFile[]> = {};
-  let shouldGroupByDirectory = !isSearchMode && selectedCollection === 'indexed' && !currentDirectoryPath && !isLoadingFiles && !isLoadingMore && filteredFiles.length > 0;
-
-  if (shouldGroupByDirectory) {
-    filteredFiles.forEach(file => {
-      const dir = file.metadata.parentPath || 'Unknown';
-      if (!groupedFiles[dir]) groupedFiles[dir] = [];
-      groupedFiles[dir].push(file);
-    });
-  }
-
-  // Step 1: Prepare folderTiles for the folder tile grid
-  let folderTiles: { dir: string; files: MediaFile[]; previewFile?: MediaFile }[] = [];
-  if (shouldGroupByDirectory) {
-    folderTiles = Object.entries(groupedFiles).map(([dir, files]) => ({
-      dir,
-      files,
-      previewFile: files[0],
-    }));
-  }
-
-  // Pagination for folder tiles
-  const FOLDER_TILE_PAGE_SIZE = 500; // Show many more compact folders
-  const [folderTilePage, setFolderTilePage] = useState(100); // Start with more folders loaded
-  const paginatedFolderTiles = folderTiles.slice(0, folderTilePage * FOLDER_TILE_PAGE_SIZE);
-  const hasMoreFolderTiles = folderTiles.length > paginatedFolderTiles.length;
 
   const handleFileSelect = (file: MediaFile) => {
     if (file.type === 'directory' && onDirectorySelect) {
@@ -215,10 +186,6 @@ export function PreviewContainer({
     }
   };
 
-  const handleTileClick = (dir: string) => {
-    setExpandedDir(prev => (prev === dir ? null : dir));
-  };
-
   // Add file count display
   // For indexed collection, use totalCount from backend; otherwise use actual file count
   const totalFiles = typeof totalCount === 'number' && totalCount > 0 ? totalCount : files.length;
@@ -226,157 +193,38 @@ export function PreviewContainer({
 
   return (
     <div ref={containerRef} className="flex flex-col dark:bg-darkBgMid bg-gray-50 h-full max-h-[calc(100vh-110px)]">
-      {/* File count display */}
-      <div className="px-6 py-2 text-sm dark:text-customGray text-gray-500">Showing {shownFiles} of {totalFiles} files</div>
+      <div className="px-6 py-3 text-sm dark:text-customGray text-gray-500">
+        Showing {shownFiles} of {totalFiles} files
+      </div>
       <div className="overflow-auto h-full">
-        {shouldGroupByDirectory ? (
-          <div className="p-6">
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-10 gap-8">
-              {paginatedFolderTiles.map(({ dir, files, previewFile }) => {
-                const isExpanded = expandedDir === dir;
-                const folderName = dir.split('/').pop() || 'Folder';
-                const fileCount = files.length;
-
-                return (
-                  <div
-                    key={dir}
-                    className={
-                      "group flex flex-col items-center cursor-pointer transition-all duration-150" +
-                      (isExpanded ? " opacity-100" : " opacity-90 hover:opacity-100")
-                    }
-                    onClick={() => handleTileClick(dir)}
-                    style={{ width: '120px' }}
-                  >
-                    {/* Folder icon - larger, Finder-style */}
-                    <div className={
-                      "relative mb-1 p-2 rounded-lg transition-all" +
-                      (isExpanded ? " bg-blue-500/20 dark:bg-blueHighlight/20" : " hover:bg-gray-100/10 dark:hover:bg-white/5")
-                    }>
-                      <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M8 20C8 17.7909 9.79086 16 12 16H24L28 20H52C54.2091 20 56 21.7909 56 24V48C56 50.2091 54.2091 52 52 52H12C9.79086 52 8 50.2091 8 48V20Z" 
-                              className="fill-blue-500 dark:fill-blueHighlight"/>
-                        <path d="M8 18C8 15.7909 9.79086 14 12 14H22L26 18H52C54.2091 18 56 19.7909 56 22V24H8V18Z" 
-                              className="fill-blue-600 dark:fill-blue-400"/>
-                      </svg>
-                    </div>
-                    
-                    {/* Folder name */}
-                    <div className="text-center w-full px-1">
-                      <p className="text-xs dark:text-gray-200 text-gray-700 font-normal truncate">
-                        {folderName}
-                      </p>
-                      <p className="text-[10px] dark:text-gray-400 text-gray-500 mt-0.5">
-                        {fileCount} {fileCount === 1 ? 'item' : 'items'}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-
-            </div>
-            {hasMoreFolderTiles && (
-              <div className="mt-6 text-center">
-                <button
-                  className="py-2 px-4 dark:bg-darkBgHighlight dark:hover:bg-blueShadow bg-gray-100 rounded-lg dark:text-text text-gray-700 text-sm font-medium hover:bg-gray-200 transition"
-                  onClick={e => { e.preventDefault(); setFolderTilePage(p => p + 1); }}
-                >
-                  Load More Folders
-                </button>
-              </div>
-            )}
-            {/* Divider and expanded section header */}
-            {expandedDir && (
-              <>
-                <div className="my-6 border-t dark:border-darkBgHighlight border-gray-200 w-full" />
-                <div className="flex items-center gap-2 mb-4 px-2">
-                  <FolderSearch className="h-5 w-5 dark:text-blueHighlight text-blue-500" />
-                  <span className="font-semibold text-lg dark:text-text text-gray-800">
-                    {expandedDir.split('/').pop()}
-                  </span>
-                  <span className="text-sm dark:text-customGray text-gray-500">
-                    ({groupedFiles[expandedDir]?.length || 0} files)
-                  </span>
-                  <button
-                    className="ml-auto px-3 py-1 rounded dark:bg-darkBgHighlight bg-gray-100 dark:text-text text-gray-600 dark:hover:bg-blueShadow hover:bg-gray-200 text-sm font-medium"
-                    onClick={() => setExpandedDir(null)}
-                  >
-                    Close
-                  </button>
-                </div>
-              </>
-            )}
-            {/* Expanded directory group below the grid */}
-            {expandedDir && (
-              <div className="mt-4">
-                {folderTiles.filter(({ dir }) => dir === expandedDir).map(({ dir, files }) => (
-                  <div key={dir} className="dark:bg-darkBg bg-white rounded-lg border dark:border-darkBgHighlight border-gray-200">
-                    <div className="p-4">
-                      {viewMode === 'grid' ? (
-                        <GridView
-                          key={files.length > 0 ? `${files[0]?.path}-${files.length}` : 'empty'}
-                          files={files}
-                          onFileSelect={handleFileSelect}
-                          isLoading={isLoadingFiles}
-                          indexingPaths={indexingPaths}
-                          onToggleWatch={onToggleWatch}
-                          onAddToIndex={handleAddToIndex}
-                          onTranscribeFile={onTranscribeFile}
-                          isIndexingDisabled={isIndexingDisabled}
-                          onLoadMore={onLoadMore}
-                          hasMoreFiles={hasMoreFiles}
-                          isLoadingMore={isLoadingMore}
-                        />
-                      ) : (
-                        <ListView
-                          files={files}
-                          onFileSelect={handleFileSelect}
-                          indexingPaths={indexingPaths}
-                          onAddToIndex={handleAddToIndex}
-                          onTranscribeFile={onTranscribeFile}
-                          isIndexingDisabled={isIndexingDisabled}
-                          onLoadMore={onLoadMore}
-                          hasMoreFiles={hasMoreFiles}
-                          isLoadingMore={isLoadingMore}
-                        />
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : (
-          <>
-            {viewMode === 'grid' && (
-              <GridView
-                key={filteredFiles.length > 0 ? `${filteredFiles[0]?.path}-${filteredFiles.length}` : 'empty'}
-                files={filteredFiles}
-                onFileSelect={handleFileSelect}
-                isLoading={isLoadingFiles}
-                indexingPaths={indexingPaths}
-                onToggleWatch={onToggleWatch}
-                onAddToIndex={handleAddToIndex}
-                onTranscribeFile={onTranscribeFile}
-                isIndexingDisabled={isIndexingDisabled}
-                onLoadMore={onLoadMore}
-                hasMoreFiles={hasMoreFiles}
-                isLoadingMore={isLoadingMore}
-              />
-            )}
-            {viewMode === 'list' && (
-              <ListView
-                files={filteredFiles}
-                onFileSelect={handleFileSelect}
-                indexingPaths={indexingPaths}
-                onAddToIndex={handleAddToIndex}
-                onTranscribeFile={onTranscribeFile}
-                isIndexingDisabled={isIndexingDisabled}
-                onLoadMore={onLoadMore}
-                hasMoreFiles={hasMoreFiles}
-                isLoadingMore={isLoadingMore}
-              />
-            )}
-          </>
+        {viewMode === 'grid' && (
+          <GridView
+            key={filteredFiles.length > 0 ? `${filteredFiles[0]?.path}-${filteredFiles.length}` : 'empty'}
+            files={filteredFiles}
+            onFileSelect={handleFileSelect}
+            isLoading={isLoadingFiles}
+            indexingPaths={indexingPaths}
+            onToggleWatch={onToggleWatch}
+            onAddToIndex={handleAddToIndex}
+            onTranscribeFile={onTranscribeFile}
+            isIndexingDisabled={isIndexingDisabled}
+            onLoadMore={onLoadMore}
+            hasMoreFiles={hasMoreFiles}
+            isLoadingMore={isLoadingMore}
+          />
+        )}
+        {viewMode === 'list' && (
+          <ListView
+            files={filteredFiles}
+            onFileSelect={handleFileSelect}
+            indexingPaths={indexingPaths}
+            onAddToIndex={handleAddToIndex}
+            onTranscribeFile={onTranscribeFile}
+            isIndexingDisabled={isIndexingDisabled}
+            onLoadMore={onLoadMore}
+            hasMoreFiles={hasMoreFiles}
+            isLoadingMore={isLoadingMore}
+          />
         )}
 
       </div>

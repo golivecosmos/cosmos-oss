@@ -1,14 +1,14 @@
-use anyhow::Result;
-use rusqlite::{Connection, ffi::sqlite3_auto_extension};
-use sqlite_vec::sqlite3_vec_init;
-use std::path::PathBuf;
-use std::path::Path;
-use std::fs;
-use std::sync::{Arc, Mutex, RwLock};
-use crate::utils::path_utils;
-use crate::{app_log_debug, app_log_info, app_log_warn, app_log_error};
 use crate::services::config_service::ConfigService;
 use crate::services::database_encryption_service::DatabaseEncryptionService;
+use crate::utils::path_utils;
+use crate::{app_log_debug, app_log_error, app_log_info, app_log_warn};
+use anyhow::Result;
+use rusqlite::{ffi::sqlite3_auto_extension, Connection};
+use sqlite_vec::sqlite3_vec_init;
+use std::fs;
+use std::path::Path;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex, RwLock};
 use zerocopy::AsBytes;
 
 /// Core database management service
@@ -42,7 +42,11 @@ impl DatabaseService {
         )?;
 
         app_log_debug!("✅ SQLITE: sqlite-vec extension loaded successfully (in-memory)");
-        app_log_debug!("📊 SQLITE: vec_version = {}, test_embedding = {}", vec_version, test_embedding);
+        app_log_debug!(
+            "📊 SQLITE: vec_version = {}, test_embedding = {}",
+            vec_version,
+            test_embedding
+        );
 
         let mut service = Self {
             db: Arc::new(Mutex::new(index_db)),
@@ -80,7 +84,10 @@ impl DatabaseService {
             config_service.get_db_path()?
         };
 
-        app_log_debug!("🗄️ SQLITE: Initializing SQLite database service at: {}", index_db_path.display());
+        app_log_debug!(
+            "🗄️ SQLITE: Initializing SQLite database service at: {}",
+            index_db_path.display()
+        );
 
         // Register sqlite-vec extension
         unsafe {
@@ -106,7 +113,11 @@ impl DatabaseService {
         )?;
 
         app_log_debug!("✅ SQLITE: sqlite-vec extension loaded successfully");
-        app_log_debug!("📊 SQLITE: vec_version = {}, test_embedding = {}", vec_version, test_embedding);
+        app_log_debug!(
+            "📊 SQLITE: vec_version = {}, test_embedding = {}",
+            vec_version,
+            test_embedding
+        );
 
         Ok(Self {
             db: Arc::new(Mutex::new(connection)),
@@ -120,7 +131,11 @@ impl DatabaseService {
     /// Get the database path and whether it's the default path
     pub fn get_db_path(&self) -> Result<(PathBuf, bool), String> {
         let db_path = self.db_path.read().unwrap().clone();
-        let is_default = db_path.to_string_lossy() == path_utils::get_app_data_dir().map_err(|e| e.to_string())?.join(crate::constants::DATABASE_FILENAME).to_string_lossy();
+        let is_default = db_path.to_string_lossy()
+            == path_utils::get_app_data_dir()
+                .map_err(|e| e.to_string())?
+                .join(crate::constants::DATABASE_FILENAME)
+                .to_string_lossy();
         Ok((db_path, is_default))
     }
 
@@ -141,11 +156,20 @@ impl DatabaseService {
         };
 
         let new_db_path = new_dir_path.join(crate::constants::DATABASE_FILENAME);
-        app_log_info!("🔧 DB_SET_PATH: New database path will be: {}", new_db_path.display());
+        app_log_info!(
+            "🔧 DB_SET_PATH: New database path will be: {}",
+            new_db_path.display()
+        );
 
         if new_db_path.exists() {
-            app_log_error!("❌ DB_SET_PATH: Database already exists at: {}", new_db_path.display());
-            return Err(format!("Database already exists at: {}", new_dir_path.display()));
+            app_log_error!(
+                "❌ DB_SET_PATH: Database already exists at: {}",
+                new_db_path.display()
+            );
+            return Err(format!(
+                "Database already exists at: {}",
+                new_dir_path.display()
+            ));
         }
 
         app_log_info!("🔧 DB_SET_PATH: Copying database to new location");
@@ -169,7 +193,11 @@ impl DatabaseService {
             let old_shm_path = old_db_path.with_extension("db-shm");
             let old_wal_path = old_db_path.with_extension("db-wal");
 
-            app_log_info!("🔧 DB_SET_PATH: Copying main database from {} to {}", old_db_path.display(), temp_db_path.display());
+            app_log_info!(
+                "🔧 DB_SET_PATH: Copying main database from {} to {}",
+                old_db_path.display(),
+                temp_db_path.display()
+            );
 
             // Copy main database file
             match fs::copy(&old_db_path, &temp_db_path) {
@@ -182,7 +210,11 @@ impl DatabaseService {
 
             // Copy WAL files if they exist
             if old_shm_path.exists() {
-                app_log_info!("🔧 DB_SET_PATH: Copying SHM file from {} to {}", old_shm_path.display(), temp_shm_path.display());
+                app_log_info!(
+                    "🔧 DB_SET_PATH: Copying SHM file from {} to {}",
+                    old_shm_path.display(),
+                    temp_shm_path.display()
+                );
                 match fs::copy(&old_shm_path, &temp_shm_path) {
                     Ok(_) => app_log_info!("✅ DB_SET_PATH: SHM file copied to temp location"),
                     Err(e) => {
@@ -195,7 +227,11 @@ impl DatabaseService {
             }
 
             if old_wal_path.exists() {
-                app_log_info!("🔧 DB_SET_PATH: Copying WAL file from {} to {}", old_wal_path.display(), temp_wal_path.display());
+                app_log_info!(
+                    "🔧 DB_SET_PATH: Copying WAL file from {} to {}",
+                    old_wal_path.display(),
+                    temp_wal_path.display()
+                );
                 match fs::copy(&old_wal_path, &temp_wal_path) {
                     Ok(_) => app_log_info!("✅ DB_SET_PATH: WAL file copied to temp location"),
                     Err(e) => {
@@ -297,7 +333,9 @@ impl DatabaseService {
             } else {
                 None // Clear custom path to use default
             };
-            config_service.set_custom_db_path(custom_path).map_err(|e| e.to_string())?;
+            config_service
+                .set_custom_db_path(custom_path)
+                .map_err(|e| e.to_string())?;
             app_log_info!("✅ DB_SET_PATH: Path stored in config successfully");
         }
 
@@ -317,11 +355,16 @@ impl DatabaseService {
             } else {
                 match Connection::open(&*self.db_path.read().unwrap()) {
                     Ok(conn) => {
-                        app_log_info!("✅ DB_SET_PATH: New unencrypted database connection created");
+                        app_log_info!(
+                            "✅ DB_SET_PATH: New unencrypted database connection created"
+                        );
                         conn
                     }
                     Err(e) => {
-                        app_log_error!("❌ DB_SET_PATH: Failed to create new database connection: {}", e);
+                        app_log_error!(
+                            "❌ DB_SET_PATH: Failed to create new database connection: {}",
+                            e
+                        );
                         return Err(e.to_string());
                     }
                 }
@@ -331,7 +374,10 @@ impl DatabaseService {
         }
 
         let result = new_db_path.to_string_lossy().to_string();
-        app_log_info!("✅ DB_SET_PATH: set_db_path completed successfully: {}", result);
+        app_log_info!(
+            "✅ DB_SET_PATH: set_db_path completed successfully: {}",
+            result
+        );
         Ok(result)
     }
 
@@ -365,19 +411,43 @@ impl DatabaseService {
     /// Verify the integrity of a new database file
     fn verify_new_db_integrity(&self, old: &Path, new: &Path) -> Result<(), String> {
         app_log_info!("🔧 VERIFY_INTEGRITY: Starting database integrity verification");
-        app_log_info!("🔧 VERIFY_INTEGRITY: old = {}, new = {}", old.display(), new.display());
+        app_log_info!(
+            "🔧 VERIFY_INTEGRITY: old = {}, new = {}",
+            old.display(),
+            new.display()
+        );
 
-        let old_size = fs::metadata(old).map_err(|e| format!("New Location has not been set. Failed to read old DB metadata: {}", e))?.len();
-        let new_size = fs::metadata(new).map_err(|e| format!("New Location has not been set. Failed to read new DB metadata: {}", e))?.len();
+        let old_size = fs::metadata(old)
+            .map_err(|e| {
+                format!(
+                    "New Location has not been set. Failed to read old DB metadata: {}",
+                    e
+                )
+            })?
+            .len();
+        let new_size = fs::metadata(new)
+            .map_err(|e| {
+                format!(
+                    "New Location has not been set. Failed to read new DB metadata: {}",
+                    e
+                )
+            })?
+            .len();
 
-        app_log_info!("🔧 VERIFY_INTEGRITY: old_size = {}, new_size = {}", old_size, new_size);
+        app_log_info!(
+            "🔧 VERIFY_INTEGRITY: old_size = {}, new_size = {}",
+            old_size,
+            new_size
+        );
 
         if old_size != new_size {
             app_log_error!("❌ VERIFY_INTEGRITY: File sizes don't match");
             return Err("Database initialization has failed.".into());
         }
 
-        app_log_info!("✅ VERIFY_INTEGRITY: File sizes match, skipping encrypted database verification");
+        app_log_info!(
+            "✅ VERIFY_INTEGRITY: File sizes match, skipping encrypted database verification"
+        );
         app_log_info!("✅ VERIFY_INTEGRITY: Since database is encrypted, we can't verify integrity without key");
         app_log_info!("✅ VERIFY_INTEGRITY: Assuming integrity is good if file sizes match");
 
@@ -410,7 +480,9 @@ impl DatabaseService {
                 app_log_info!("✅ Using existing encrypted database");
                 return Ok(());
             } else {
-                app_log_info!("⚠️ Existing database is not encrypted or corrupted, will create new one");
+                app_log_info!(
+                    "⚠️ Existing database is not encrypted or corrupted, will create new one"
+                );
             }
         }
 
@@ -499,7 +571,8 @@ impl DatabaseService {
         }
 
         // Verify the key is correct by attempting to read from the database
-        let _count: i64 = connection.query_row("SELECT count(*) FROM sqlite_master", [], |row| row.get(0))?;
+        let _count: i64 =
+            connection.query_row("SELECT count(*) FROM sqlite_master", [], |row| row.get(0))?;
         app_log_info!("✅ Database access verified successfully");
 
         Ok(connection)
@@ -516,21 +589,37 @@ impl DatabaseService {
                     if let Some(parent_dir) = custom_path.parent() {
                         let new_db_path = parent_dir.join(crate::constants::DATABASE_FILENAME);
 
-                        app_log_info!("🔄 DATABASE MIGRATION: Found custom vector_search.db at {}", custom_path.display());
-                        app_log_info!("🔄 DATABASE MIGRATION: Will migrate to {} and encrypt", new_db_path.display());
+                        app_log_info!(
+                            "🔄 DATABASE MIGRATION: Found custom vector_search.db at {}",
+                            custom_path.display()
+                        );
+                        app_log_info!(
+                            "🔄 DATABASE MIGRATION: Will migrate to {} and encrypt",
+                            new_db_path.display()
+                        );
 
                         // Remove the old file
                         if let Err(e) = fs::remove_file(&custom_path) {
-                            app_log_warn!("⚠️ DATABASE MIGRATION: Failed to remove old vector_search.db: {}", e);
+                            app_log_warn!(
+                                "⚠️ DATABASE MIGRATION: Failed to remove old vector_search.db: {}",
+                                e
+                            );
                         } else {
                             app_log_info!("✅ DATABASE MIGRATION: Removed old vector_search.db");
                         }
 
                         // Update config to point to new path
-                        if let Err(e) = config_service.set_custom_db_path(Some(new_db_path.to_string_lossy().to_string())) {
-                            app_log_warn!("⚠️ DATABASE MIGRATION: Failed to save updated config: {}", e);
+                        if let Err(e) = config_service
+                            .set_custom_db_path(Some(new_db_path.to_string_lossy().to_string()))
+                        {
+                            app_log_warn!(
+                                "⚠️ DATABASE MIGRATION: Failed to save updated config: {}",
+                                e
+                            );
                         } else {
-                            app_log_info!("✅ DATABASE MIGRATION: Updated config with new .cosmos.db path");
+                            app_log_info!(
+                                "✅ DATABASE MIGRATION: Updated config with new .cosmos.db path"
+                            );
                         }
 
                         app_log_info!("✅ DATABASE MIGRATION: Migration complete. New encrypted database will be created at {}", new_db_path.display());

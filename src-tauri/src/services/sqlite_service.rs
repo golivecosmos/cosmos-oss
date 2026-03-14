@@ -1,14 +1,14 @@
+use crate::services::database_service::DatabaseService;
+use crate::services::drive_service::DriveService;
+use crate::services::job_queue_service::JobQueueService;
+use crate::services::schema_service::SchemaService;
+use crate::services::transcription_service::TranscriptionService;
+use crate::services::vector_service::{ImageVectorBulkData, TextChunkBulkData, VectorService};
+use crate::{app_log_error, app_log_info, app_log_warn};
 use anyhow::{anyhow, Result};
+use serde_json::json;
 use std::path::PathBuf;
 use std::sync::Arc;
-use serde_json::json;
-use crate::{app_log_info, app_log_warn, app_log_error};
-use crate::services::database_service::DatabaseService;
-use crate::services::schema_service::SchemaService;
-use crate::services::vector_service::{VectorService, ImageVectorBulkData};
-use crate::services::job_queue_service::JobQueueService;
-use crate::services::drive_service::DriveService;
-use crate::services::transcription_service::TranscriptionService;
 
 /// Service for managing SQLite database with vector search capabilities
 ///
@@ -43,7 +43,8 @@ impl SqliteVectorService {
         let schema_service = SchemaService::new(Arc::clone(&db_service_arc));
         let schema_service_arc = Arc::new(schema_service);
         let vector_service = VectorService::new(Arc::clone(&db_service_arc));
-        let job_queue_service = JobQueueService::new(Arc::clone(&db_service_arc), Arc::clone(&schema_service_arc));
+        let job_queue_service =
+            JobQueueService::new(Arc::clone(&db_service_arc), Arc::clone(&schema_service_arc));
         let drive_service = DriveService::new(Arc::clone(&db_service_arc));
         let transcription_service = TranscriptionService::new(Arc::clone(&db_service_arc));
         let service = Self {
@@ -74,7 +75,8 @@ impl SqliteVectorService {
         let schema_service = SchemaService::new(Arc::clone(&db_service_arc));
         let schema_service_arc = Arc::new(schema_service);
         let vector_service = VectorService::new(Arc::clone(&db_service_arc));
-        let job_queue_service = JobQueueService::new(Arc::clone(&db_service_arc), Arc::clone(&schema_service_arc));
+        let job_queue_service =
+            JobQueueService::new(Arc::clone(&db_service_arc), Arc::clone(&schema_service_arc));
         let drive_service = DriveService::new(Arc::clone(&db_service_arc));
         let transcription_service = TranscriptionService::new(Arc::clone(&db_service_arc));
 
@@ -112,7 +114,10 @@ impl SqliteVectorService {
         app_log_info!("🔧 SQLITE_SET_PATH: Calling db_service.set_db_path");
         let new_db_path = match self.db_service.set_db_path(new_dir) {
             Ok(path) => {
-                app_log_info!("✅ SQLITE_SET_PATH: db_service.set_db_path succeeded: {}", path);
+                app_log_info!(
+                    "✅ SQLITE_SET_PATH: db_service.set_db_path succeeded: {}",
+                    path
+                );
                 path
             }
             Err(e) => {
@@ -121,7 +126,10 @@ impl SqliteVectorService {
             }
         };
 
-        app_log_info!("✅ SQLITE_SET_PATH: set_db_path completed successfully: {}", new_db_path);
+        app_log_info!(
+            "✅ SQLITE_SET_PATH: set_db_path completed successfully: {}",
+            new_db_path
+        );
         Ok(new_db_path)
     }
 
@@ -153,7 +161,10 @@ impl SqliteVectorService {
                 Ok(())
             }
             Err(e) => {
-                app_log_error!("❌ RECOVERY: Failed to create jobs table during recovery: {}", e);
+                app_log_error!(
+                    "❌ RECOVERY: Failed to create jobs table during recovery: {}",
+                    e
+                );
                 Err(e)
             }
         }
@@ -178,11 +189,24 @@ impl SqliteVectorService {
         metadata: serde_json::Value,
         drive_uuid: Option<String>,
     ) -> Result<()> {
-        self.vector_service.store_image_vector_with_drive(id, file_path, parent_file_path, file_name, mime_type, embedding, metadata, drive_uuid)
+        self.vector_service.store_image_vector_with_drive(
+            id,
+            file_path,
+            parent_file_path,
+            file_name,
+            mime_type,
+            embedding,
+            metadata,
+            drive_uuid,
+        )
     }
 
     /// Search for similar vectors using manual distance calculation only (reliable)
-    pub fn search_vectors(&self, query_vector: &[f32], limit: usize) -> Result<Vec<crate::models::embedding::ImageVectorDataResponse>> {
+    pub fn search_vectors(
+        &self,
+        query_vector: &[f32],
+        limit: usize,
+    ) -> Result<Vec<crate::models::embedding::ImageVectorDataResponse>> {
         self.vector_service.search_vectors(query_vector, limit)
     }
 
@@ -191,9 +215,21 @@ impl SqliteVectorService {
         self.vector_service.get_all_images()
     }
 
+    /// Get one representative row per indexed text document file.
+    pub fn get_all_text_file_entries(
+        &self,
+    ) -> Result<Vec<crate::models::embedding::ImageVectorDataResponse>> {
+        self.vector_service.get_all_text_file_entries()
+    }
+
     /// Get count of indexed images
     pub fn get_image_count(&self) -> Result<usize> {
         self.vector_service.get_image_count()
+    }
+
+    /// Get count of uniquely indexed semantic files across all supported modalities.
+    pub fn get_semantic_file_count(&self) -> Result<usize> {
+        self.vector_service.get_semantic_file_count()
     }
 
     /// Recreate the virtual table with proper sqlite-vec setup
@@ -217,30 +253,59 @@ impl SqliteVectorService {
     }
 
     /// Bulk store multiple image vectors in a single transaction
-    pub fn store_image_vectors_bulk(
-        &self,
-        vectors: Vec<ImageVectorBulkData>,
-    ) -> Result<usize> {
+    pub fn store_image_vectors_bulk(&self, vectors: Vec<ImageVectorBulkData>) -> Result<usize> {
         self.vector_service.store_image_vectors_bulk(vectors)
+    }
+
+    /// Bulk store multiple text chunk vectors in a single transaction
+    pub fn store_text_chunk_vectors_bulk(&self, chunks: Vec<TextChunkBulkData>) -> Result<usize> {
+        self.vector_service.store_text_chunk_vectors_bulk(chunks)
+    }
+
+    /// Delete all text chunks for a single file
+    pub fn delete_text_chunks_for_file(&self, file_path: &str) -> Result<()> {
+        self.vector_service.delete_text_chunks_for_file(file_path)
+    }
+
+    /// Search text chunks using vector similarity with no fallback behavior
+    pub fn search_text_chunks_strict(
+        &self,
+        query_vector: &[f32],
+        limit: usize,
+    ) -> Result<Vec<crate::models::embedding::ImageVectorDataResponse>> {
+        self.vector_service
+            .search_text_chunks_strict(query_vector, limit)
     }
 
     // ===== TRANSCRIPTION SERVICE DELEGATIONS =====
 
     /// Store transcription result in the database
-    pub fn store_transcription(&self, transcription_result: &crate::services::audio_service::TranscriptionResult, file_path: &str) -> Result<String> {
-        self.transcription_service.store_transcription(transcription_result, file_path)
+    pub fn store_transcription(
+        &self,
+        transcription_result: &crate::services::audio_service::TranscriptionResult,
+        file_path: &str,
+    ) -> Result<String> {
+        self.transcription_service
+            .store_transcription(transcription_result, file_path)
     }
 
     /// Get transcription by file path
     pub fn get_transcription_by_path(&self, file_path: &str) -> Result<Option<serde_json::Value>> {
-        self.transcription_service.get_transcription_by_path(file_path)
+        self.transcription_service
+            .get_transcription_by_path(file_path)
     }
 
     // ===== JOB QUEUE SERVICE DELEGATIONS =====
 
     /// Create a new job in the database
-    pub fn create_job(&self, job_type: &str, target_path: &str, total_files: Option<usize>) -> Result<String> {
-        self.job_queue_service.create_job(job_type, target_path, total_files)
+    pub fn create_job(
+        &self,
+        job_type: &str,
+        target_path: &str,
+        total_files: Option<usize>,
+    ) -> Result<String> {
+        self.job_queue_service
+            .create_job(job_type, target_path, total_files)
     }
 
     /// Update job status and progress
@@ -251,9 +316,16 @@ impl SqliteVectorService {
         current_file: Option<&str>,
         processed: Option<usize>,
         errors: Option<&[String]>,
-        failed_files: Option<&serde_json::Value>
+        failed_files: Option<&serde_json::Value>,
     ) -> Result<()> {
-        self.job_queue_service.update_job_progress(job_id, status, current_file, processed, errors, failed_files)
+        self.job_queue_service.update_job_progress(
+            job_id,
+            status,
+            current_file,
+            processed,
+            errors,
+            failed_files,
+        )
     }
 
     /// Get all jobs (recent first)
@@ -268,7 +340,8 @@ impl SqliteVectorService {
 
     /// Mark job for automatic retry with exponential backoff
     pub fn schedule_job_retry(&self, job_id: &str, error_message: &str) -> Result<()> {
-        self.job_queue_service.schedule_job_retry(job_id, error_message)
+        self.job_queue_service
+            .schedule_job_retry(job_id, error_message)
     }
 
     /// Manual user retry (resets retry count)
@@ -277,8 +350,13 @@ impl SqliteVectorService {
     }
 
     /// Truly atomic job claiming that prevents race conditions
-    pub fn claim_pending_jobs_atomic(&self, worker_id: usize, limit: usize) -> Result<Vec<serde_json::Value>> {
-        self.job_queue_service.claim_pending_jobs_atomic(worker_id, limit)
+    pub fn claim_pending_jobs_atomic(
+        &self,
+        worker_id: usize,
+        limit: usize,
+    ) -> Result<Vec<serde_json::Value>> {
+        self.job_queue_service
+            .claim_pending_jobs_atomic(worker_id, limit)
     }
 
     /// Cancel a job (mark it as cancelled)
@@ -298,12 +376,17 @@ impl SqliteVectorService {
 
     /// Recover orphaned "running" jobs that have been stuck for too long
     pub fn recover_orphaned_jobs(&self, timeout_seconds: i64) -> Result<usize> {
-        self.job_queue_service.recover_orphaned_jobs(timeout_seconds)
+        self.job_queue_service
+            .recover_orphaned_jobs(timeout_seconds)
     }
 
     /// Get aggregate queue health metrics
-    pub fn get_queue_health_snapshot(&self, stale_running_threshold_seconds: i64) -> Result<serde_json::Value> {
-        self.job_queue_service.get_queue_health_snapshot(stale_running_threshold_seconds)
+    pub fn get_queue_health_snapshot(
+        &self,
+        stale_running_threshold_seconds: i64,
+    ) -> Result<serde_json::Value> {
+        self.job_queue_service
+            .get_queue_health_snapshot(stale_running_threshold_seconds)
     }
 
     /// Clear jobs from the queue
@@ -319,8 +402,14 @@ impl SqliteVectorService {
     // ===== DRIVE SERVICE DELEGATIONS =====
 
     /// Update drive custom name and physical location
-    pub fn update_drive_metadata(&self, uuid: &str, custom_name: Option<&str>, physical_location: Option<&str>) -> Result<()> {
-        self.drive_service.update_drive_metadata(uuid, custom_name, physical_location)
+    pub fn update_drive_metadata(
+        &self,
+        uuid: &str,
+        custom_name: Option<&str>,
+        physical_location: Option<&str>,
+    ) -> Result<()> {
+        self.drive_service
+            .update_drive_metadata(uuid, custom_name, physical_location)
     }
 
     /// Delete drive from database (with indexed files check)
@@ -339,13 +428,26 @@ impl SqliteVectorService {
     }
 
     /// Add a new drive to the database
-    pub fn add_drive(&self, uuid: &str, name: &str, mount_path: &str, is_removable: bool) -> Result<()> {
-        self.drive_service.add_drive(uuid, name, mount_path, is_removable)
+    pub fn add_drive(
+        &self,
+        uuid: &str,
+        name: &str,
+        mount_path: &str,
+        is_removable: bool,
+    ) -> Result<()> {
+        self.drive_service
+            .add_drive(uuid, name, mount_path, is_removable)
     }
 
     /// Update drive connection status and last seen timestamp
-    pub fn update_drive_status(&self, uuid: &str, status: &str, mount_path: Option<&str>) -> Result<()> {
-        self.drive_service.update_drive_status_db(uuid, status, mount_path)
+    pub fn update_drive_status(
+        &self,
+        uuid: &str,
+        status: &str,
+        mount_path: Option<&str>,
+    ) -> Result<()> {
+        self.drive_service
+            .update_drive_status_db(uuid, status, mount_path)
     }
 
     // ===== STATISTICS AND UTILITIES =====
@@ -354,14 +456,19 @@ impl SqliteVectorService {
     pub fn get_stats(&self) -> Result<serde_json::Value> {
         let total_images = self.vector_service.get_image_count()?;
         let total_video_frames = self.vector_service.get_video_frame_count()?;
+        let total_text_chunks = self.vector_service.get_text_chunk_count()?;
 
-        let (db_path, _) = self.db_service.get_db_path().map_err(|e| anyhow!("Failed to get database path: {}", e))?;
+        let (db_path, _) = self
+            .db_service
+            .get_db_path()
+            .map_err(|e| anyhow!("Failed to get database path: {}", e))?;
         let db_size = std::fs::metadata(&db_path)?.len();
 
         let stats = json!({
             "total_images": total_images,
             "total_video_frames": total_video_frames,
             "regular_images": total_images - total_video_frames,
+            "total_text_chunks": total_text_chunks,
             "database_size_bytes": db_size,
             "database_size_mb": (db_size as f64) / (1024.0 * 1024.0),
             "database_path": db_path.to_string_lossy(),
@@ -370,6 +477,4 @@ impl SqliteVectorService {
 
         Ok(stats)
     }
-
-
 }

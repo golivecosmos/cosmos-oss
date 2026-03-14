@@ -1,7 +1,7 @@
 use std::collections::hash_map::DefaultHasher;
+use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::fs;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub static GENERATION_COUNT: AtomicUsize = AtomicUsize::new(0);
@@ -45,7 +45,9 @@ pub async fn get_cached_thumbnail(
     }
 
     // 3. Generate new thumbnail
-    let thumbnail_data = crate::ffmpeg_thumbnail::generate_ffmpeg_thumbnail(file_path, timestamp, width, height).await?;
+    let thumbnail_data =
+        crate::ffmpeg_thumbnail::generate_ffmpeg_thumbnail(file_path, timestamp, width, height)
+            .await?;
 
     // 4. Save to cache
     if let Err(e) = fs::write(&cache_path, &thumbnail_data) {
@@ -58,7 +60,10 @@ pub async fn get_cached_thumbnail(
     if count % CLEANUP_INTERVAL == 0 && count > 0 {
         // Run cleanup in background to avoid blocking
         tokio::spawn(async {
-            println!("🧹 Running automatic cache cleanup (triggered after {} generations)", CLEANUP_INTERVAL);
+            println!(
+                "🧹 Running automatic cache cleanup (triggered after {} generations)",
+                CLEANUP_INTERVAL
+            );
             if let Err(e) = cleanup_old_cache(MAX_CACHE_FILES) {
                 eprintln!("Automatic cache cleanup failed: {}", e);
             }
@@ -123,7 +128,10 @@ pub fn cleanup_old_cache(max_files: usize) -> Result<(), String> {
         .filter_map(|e| e.ok())
         .filter_map(|e| {
             let metadata = e.metadata().ok()?;
-            let accessed = metadata.accessed().ok().or_else(|| metadata.modified().ok())?;
+            let accessed = metadata
+                .accessed()
+                .ok()
+                .or_else(|| metadata.modified().ok())?;
             Some((e.path(), accessed))
         })
         .collect();
@@ -144,4 +152,3 @@ pub fn cleanup_old_cache(max_files: usize) -> Result<(), String> {
 
     Ok(())
 }
-

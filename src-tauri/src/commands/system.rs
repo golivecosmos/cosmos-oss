@@ -1,9 +1,9 @@
+use crate::services::startup::AppState;
+use crate::{app_log_error, app_log_info};
+use dirs;
+use serde_json::json;
 use std::process::Command;
 use tauri::{command, State};
-use serde_json::json;
-use crate::services::startup::AppState;
-use crate::{app_log_info, app_log_error};
-use dirs;
 
 /// Copy text to system clipboard
 #[command]
@@ -106,10 +106,7 @@ pub async fn show_in_file_manager(path: String) -> Result<String, String> {
     }
     #[cfg(target_os = "macos")]
     {
-        match Command::new("open")
-            .args(["-R", &path])
-            .spawn()
-        {
+        match Command::new("open").args(["-R", &path]).spawn() {
             Ok(_) => {
                 app_log_info!("✅ File shown in Finder successfully");
                 Ok("File shown in Finder".to_string())
@@ -122,10 +119,7 @@ pub async fn show_in_file_manager(path: String) -> Result<String, String> {
     }
     #[cfg(target_os = "windows")]
     {
-        match Command::new("explorer")
-            .args(["/select,", &path])
-            .spawn()
-        {
+        match Command::new("explorer").args(["/select,", &path]).spawn() {
             Ok(_) => {
                 app_log_info!("✅ File shown in Explorer successfully");
                 Ok("File shown in Explorer".to_string())
@@ -143,10 +137,7 @@ pub async fn show_in_file_manager(path: String) -> Result<String, String> {
             .parent()
             .unwrap_or_else(|| std::path::Path::new("/"))
             .to_string_lossy();
-        match Command::new("xdg-open")
-            .arg(&*parent_dir)
-            .spawn()
-        {
+        match Command::new("xdg-open").arg(&*parent_dir).spawn() {
             Ok(_) => {
                 app_log_info!("✅ Directory opened in file manager successfully");
                 Ok("Directory opened in file manager".to_string())
@@ -168,10 +159,7 @@ pub async fn open_with_default_app(path: String) -> Result<String, String> {
     }
     #[cfg(target_os = "macos")]
     {
-        match Command::new("open")
-            .arg(&path)
-            .spawn()
-        {
+        match Command::new("open").arg(&path).spawn() {
             Ok(_) => {
                 app_log_info!("✅ File opened with default app successfully");
                 Ok("File opened with default application".to_string())
@@ -184,10 +172,7 @@ pub async fn open_with_default_app(path: String) -> Result<String, String> {
     }
     #[cfg(target_os = "windows")]
     {
-        match Command::new("cmd")
-            .args(["/c", "start", "", &path])
-            .spawn()
-        {
+        match Command::new("cmd").args(["/c", "start", "", &path]).spawn() {
             Ok(_) => {
                 app_log_info!("✅ File opened with default app successfully");
                 Ok("File opened with default application".to_string())
@@ -200,10 +185,7 @@ pub async fn open_with_default_app(path: String) -> Result<String, String> {
     }
     #[cfg(target_os = "linux")]
     {
-        match Command::new("xdg-open")
-            .arg(&path)
-            .spawn()
-        {
+        match Command::new("xdg-open").arg(&path).spawn() {
             Ok(_) => {
                 app_log_info!("✅ File opened with default app successfully");
                 Ok("File opened with default application".to_string())
@@ -254,11 +236,13 @@ pub async fn get_system_info(state: State<'_, AppState>) -> Result<serde_json::V
 
     let total_unique_files = unique_images + unique_videos;
 
-    let files_with_embeddings = db.query_row(
-        "SELECT COUNT(*) FROM images WHERE embedding IS NOT NULL",
-        [],
-        |row| row.get::<_, i32>(0)
-    ).unwrap_or(0);
+    let files_with_embeddings = db
+        .query_row(
+            "SELECT COUNT(*) FROM images WHERE embedding IS NOT NULL",
+            [],
+            |row| row.get::<_, i32>(0),
+        )
+        .unwrap_or(0);
 
     // Get OS information
     let os_info = os_info::get();

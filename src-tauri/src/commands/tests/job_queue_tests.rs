@@ -4,8 +4,10 @@ use tokio::task::JoinSet;
 
 /// Create a test SQLite service with in-memory database for speed
 fn create_test_sqlite_service() -> Arc<SqliteVectorService> {
-    Arc::new(SqliteVectorService::new_in_memory()
-        .expect("Failed to create in-memory test SQLite service"))
+    Arc::new(
+        SqliteVectorService::new_in_memory()
+            .expect("Failed to create in-memory test SQLite service"),
+    )
 }
 
 #[tokio::test]
@@ -52,9 +54,15 @@ async fn test_atomic_job_claiming_prevents_race_conditions() {
 
     // Calculate total jobs claimed
     let total_claimed: usize = results.iter().map(|(_, claimed, _)| *claimed).sum();
-    let successful_workers: usize = results.iter().filter(|(_, claimed, _)| *claimed > 0).count();
+    let successful_workers: usize = results
+        .iter()
+        .filter(|(_, claimed, _)| *claimed > 0)
+        .count();
 
-    println!("Total jobs claimed: {}, Successful workers: {}", total_claimed, successful_workers);
+    println!(
+        "Total jobs claimed: {}, Successful workers: {}",
+        total_claimed, successful_workers
+    );
 
     // Verify that exactly the number of created jobs were claimed
     assert_eq!(
@@ -239,7 +247,9 @@ async fn test_concurrent_massive_job_claiming() {
     for worker_id in 0..4 {
         let service = sqlite_service.clone();
         let handle = tokio::spawn(async move {
-            service.claim_pending_jobs_atomic(worker_id, 5).unwrap_or_default()
+            service
+                .claim_pending_jobs_atomic(worker_id, 5)
+                .unwrap_or_default()
         });
         handles.push(handle);
     }
@@ -253,8 +263,7 @@ async fn test_concurrent_massive_job_claiming() {
 
     // All jobs should be claimed exactly once
     assert_eq!(
-        total_claimed,
-        20,
+        total_claimed, 20,
         "Expected exactly 20 jobs to be claimed total, got {}",
         total_claimed
     );
@@ -324,10 +333,15 @@ async fn test_job_queue_memory_efficiency() {
     }
 
     // Very long paths
-    let long_path_base = "/very/long/path/with/many/nested/directories/and/subdirectories".repeat(5);
+    let long_path_base =
+        "/very/long/path/with/many/nested/directories/and/subdirectories".repeat(5);
     for i in 0..10 {
         sqlite_service
-            .create_job("file", &format!("{}/file_{}.jpg", long_path_base, i), Some(1))
+            .create_job(
+                "file",
+                &format!("{}/file_{}.jpg", long_path_base, i),
+                Some(1),
+            )
             .expect("Failed to create long path job");
         job_count += 1;
     }

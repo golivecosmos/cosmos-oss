@@ -53,7 +53,7 @@ function NavButtonLabel({ label, description }: { label: string, description?: s
 
 function NavButtonExtendedContent({ children }: { children: React.ReactNode }) {
     return (
-        <div className="min-h-0 max-h-[400px] overflow-y-auto">
+        <div className="min-h-0 overflow-y-auto">
             {children}
         </div>
     );

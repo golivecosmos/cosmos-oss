@@ -1,10 +1,10 @@
+use crate::services::api_key_encryption_service::ApiKeyEncryptionService;
+use crate::services::database_service::DatabaseService;
+use crate::{app_log_info, app_log_warn};
 use anyhow::{anyhow, Result};
-use rusqlite::{Connection, params, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use crate::services::database_service::DatabaseService;
-use crate::services::api_key_encryption_service::ApiKeyEncryptionService;
-use crate::{app_log_info, app_log_warn};
 
 /// App installation service for managing installed apps and their configurations
 pub struct AppInstallationService {
@@ -43,9 +43,7 @@ pub struct InstalledApp {
 impl AppInstallationService {
     /// Create a new AppInstallationService instance
     pub fn new(db_service: Arc<DatabaseService>) -> Self {
-        Self {
-            db_service,
-        }
+        Self { db_service }
     }
 
     /// Install an app with configuration
@@ -61,7 +59,10 @@ impl AppInstallationService {
         // Check if app is already installed
         let existing_app = self.get_app_by_name(&tx, &request.app_name)?;
         if existing_app.is_some() {
-            app_log_warn!("⚠️ APP INSTALLATION: App {} is already installed", request.app_name);
+            app_log_warn!(
+                "⚠️ APP INSTALLATION: App {} is already installed",
+                request.app_name
+            );
             return Ok(AppInstallResponse {
                 success: false,
                 app_id: None,
@@ -75,22 +76,37 @@ impl AppInstallationService {
         // Store API key if provided
         if let Some(api_key) = request.api_key {
             self.store_api_key(&tx, app_id, &api_key)?;
-            app_log_info!("🔑 APP INSTALLATION: API key stored for app: {}", request.app_name);
+            app_log_info!(
+                "🔑 APP INSTALLATION: API key stored for app: {}",
+                request.app_name
+            );
         }
 
         // Store metadata if provided
         if let Some(metadata) = request.metadata {
             self.store_app_metadata(&tx, app_id, &metadata)?;
-            app_log_info!("📊 APP INSTALLATION: Metadata stored for app: {}", request.app_name);
+            app_log_info!(
+                "📊 APP INSTALLATION: Metadata stored for app: {}",
+                request.app_name
+            );
         }
 
         // Log installation
-        self.log_app_action(&tx, app_id, "install", "success", &format!("Installed app: {}", request.app_name))?;
+        self.log_app_action(
+            &tx,
+            app_id,
+            "install",
+            "success",
+            &format!("Installed app: {}", request.app_name),
+        )?;
 
         // Commit transaction
         tx.commit()?;
 
-        app_log_info!("✅ APP INSTALLATION: Successfully installed app: {}", request.app_name);
+        app_log_info!(
+            "✅ APP INSTALLATION: Successfully installed app: {}",
+            request.app_name
+        );
 
         Ok(AppInstallResponse {
             success: true,
@@ -104,27 +120,30 @@ impl AppInstallationService {
         let mut stmt = db.prepare(
             "SELECT id, app_name, app_version, installed_at, updated_at, metadata 
              FROM app_installations 
-             WHERE app_name = ?"
+             WHERE app_name = ?",
         )?;
 
-        let app = stmt.query_row(params![app_name], |row| {
-            let metadata_str: Option<String> = row.get(5)?;
-            let metadata = metadata_str.and_then(|s| serde_json::from_str(&s).ok());
+        let app = stmt
+            .query_row(params![app_name], |row| {
+                let metadata_str: Option<String> = row.get(5)?;
+                let metadata = metadata_str.and_then(|s| serde_json::from_str(&s).ok());
 
-            let app_id: i64 = row.get(0)?;
-            let has_api_key = self.app_has_api_key(db, app_id)
-                .map_err(|e| rusqlite::Error::InvalidParameterName(e.to_string()))?;
+                let app_id: i64 = row.get(0)?;
+                let has_api_key = self
+                    .app_has_api_key(db, app_id)
+                    .map_err(|e| rusqlite::Error::InvalidParameterName(e.to_string()))?;
 
-            Ok(InstalledApp {
-                id: app_id,
-                app_name: row.get(1)?,
-                app_version: row.get(2)?,
-                installed_at: row.get(3)?,
-                updated_at: row.get(4)?,
-                has_api_key,
-                metadata,
+                Ok(InstalledApp {
+                    id: app_id,
+                    app_name: row.get(1)?,
+                    app_version: row.get(2)?,
+                    installed_at: row.get(3)?,
+                    updated_at: row.get(4)?,
+                    has_api_key,
+                    metadata,
+                })
             })
-        }).optional()?;
+            .optional()?;
 
         Ok(app)
     }
@@ -160,7 +179,7 @@ impl AppInstallationService {
         // Encrypt the API key before storing
         let encryption_service = ApiKeyEncryptionService::new()?;
         let encrypted_api_key = encryption_service.encrypt_api_key(api_key)?;
-        
+
         db.execute(
             "INSERT INTO app_settings (app_id, setting_key, setting_value, setting_type) 
              VALUES (?, 'api_key', ?, 'string')",
@@ -188,13 +207,18 @@ impl AppInstallationService {
                 let encryption_service = ApiKeyEncryptionService::new()?;
                 let decrypted_api_key = encryption_service.decrypt_api_key(&encrypted)?;
                 Ok(Some(decrypted_api_key))
-            },
+            }
             None => Ok(None),
         }
     }
 
     /// Store app metadata
-    fn store_app_metadata(&self, db: &Connection, app_id: i64, metadata: &serde_json::Value) -> Result<()> {
+    fn store_app_metadata(
+        &self,
+        db: &Connection,
+        app_id: i64,
+        metadata: &serde_json::Value,
+    ) -> Result<()> {
         db.execute(
             "UPDATE app_installations SET metadata = ? WHERE id = ?",
             params![metadata.to_string(), app_id],
@@ -204,7 +228,14 @@ impl AppInstallationService {
     }
 
     /// Log app action
-    fn log_app_action(&self, db: &Connection, app_id: i64, action: &str, status: &str, message: &str) -> Result<()> {
+    fn log_app_action(
+        &self,
+        db: &Connection,
+        app_id: i64,
+        action: &str,
+        status: &str,
+        message: &str,
+    ) -> Result<()> {
         db.execute(
             "INSERT INTO app_logs (log_level, log_message, log_source) 
              VALUES (?, ?, ?)",
@@ -226,28 +257,31 @@ impl AppInstallationService {
         let mut stmt = db.prepare(
             "SELECT id, app_name, app_version, installed_at, updated_at, metadata 
              FROM app_installations 
-             ORDER BY installed_at DESC"
+             ORDER BY installed_at DESC",
         )?;
 
-        let apps = stmt.query_map(params![], |row| {
-            let metadata_str: Option<String> = row.get(5)?;
-            let metadata = metadata_str.and_then(|s| serde_json::from_str(&s).ok());
+        let apps = stmt
+            .query_map(params![], |row| {
+                let metadata_str: Option<String> = row.get(5)?;
+                let metadata = metadata_str.and_then(|s| serde_json::from_str(&s).ok());
 
-            let app_id: i64 = row.get(0)?;
-            let has_api_key = self.app_has_api_key(&db, app_id)
-                .map_err(|e| rusqlite::Error::InvalidParameterName(e.to_string()))?;
+                let app_id: i64 = row.get(0)?;
+                let has_api_key = self
+                    .app_has_api_key(&db, app_id)
+                    .map_err(|e| rusqlite::Error::InvalidParameterName(e.to_string()))?;
 
-            Ok(InstalledApp {
-                id: app_id,
-                app_name: row.get(1)?,
-                app_version: row.get(2)?,
-                installed_at: row.get(3)?,
-                updated_at: row.get(4)?,
-                has_api_key,
-                metadata,
-            })
-        })?.collect::<Result<Vec<_>, rusqlite::Error>>()
-        .map_err(|e| anyhow!("Failed to collect apps: {}", e))?;
+                Ok(InstalledApp {
+                    id: app_id,
+                    app_name: row.get(1)?,
+                    app_version: row.get(2)?,
+                    installed_at: row.get(3)?,
+                    updated_at: row.get(4)?,
+                    has_api_key,
+                    metadata,
+                })
+            })?
+            .collect::<Result<Vec<_>, rusqlite::Error>>()
+            .map_err(|e| anyhow!("Failed to collect apps: {}", e))?;
 
         Ok(apps)
     }
@@ -259,30 +293,32 @@ impl AppInstallationService {
         let mut stmt = db.prepare(
             "SELECT id, app_name, app_version, installed_at, updated_at, metadata 
              FROM app_installations 
-             WHERE id = ?"
+             WHERE id = ?",
         )?;
-        let app = stmt.query_row(params![app_id], |row| {
-            let metadata_str: Option<String> = row.get(5)?;
-            let metadata = metadata_str.and_then(|s| serde_json::from_str(&s).ok());
+        let app = stmt
+            .query_row(params![app_id], |row| {
+                let metadata_str: Option<String> = row.get(5)?;
+                let metadata = metadata_str.and_then(|s| serde_json::from_str(&s).ok());
 
-            let app_id: i64 = row.get(0)?;
+                let app_id: i64 = row.get(0)?;
 
-            let has_api_key: i64 = db.query_row(
+                let has_api_key: i64 = db.query_row(
                 "SELECT COUNT(*) FROM app_settings WHERE setting_key = 'api_key' AND app_id = ?",
                 params![app_id],
                 |row| row.get(0),
             ).unwrap_or(0);
 
-            Ok(InstalledApp {
-                id: app_id,
-                app_name: row.get(1)?,
-                app_version: row.get(2)?,
-                installed_at: row.get(3)?,
-                updated_at: row.get(4)?,
-                has_api_key: has_api_key > 0,
-                metadata,
+                Ok(InstalledApp {
+                    id: app_id,
+                    app_name: row.get(1)?,
+                    app_version: row.get(2)?,
+                    installed_at: row.get(3)?,
+                    updated_at: row.get(4)?,
+                    has_api_key: has_api_key > 0,
+                    metadata,
+                })
             })
-        }).optional()?;
+            .optional()?;
         Ok(app)
     }
 
@@ -291,20 +327,20 @@ impl AppInstallationService {
         let connection = self.db_service.get_connection();
         let mut db = connection.lock().unwrap();
 
-        let app_name = db.query_row(
-            "SELECT app_name FROM app_installations WHERE id = ?",
-            params![app_id],
-            |row| row.get(0),
-        ).unwrap_or_else(|_| "Unknown".to_string());
+        let app_name = db
+            .query_row(
+                "SELECT app_name FROM app_installations WHERE id = ?",
+                params![app_id],
+                |row| row.get(0),
+            )
+            .unwrap_or_else(|_| "Unknown".to_string());
 
         // Start transaction
         let tx = db.transaction()?;
 
         // Delete app settings - clean up both app_id specific and any orphaned records
-        let _deleted_count = tx.execute(
-            "DELETE FROM app_settings WHERE app_id = ?",
-            params![app_id],
-        )?;
+        let _deleted_count =
+            tx.execute("DELETE FROM app_settings WHERE app_id = ?", params![app_id])?;
 
         // This is a safety measure to prevent accumulation of orphaned records
         let _orphaned_count = tx.execute(
@@ -319,12 +355,21 @@ impl AppInstallationService {
         )?;
 
         // Log uninstallation
-        self.log_app_action(&tx, app_id, "uninstall", "success", &format!("Uninstalled app: {}", app_name))?;
+        self.log_app_action(
+            &tx,
+            app_id,
+            "uninstall",
+            "success",
+            &format!("Uninstalled app: {}", app_name),
+        )?;
 
         // Commit transaction
         tx.commit()?;
 
-        app_log_info!("✅ APP INSTALLATION: Successfully uninstalled app: {}", app_name);
+        app_log_info!(
+            "✅ APP INSTALLATION: Successfully uninstalled app: {}",
+            app_name
+        );
 
         Ok(AppInstallResponse {
             success: true,
@@ -332,4 +377,4 @@ impl AppInstallationService {
             message: format!("Successfully uninstalled {}", app_name),
         })
     }
-} 
+}

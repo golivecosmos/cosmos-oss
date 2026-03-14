@@ -1,22 +1,31 @@
 use crate::services::startup::StartupManager;
+use std::env;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::time::timeout;
 use tempfile::tempdir;
-use std::env;
+use tokio::time::timeout;
 
 /// Create a test startup manager with isolated environment
 fn create_test_startup_manager() -> (StartupManager, tempfile::TempDir) {
     // Create a temporary directory for this test
     let temp_dir = tempdir().expect("Failed to create temp directory");
-    
+
     // Set the app data directory to the temp directory
-    env::set_var("COSMOS_APP_DATA_DIR", temp_dir.path().to_string_lossy().as_ref());
-    
+    env::set_var(
+        "COSMOS_APP_DATA_DIR",
+        temp_dir.path().to_string_lossy().as_ref(),
+    );
+
     // Create a unique database path to avoid any existing database issues
-    let unique_db_path = temp_dir.path().join(format!("test_db_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    let unique_db_path = temp_dir.path().join(format!(
+        "test_db_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
     env::set_var("COSMOS_DB_PATH", unique_db_path.to_string_lossy().as_ref());
-    
+
     (StartupManager::new(), temp_dir)
 }
 
@@ -26,18 +35,27 @@ async fn test_startup_manager_service_initialization() {
     let (mut startup_manager, _temp_dir) = create_test_startup_manager();
 
     let result = startup_manager.initialize_services_for_testing().await;
-    assert!(
-        result.is_ok(),
-        "Service initialization should succeed"
-    );
+    assert!(result.is_ok(), "Service initialization should succeed");
 
     let app_state = result.unwrap();
 
     // Verify all services are properly initialized
-    assert!(!Arc::ptr_eq(&app_state.model_service, &Arc::new(crate::services::model_service::ModelService::new())));
-    assert!(!Arc::ptr_eq(&app_state.file_service, &Arc::new(crate::services::file_service::FileService::new())));
-    assert!(!Arc::ptr_eq(&app_state.video_service, &Arc::new(crate::services::video_service::VideoService::new())));
-    assert!(!Arc::ptr_eq(&app_state.download_service, &Arc::new(crate::services::download_service::DownloadService::new())));
+    assert!(!Arc::ptr_eq(
+        &app_state.model_service,
+        &Arc::new(crate::services::model_service::ModelService::new())
+    ));
+    assert!(!Arc::ptr_eq(
+        &app_state.file_service,
+        &Arc::new(crate::services::file_service::FileService::new())
+    ));
+    assert!(!Arc::ptr_eq(
+        &app_state.video_service,
+        &Arc::new(crate::services::video_service::VideoService::new())
+    ));
+    assert!(!Arc::ptr_eq(
+        &app_state.download_service,
+        &Arc::new(crate::services::download_service::DownloadService::new())
+    ));
 }
 
 /// Create ultra-lightweight mock services for startup behavior testing  
@@ -59,14 +77,24 @@ async fn test_service_dependency_order() {
     let (initialized, dependency_count, _memory) = create_mock_startup_state();
 
     // Verify dependency relationships through mock state
-    assert!(initialized.load(std::sync::atomic::Ordering::SeqCst), "Services should be initialized");
-    assert!(dependency_count.load(std::sync::atomic::Ordering::SeqCst) >= 2, "Should track dependencies");
+    assert!(
+        initialized.load(std::sync::atomic::Ordering::SeqCst),
+        "Services should be initialized"
+    );
+    assert!(
+        dependency_count.load(std::sync::atomic::Ordering::SeqCst) >= 2,
+        "Should track dependencies"
+    );
 
     // Simulate dependency tracking
     dependency_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst); // ModelService
     dependency_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst); // EmbeddingService
-    
-    assert_eq!(dependency_count.load(std::sync::atomic::Ordering::SeqCst), 5, "Dependencies should be tracked correctly");
+
+    assert_eq!(
+        dependency_count.load(std::sync::atomic::Ordering::SeqCst),
+        5,
+        "Dependencies should be tracked correctly"
+    );
 }
 
 #[tokio::test]
@@ -75,9 +103,18 @@ async fn test_service_state_validation() {
     let (mock_initialized, mock_dependencies, mock_memory) = create_mock_startup_state();
 
     // Test mock service states
-    assert!(mock_initialized.load(std::sync::atomic::Ordering::SeqCst), "Services should be initialized");
-    assert!(mock_dependencies.load(std::sync::atomic::Ordering::SeqCst) > 0, "Should have dependencies");
-    assert!(mock_memory.load(std::sync::atomic::Ordering::SeqCst), "Memory state should be valid");
+    assert!(
+        mock_initialized.load(std::sync::atomic::Ordering::SeqCst),
+        "Services should be initialized"
+    );
+    assert!(
+        mock_dependencies.load(std::sync::atomic::Ordering::SeqCst) > 0,
+        "Should have dependencies"
+    );
+    assert!(
+        mock_memory.load(std::sync::atomic::Ordering::SeqCst),
+        "Memory state should be valid"
+    );
 
     // Simulate state validation checks
     mock_initialized.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -85,7 +122,10 @@ async fn test_service_state_validation() {
     mock_memory.store(true, std::sync::atomic::Ordering::SeqCst);
 
     // All state checks should pass
-    assert!(mock_initialized.load(std::sync::atomic::Ordering::SeqCst), "All services should validate successfully");
+    assert!(
+        mock_initialized.load(std::sync::atomic::Ordering::SeqCst),
+        "All services should validate successfully"
+    );
 }
 
 #[tokio::test]
@@ -95,9 +135,18 @@ async fn test_multiple_service_initializations() {
     let (mock2_init, mock2_deps, mock2_mem) = create_mock_startup_state();
 
     // Services should be independent instances
-    assert!(!Arc::ptr_eq(&mock1_init, &mock2_init), "Should have separate initialization state");
-    assert!(!Arc::ptr_eq(&mock1_deps, &mock2_deps), "Should have separate dependency tracking");
-    assert!(!Arc::ptr_eq(&mock1_mem, &mock2_mem), "Should have separate memory state");
+    assert!(
+        !Arc::ptr_eq(&mock1_init, &mock2_init),
+        "Should have separate initialization state"
+    );
+    assert!(
+        !Arc::ptr_eq(&mock1_deps, &mock2_deps),
+        "Should have separate dependency tracking"
+    );
+    assert!(
+        !Arc::ptr_eq(&mock1_mem, &mock2_mem),
+        "Should have separate memory state"
+    );
 }
 
 #[tokio::test]
@@ -107,15 +156,18 @@ async fn test_service_initialization_timeout() {
 
     let result = timeout(
         Duration::from_secs(30), // 30 second timeout
-        startup_manager.initialize_services_for_testing()
-    ).await;
+        startup_manager.initialize_services_for_testing(),
+    )
+    .await;
 
     assert!(
         result.is_ok(),
         "Service initialization should complete within 30 seconds"
     );
 
-    let _app_state = result.unwrap().expect("Services should initialize successfully");
+    let _app_state = result
+        .unwrap()
+        .expect("Services should initialize successfully");
 }
 
 #[tokio::test]
@@ -125,7 +177,10 @@ async fn test_startup_cleanup_resilience() {
 
     // Initialize services which will trigger cleanup
     let result = startup_manager.initialize_services_for_testing().await;
-    assert!(result.is_ok(), "Service initialization should succeed even with cleanup");
+    assert!(
+        result.is_ok(),
+        "Service initialization should succeed even with cleanup"
+    );
 
     // Initialize again to test cleanup doesn't interfere with subsequent startups
     let (mut startup_manager2, _temp_dir2) = create_test_startup_manager();
@@ -155,8 +210,14 @@ async fn test_service_memory_management() {
     assert!(Arc::strong_count(&new_mem) >= 1);
 
     // Verify services are functional after reinitialization
-    assert!(new_init.load(std::sync::atomic::Ordering::SeqCst), "Services should be functional after reinitialization");
-    assert!(new_deps.load(std::sync::atomic::Ordering::SeqCst) > 0, "Dependencies should be tracked");
+    assert!(
+        new_init.load(std::sync::atomic::Ordering::SeqCst),
+        "Services should be functional after reinitialization"
+    );
+    assert!(
+        new_deps.load(std::sync::atomic::Ordering::SeqCst) > 0,
+        "Dependencies should be tracked"
+    );
 }
 
 #[tokio::test]
@@ -200,13 +261,19 @@ async fn test_concurrent_service_access() {
 
     let tasks = vec![
         tokio::spawn(async move {
-            init_clone1.load(std::sync::atomic::Ordering::SeqCst).to_string()
+            init_clone1
+                .load(std::sync::atomic::Ordering::SeqCst)
+                .to_string()
         }),
         tokio::spawn(async move {
-            deps_clone1.load(std::sync::atomic::Ordering::SeqCst).to_string()
+            deps_clone1
+                .load(std::sync::atomic::Ordering::SeqCst)
+                .to_string()
         }),
         tokio::spawn(async move {
-            mem_clone1.load(std::sync::atomic::Ordering::SeqCst).to_string()
+            mem_clone1
+                .load(std::sync::atomic::Ordering::SeqCst)
+                .to_string()
         }),
     ];
 
@@ -226,9 +293,19 @@ async fn test_service_error_isolation() {
     mock_dependencies.store(0, std::sync::atomic::Ordering::SeqCst); // Simulate error
 
     // Other services should continue working despite one error
-    assert!(mock_initialized.load(std::sync::atomic::Ordering::SeqCst), "Initialized service should still work");
-    assert!(mock_memory.load(std::sync::atomic::Ordering::SeqCst), "Memory service should still work");
+    assert!(
+        mock_initialized.load(std::sync::atomic::Ordering::SeqCst),
+        "Initialized service should still work"
+    );
+    assert!(
+        mock_memory.load(std::sync::atomic::Ordering::SeqCst),
+        "Memory service should still work"
+    );
 
     // Error isolation should work
-    assert_eq!(mock_dependencies.load(std::sync::atomic::Ordering::SeqCst), 0, "Error state should be isolated");
+    assert_eq!(
+        mock_dependencies.load(std::sync::atomic::Ordering::SeqCst),
+        0,
+        "Error state should be isolated"
+    );
 }

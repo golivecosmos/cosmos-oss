@@ -55,14 +55,25 @@ async fn test_transcription_text_assembly() {
 
     // Verify full text is correctly assembled from segments
     let expected_text = "Hello world this is a test";
-    assert_eq!(mock_transcription.text, expected_text, "Full text should match segment concatenation");
+    assert_eq!(
+        mock_transcription.text, expected_text,
+        "Full text should match segment concatenation"
+    );
 
     // Verify individual words are preserved
     let words: Vec<&str> = expected_text.split_whitespace().collect();
-    assert_eq!(words.len(), mock_transcription.segments.len(), "Word count should match segment count");
+    assert_eq!(
+        words.len(),
+        mock_transcription.segments.len(),
+        "Word count should match segment count"
+    );
 
     for (i, word) in words.iter().enumerate() {
-        assert_eq!(mock_transcription.segments[i].text, *word, "Segment text should match word: {}", word);
+        assert_eq!(
+            mock_transcription.segments[i].text, *word,
+            "Segment text should match word: {}",
+            word
+        );
     }
 }
 
@@ -81,12 +92,24 @@ fn test_transcription_segment_validation() {
     };
 
     // Verify segment structure
-    assert!(valid_segment.start >= 0.0, "Start time should be non-negative");
-    assert!(valid_segment.end > valid_segment.start, "End time should be after start time");
-    assert!(!valid_segment.text.trim().is_empty(), "Text should not be empty");
+    assert!(
+        valid_segment.start >= 0.0,
+        "Start time should be non-negative"
+    );
+    assert!(
+        valid_segment.end > valid_segment.start,
+        "End time should be after start time"
+    );
+    assert!(
+        !valid_segment.text.trim().is_empty(),
+        "Text should not be empty"
+    );
 
     if let Some(confidence) = valid_segment.confidence {
-        assert!(confidence >= 0.0 && confidence <= 1.0, "Confidence should be in [0,1] range");
+        assert!(
+            confidence >= 0.0 && confidence <= 1.0,
+            "Confidence should be in [0,1] range"
+        );
     }
 
     // Test duration calculation
@@ -97,24 +120,35 @@ fn test_transcription_segment_validation() {
 #[test]
 fn test_audio_format_validation() {
     let supported_formats = vec![
-        "wav", "mp3", "mp4", "m4a", "flac", "ogg", "mov", "avi", "mkv", "webm"
+        "wav", "mp3", "mp4", "m4a", "flac", "ogg", "mov", "avi", "mkv", "webm",
     ];
 
-    let unsupported_formats = vec![
-        "txt", "pdf", "doc", "jpg", "png", "gif", "zip", "exe"
-    ];
+    let unsupported_formats = vec!["txt", "pdf", "doc", "jpg", "png", "gif", "zip", "exe"];
 
     // Test that we know which formats are supported
     for format in supported_formats {
-        assert!(format.len() <= 4, "Format extension should be reasonable length: {}", format);
-        assert!(format.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()),
-            "Format should be lowercase letters and digits: {}", format);
+        assert!(
+            format.len() <= 4,
+            "Format extension should be reasonable length: {}",
+            format
+        );
+        assert!(
+            format
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()),
+            "Format should be lowercase letters and digits: {}",
+            format
+        );
     }
 
     // Test that unsupported formats are properly identified
     for format in unsupported_formats {
-        assert!(!["wav", "mp3", "mp4", "m4a", "flac", "ogg", "mov", "avi", "mkv", "webm"].contains(&format),
-            "Format {} should not be in audio formats", format);
+        assert!(
+            !["wav", "mp3", "mp4", "m4a", "flac", "ogg", "mov", "avi", "mkv", "webm"]
+                .contains(&format),
+            "Format {} should not be in audio formats",
+            format
+        );
     }
 }
 

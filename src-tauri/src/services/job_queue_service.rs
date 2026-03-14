@@ -1,9 +1,9 @@
-use anyhow::{anyhow, Result};
-use rusqlite::{OptionalExtension, ErrorCode};
-use std::sync::Arc;
-use crate::{app_log_info, app_log_debug, app_log_warn, app_log_error};
 use crate::services::database_service::DatabaseService;
 use crate::services::schema_service::SchemaService;
+use crate::{app_log_debug, app_log_error, app_log_info, app_log_warn};
+use anyhow::{anyhow, Result};
+use rusqlite::{ErrorCode, OptionalExtension};
+use std::sync::Arc;
 use uuid;
 
 /// Service for managing job queue operations
@@ -22,7 +22,12 @@ impl JobQueueService {
     }
 
     /// Create a new job in the database
-    pub fn create_job(&self, job_type: &str, target_path: &str, total_files: Option<usize>) -> Result<String> {
+    pub fn create_job(
+        &self,
+        job_type: &str,
+        target_path: &str,
+        total_files: Option<usize>,
+    ) -> Result<String> {
         let connection = self.db_service.get_connection();
         let db = connection.lock().unwrap();
 
@@ -32,9 +37,14 @@ impl JobQueueService {
             self.schema_service.ensure_jobs_table_exists(&db)?;
         }
 
-        let job_id = format!("job_{}_{}",
+        let job_id = format!(
+            "job_{}_{}",
             chrono::Utc::now().timestamp_millis(),
-            uuid::Uuid::new_v4().to_string().split('-').next().unwrap_or("unknown")
+            uuid::Uuid::new_v4()
+                .to_string()
+                .split('-')
+                .next()
+                .unwrap_or("unknown")
         );
 
         let now = chrono::Utc::now().to_rfc3339();
@@ -48,7 +58,12 @@ impl JobQueueService {
             rusqlite::params![job_id, job_type, target_path, total, now, now],
         ) {
             Ok(_) => {
-                app_log_info!("✅ JOB: Created new {} job: {} ({})", job_type, job_id, target_path);
+                app_log_info!(
+                    "✅ JOB: Created new {} job: {} ({})",
+                    job_type,
+                    job_id,
+                    target_path
+                );
                 Ok(job_id)
             }
             Err(rusqlite::Error::SqliteFailure(err, _))
@@ -86,22 +101,28 @@ impl JobQueueService {
         current_file: Option<&str>,
         processed: Option<usize>,
         errors: Option<&[String]>,
-        failed_files: Option<&serde_json::Value>
+        failed_files: Option<&serde_json::Value>,
     ) -> Result<()> {
         let connection = self.db_service.get_connection();
         let db = connection.lock().unwrap();
 
         // **DEFENSIVE: Ensure jobs table exists before updating**
         if !self.schema_service.jobs_table_exists(&db) {
-            app_log_warn!("⚠️ JOBS TABLE: Jobs table missing during update_job_progress, creating it now");
+            app_log_warn!(
+                "⚠️ JOBS TABLE: Jobs table missing during update_job_progress, creating it now"
+            );
             self.schema_service.ensure_jobs_table_exists(&db)?;
             // Job doesn't exist if table was just created, so return early
-            app_log_warn!("⚠️ JOB UPDATE: Job {} not found because jobs table was just created", job_id);
+            app_log_warn!(
+                "⚠️ JOB UPDATE: Job {} not found because jobs table was just created",
+                job_id
+            );
             return Ok(());
         }
 
         let now = chrono::Utc::now().to_rfc3339();
-        let errors_json = errors.map(|e| serde_json::to_string(e).unwrap_or_else(|_| "[]".to_string()));
+        let errors_json =
+            errors.map(|e| serde_json::to_string(e).unwrap_or_else(|_| "[]".to_string()));
         let failed_files_json = failed_files.map(|f| f.to_string());
 
         // Set started_at timestamp when job status changes to 'running'
@@ -138,7 +159,7 @@ impl JobQueueService {
             &processed_i64,
             &errors_json,
             &failed_files_json,
-            &now
+            &now,
         ];
 
         if status == "running" {
@@ -153,8 +174,12 @@ impl JobQueueService {
 
         db.execute(&query, rusqlite::params_from_iter(params))?;
 
-        app_log_debug!("✅ JOB: Updated job {} - status: {}, processed: {:?}",
-            job_id, status, processed);
+        app_log_debug!(
+            "✅ JOB: Updated job {} - status: {}, processed: {:?}",
+            job_id,
+            status,
+            processed
+        );
         Ok(())
     }
 
@@ -188,8 +213,10 @@ impl JobQueueService {
             let metadata_json: String = row.get(9)?;
 
             let errors: Vec<String> = serde_json::from_str(&errors_json).unwrap_or_default();
-            let failed_files: serde_json::Value = serde_json::from_str(&failed_files_json).unwrap_or(serde_json::json!([]));
-            let metadata: serde_json::Value = serde_json::from_str(&metadata_json).unwrap_or(serde_json::json!({}));
+            let failed_files: serde_json::Value =
+                serde_json::from_str(&failed_files_json).unwrap_or(serde_json::json!([]));
+            let metadata: serde_json::Value =
+                serde_json::from_str(&metadata_json).unwrap_or(serde_json::json!({}));
 
             Ok(serde_json::json!({
                 "id": row.get::<_, String>(0)?,
@@ -227,7 +254,9 @@ impl JobQueueService {
 
         // **DEFENSIVE: Ensure jobs table exists before querying**
         if !self.schema_service.jobs_table_exists(&db) {
-            app_log_warn!("⚠️ JOBS TABLE: Jobs table missing during get_jobs_by_status, creating it now");
+            app_log_warn!(
+                "⚠️ JOBS TABLE: Jobs table missing during get_jobs_by_status, creating it now"
+            );
             self.schema_service.ensure_jobs_table_exists(&db)?;
             // Return empty array since we just created the table
             return Ok(Vec::new());
@@ -239,7 +268,7 @@ impl JobQueueService {
                     created_at, started_at, completed_at, updated_at
              FROM jobs
              WHERE status = ?
-             ORDER BY created_at DESC"
+             ORDER BY created_at DESC",
         )?;
 
         let rows = stmt.query_map(rusqlite::params![status], |row| {
@@ -248,8 +277,10 @@ impl JobQueueService {
             let metadata_json: String = row.get(9)?;
 
             let errors: Vec<String> = serde_json::from_str(&errors_json).unwrap_or_default();
-            let failed_files: serde_json::Value = serde_json::from_str(&failed_files_json).unwrap_or(serde_json::json!([]));
-            let metadata: serde_json::Value = serde_json::from_str(&metadata_json).unwrap_or(serde_json::json!({}));
+            let failed_files: serde_json::Value =
+                serde_json::from_str(&failed_files_json).unwrap_or(serde_json::json!([]));
+            let metadata: serde_json::Value =
+                serde_json::from_str(&metadata_json).unwrap_or(serde_json::json!({}));
 
             Ok(serde_json::json!({
                 "id": row.get::<_, String>(0)?,
@@ -287,10 +318,15 @@ impl JobQueueService {
 
         // **DEFENSIVE: Ensure jobs table exists before querying**
         if !self.schema_service.jobs_table_exists(&db) {
-            app_log_warn!("⚠️ JOBS TABLE: Jobs table missing during get_job_by_id, creating it now");
+            app_log_warn!(
+                "⚠️ JOBS TABLE: Jobs table missing during get_job_by_id, creating it now"
+            );
             self.schema_service.ensure_jobs_table_exists(&db)?;
             // Return an error since the job doesn't exist if table was just created
-            return Err(anyhow!("Job {} not found (jobs table was just created)", job_id));
+            return Err(anyhow!(
+                "Job {} not found (jobs table was just created)",
+                job_id
+            ));
         }
 
         let mut stmt = db.prepare(
@@ -298,7 +334,7 @@ impl JobQueueService {
                     errors, failed_files, metadata, retry_count, max_retries, next_retry_at,
                     created_at, started_at, completed_at, updated_at
              FROM jobs
-             WHERE id = ?"
+             WHERE id = ?",
         )?;
 
         let job = stmt.query_row(rusqlite::params![job_id], |row| {
@@ -307,8 +343,10 @@ impl JobQueueService {
             let metadata_json: String = row.get(9)?;
 
             let errors: Vec<String> = serde_json::from_str(&errors_json).unwrap_or_default();
-            let failed_files: serde_json::Value = serde_json::from_str(&failed_files_json).unwrap_or(serde_json::json!([]));
-            let metadata: serde_json::Value = serde_json::from_str(&metadata_json).unwrap_or(serde_json::json!({}));
+            let failed_files: serde_json::Value =
+                serde_json::from_str(&failed_files_json).unwrap_or(serde_json::json!([]));
+            let metadata: serde_json::Value =
+                serde_json::from_str(&metadata_json).unwrap_or(serde_json::json!({}));
 
             Ok(serde_json::json!({
                 "id": row.get::<_, String>(0)?,
@@ -351,10 +389,10 @@ impl JobQueueService {
         if new_retry_count <= max_retries {
             // Calculate exponential backoff: 30s, 2m, 8m
             let delay_seconds = match new_retry_count {
-                1 => 30,    // 30 seconds
-                2 => 120,   // 2 minutes
-                3 => 480,   // 8 minutes
-                _ => 480,   // Cap at 8 minutes
+                1 => 30,  // 30 seconds
+                2 => 120, // 2 minutes
+                3 => 480, // 8 minutes
+                _ => 480, // Cap at 8 minutes
             };
 
             let next_retry_time = chrono::Utc::now() + chrono::Duration::seconds(delay_seconds);
@@ -377,8 +415,12 @@ impl JobQueueService {
                 ],
             )?;
 
-            app_log_info!("🔄 RETRY: Scheduled job {} for retry #{} in {}s",
-                job_id, new_retry_count, delay_seconds);
+            app_log_info!(
+                "🔄 RETRY: Scheduled job {} for retry #{} in {}s",
+                job_id,
+                new_retry_count,
+                delay_seconds
+            );
         } else {
             // Max retries exceeded - mark as permanently failed
             let now = chrono::Utc::now().to_rfc3339();
@@ -398,8 +440,11 @@ impl JobQueueService {
                 ],
             )?;
 
-            app_log_warn!("❌ RETRY: Job {} failed permanently after {} retries",
-                job_id, max_retries);
+            app_log_warn!(
+                "❌ RETRY: Job {} failed permanently after {} retries",
+                job_id,
+                max_retries
+            );
         }
 
         Ok(())
@@ -426,7 +471,11 @@ impl JobQueueService {
     }
 
     /// **FIXED: Truly atomic job claiming that prevents race conditions**
-    pub fn claim_pending_jobs_atomic(&self, worker_id: usize, limit: usize) -> Result<Vec<serde_json::Value>> {
+    pub fn claim_pending_jobs_atomic(
+        &self,
+        worker_id: usize,
+        limit: usize,
+    ) -> Result<Vec<serde_json::Value>> {
         let connection = self.db_service.get_connection();
         let mut db = connection.lock().unwrap();
 
@@ -448,9 +497,10 @@ impl JobQueueService {
                  WHERE status = 'pending'
                  AND (next_retry_at IS NULL OR next_retry_at <= ?)
                  ORDER BY created_at ASC
-                 LIMIT ?"
+                 LIMIT ?",
             )?;
-            let ids = stmt.query_map(rusqlite::params![now, limit], |row| row.get(0))?
+            let ids = stmt
+                .query_map(rusqlite::params![now, limit], |row| row.get(0))?
                 .collect::<Result<Vec<String>, _>>()?;
             drop(stmt); // Explicitly drop the statement
             ids
@@ -462,7 +512,11 @@ impl JobQueueService {
             return Ok(Vec::new());
         }
 
-        app_log_debug!("🔄 WORKER {}: Attempting to claim {} pending jobs", worker_id, job_ids.len());
+        app_log_debug!(
+            "🔄 WORKER {}: Attempting to claim {} pending jobs",
+            worker_id,
+            job_ids.len()
+        );
 
         // Update job statuses within the same transaction with double-check for race conditions
         let placeholders = job_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
@@ -486,7 +540,9 @@ impl JobQueueService {
         if updated as usize != job_ids.len() {
             app_log_debug!(
                 "⚠️ WORKER {}: Only {} of {} jobs were claimed (others claimed by other workers)",
-                worker_id, updated, job_ids.len()
+                worker_id,
+                updated,
+                job_ids.len()
             );
 
             // Don't roll back, just return the successfully claimed jobs
@@ -501,7 +557,7 @@ impl JobQueueService {
                         errors, failed_files, metadata, retry_count, max_retries, next_retry_at,
                         created_at, started_at, completed_at, updated_at
                  FROM jobs
-                 WHERE id = ? AND status = 'running'"
+                 WHERE id = ? AND status = 'running'",
             )?;
 
             for job_id in &job_ids {
@@ -510,9 +566,12 @@ impl JobQueueService {
                     let failed_files_json: String = row.get(8)?;
                     let metadata_json: String = row.get(9)?;
 
-                    let errors: Vec<String> = serde_json::from_str(&errors_json).unwrap_or_default();
-                    let failed_files: serde_json::Value = serde_json::from_str(&failed_files_json).unwrap_or(serde_json::json!([]));
-                    let metadata: serde_json::Value = serde_json::from_str(&metadata_json).unwrap_or(serde_json::json!({}));
+                    let errors: Vec<String> =
+                        serde_json::from_str(&errors_json).unwrap_or_default();
+                    let failed_files: serde_json::Value =
+                        serde_json::from_str(&failed_files_json).unwrap_or(serde_json::json!([]));
+                    let metadata: serde_json::Value =
+                        serde_json::from_str(&metadata_json).unwrap_or(serde_json::json!({}));
 
                     Ok(serde_json::json!({
                         "id": row.get::<_, String>(0)?,
@@ -537,10 +596,19 @@ impl JobQueueService {
                     Ok(job_data) => jobs.push(job_data),
                     Err(rusqlite::Error::QueryReturnedNoRows) => {
                         // Job was not claimed (race condition), skip it
-                        app_log_debug!("⚠️ WORKER {}: Job {} was not claimed due to race condition", worker_id, job_id);
-                    },
+                        app_log_debug!(
+                            "⚠️ WORKER {}: Job {} was not claimed due to race condition",
+                            worker_id,
+                            job_id
+                        );
+                    }
                     Err(e) => {
-                        app_log_error!("❌ WORKER {}: Failed to fetch job data for {}: {}", worker_id, job_id, e);
+                        app_log_error!(
+                            "❌ WORKER {}: Failed to fetch job data for {}: {}",
+                            worker_id,
+                            job_id,
+                            e
+                        );
                     }
                 }
             }
@@ -552,10 +620,16 @@ impl JobQueueService {
         tx.commit()?;
 
         if !jobs.is_empty() {
-            let job_ids: Vec<String> = jobs.iter()
+            let job_ids: Vec<String> = jobs
+                .iter()
                 .filter_map(|job| job["id"].as_str().map(|s| s.to_string()))
                 .collect();
-            app_log_debug!("✅ WORKER {}: Atomically claimed {} jobs: {:?}", worker_id, jobs.len(), job_ids);
+            app_log_debug!(
+                "✅ WORKER {}: Atomically claimed {} jobs: {:?}",
+                worker_id,
+                jobs.len(),
+                job_ids
+            );
         }
 
         Ok(jobs)
@@ -583,7 +657,11 @@ impl JobQueueService {
             rusqlite::params![cutoff_str, cutoff_str],
         )?;
 
-        app_log_info!("🧹 JOB: Cleaned up {} old jobs older than {} days", deleted, days_old);
+        app_log_info!(
+            "🧹 JOB: Cleaned up {} old jobs older than {} days",
+            deleted,
+            days_old
+        );
         Ok(deleted)
     }
 
@@ -605,13 +683,14 @@ impl JobQueueService {
         let mut stmt = db.prepare(
             "SELECT id, status FROM jobs
              WHERE (status = 'running' OR (status = 'pending' AND current_file LIKE 'worker_%'))
-             AND (updated_at < ? OR updated_at IS NULL)"
+             AND (updated_at < ? OR updated_at IS NULL)",
         )?;
 
-        let orphaned_jobs: Vec<(String, String)> = stmt.query_map(
-            rusqlite::params![cutoff_str],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-        )?.collect::<Result<Vec<_>, _>>()?;
+        let orphaned_jobs: Vec<(String, String)> = stmt
+            .query_map(rusqlite::params![cutoff_str], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
         if orphaned_jobs.is_empty() {
             return Ok(0);
@@ -630,7 +709,7 @@ impl JobQueueService {
                 "UPDATE jobs
                  SET status = 'pending', current_file = NULL, updated_at = ?
                  WHERE id = ? AND status IN ('running', 'pending')",
-                rusqlite::params![chrono::Utc::now().to_rfc3339(), job_id]
+                rusqlite::params![chrono::Utc::now().to_rfc3339(), job_id],
             ) {
                 Ok(1) => {
                     app_log_info!(
@@ -641,10 +720,17 @@ impl JobQueueService {
                     recovered_count += 1;
                 }
                 Ok(0) => {
-                    app_log_warn!("⚠️ RECOVERY: Job {} was already processed by another worker", job_id);
+                    app_log_warn!(
+                        "⚠️ RECOVERY: Job {} was already processed by another worker",
+                        job_id
+                    );
                 }
                 Ok(n) => {
-                    app_log_warn!("⚠️ RECOVERY: Unexpected update count {} for job {}", n, job_id);
+                    app_log_warn!(
+                        "⚠️ RECOVERY: Unexpected update count {} for job {}",
+                        n,
+                        job_id
+                    );
                 }
                 Err(e) => {
                     app_log_error!("❌ RECOVERY: Failed to reset job {}: {}", job_id, e);
@@ -653,7 +739,10 @@ impl JobQueueService {
         }
 
         if recovered_count > 0 {
-            app_log_info!("✅ RECOVERY: Successfully recovered {} orphaned jobs", recovered_count);
+            app_log_info!(
+                "✅ RECOVERY: Successfully recovered {} orphaned jobs",
+                recovered_count
+            );
         }
 
         Ok(recovered_count)
@@ -684,7 +773,10 @@ impl JobQueueService {
     }
 
     /// Get aggregate queue health metrics for UI dashboards.
-    pub fn get_queue_health_snapshot(&self, stale_running_threshold_seconds: i64) -> Result<serde_json::Value> {
+    pub fn get_queue_health_snapshot(
+        &self,
+        stale_running_threshold_seconds: i64,
+    ) -> Result<serde_json::Value> {
         let connection = self.db_service.get_connection();
         let db = connection.lock().unwrap();
 
@@ -695,7 +787,8 @@ impl JobQueueService {
 
         let now = chrono::Utc::now();
         let now_str = now.to_rfc3339();
-        let stale_cutoff = (now - chrono::Duration::seconds(stale_running_threshold_seconds)).to_rfc3339();
+        let stale_cutoff =
+            (now - chrono::Duration::seconds(stale_running_threshold_seconds)).to_rfc3339();
         let one_hour_ago = (now - chrono::Duration::hours(1)).to_rfc3339();
 
         let (
@@ -807,37 +900,47 @@ mod tests {
     #[test]
     fn test_job_queue_service_creation() {
         let temp_dir = tempdir().unwrap();
-        let db_service = DatabaseService::new_with_path(Some(temp_dir.path().to_path_buf())).expect("Database service failed to initialize");
+        let db_service = DatabaseService::new_with_path(Some(temp_dir.path().to_path_buf()))
+            .expect("Database service failed to initialize");
         let db_service_arc = Arc::new(db_service);
         let schema_service = SchemaService::new(Arc::clone(&db_service_arc));
         let schema_service_arc = Arc::new(schema_service);
-        
-        let job_queue_service = JobQueueService::new(Arc::clone(&db_service_arc), Arc::clone(&schema_service_arc));
+
+        let job_queue_service =
+            JobQueueService::new(Arc::clone(&db_service_arc), Arc::clone(&schema_service_arc));
         assert!(job_queue_service.db_service.get_db_path().is_ok());
     }
 
     #[test]
     fn test_job_creation_and_retrieval() {
         let temp_dir = tempdir().unwrap();
-        let db_service = DatabaseService::new_with_path(Some(temp_dir.path().to_path_buf())).expect("Database service failed to initialize");
+        let db_service = DatabaseService::new_with_path(Some(temp_dir.path().to_path_buf()))
+            .expect("Database service failed to initialize");
         let db_service_arc = Arc::new(db_service);
         let schema_service = SchemaService::new(Arc::clone(&db_service_arc));
         let schema_service_arc = Arc::new(schema_service);
-        
-        let job_queue_service = JobQueueService::new(Arc::clone(&db_service_arc), Arc::clone(&schema_service_arc));
-        
+
+        let job_queue_service =
+            JobQueueService::new(Arc::clone(&db_service_arc), Arc::clone(&schema_service_arc));
+
         // Initialize schema - just ensure jobs table exists for testing
         let connection = db_service_arc.get_connection();
         let db = connection.lock().unwrap();
-        schema_service_arc.ensure_jobs_table_exists(&db).expect("Jobs table setup failed");
+        schema_service_arc
+            .ensure_jobs_table_exists(&db)
+            .expect("Jobs table setup failed");
         drop(db);
 
         // Create a job
-        let job_id = job_queue_service.create_job("test_job", "/test/path", Some(10)).expect("Failed to create job");
+        let job_id = job_queue_service
+            .create_job("test_job", "/test/path", Some(10))
+            .expect("Failed to create job");
         assert!(!job_id.is_empty());
 
         // Get the job
-        let job = job_queue_service.get_job_by_id(&job_id).expect("Failed to get job");
+        let job = job_queue_service
+            .get_job_by_id(&job_id)
+            .expect("Failed to get job");
         assert_eq!(job["id"].as_str().unwrap(), job_id);
         assert_eq!(job["job_type"].as_str().unwrap(), "test_job");
         assert_eq!(job["target_path"].as_str().unwrap(), "/test/path");
@@ -847,27 +950,37 @@ mod tests {
     #[test]
     fn test_job_update_progress() {
         let temp_dir = tempdir().unwrap();
-        let db_service = DatabaseService::new_with_path(Some(temp_dir.path().to_path_buf())).expect("Database service failed to initialize");
+        let db_service = DatabaseService::new_with_path(Some(temp_dir.path().to_path_buf()))
+            .expect("Database service failed to initialize");
         let db_service_arc = Arc::new(db_service);
         let schema_service = SchemaService::new(Arc::clone(&db_service_arc));
         let schema_service_arc = Arc::new(schema_service);
-        
-        let job_queue_service = JobQueueService::new(Arc::clone(&db_service_arc), Arc::clone(&schema_service_arc));
-        
+
+        let job_queue_service =
+            JobQueueService::new(Arc::clone(&db_service_arc), Arc::clone(&schema_service_arc));
+
         // Initialize schema - just ensure jobs table exists for testing
         let connection = db_service_arc.get_connection();
         let db = connection.lock().unwrap();
-        schema_service_arc.ensure_jobs_table_exists(&db).expect("Jobs table setup failed");
+        schema_service_arc
+            .ensure_jobs_table_exists(&db)
+            .expect("Jobs table setup failed");
         drop(db);
 
         // Create a job
-        let job_id = job_queue_service.create_job("test_job", "/test/path", Some(10)).expect("Failed to create job");
+        let job_id = job_queue_service
+            .create_job("test_job", "/test/path", Some(10))
+            .expect("Failed to create job");
 
         // Update job progress
-        job_queue_service.update_job_progress(&job_id, "running", Some("file1.jpg"), Some(5), None, None).expect("Failed to update job");
+        job_queue_service
+            .update_job_progress(&job_id, "running", Some("file1.jpg"), Some(5), None, None)
+            .expect("Failed to update job");
 
         // Get the job and verify updates
-        let job = job_queue_service.get_job_by_id(&job_id).expect("Failed to get job");
+        let job = job_queue_service
+            .get_job_by_id(&job_id)
+            .expect("Failed to get job");
         assert_eq!(job["status"].as_str().unwrap(), "running");
         assert_eq!(job["current_file"].as_str().unwrap(), "file1.jpg");
         assert_eq!(job["processed"].as_i64().unwrap(), 5);
@@ -876,56 +989,92 @@ mod tests {
     #[test]
     fn test_job_cancellation() {
         let temp_dir = tempdir().unwrap();
-        let db_service = DatabaseService::new_with_path(Some(temp_dir.path().to_path_buf())).expect("Database service failed to initialize");
+        let db_service = DatabaseService::new_with_path(Some(temp_dir.path().to_path_buf()))
+            .expect("Database service failed to initialize");
         let db_service_arc = Arc::new(db_service);
         let schema_service = SchemaService::new(Arc::clone(&db_service_arc));
         let schema_service_arc = Arc::new(schema_service);
-        
-        let job_queue_service = JobQueueService::new(Arc::clone(&db_service_arc), Arc::clone(&schema_service_arc));
-        
+
+        let job_queue_service =
+            JobQueueService::new(Arc::clone(&db_service_arc), Arc::clone(&schema_service_arc));
+
         // Initialize schema - just ensure jobs table exists for testing
         let connection = db_service_arc.get_connection();
         let db = connection.lock().unwrap();
-        schema_service_arc.ensure_jobs_table_exists(&db).expect("Jobs table setup failed");
+        schema_service_arc
+            .ensure_jobs_table_exists(&db)
+            .expect("Jobs table setup failed");
         drop(db);
 
         // Create a job
-        let job_id = job_queue_service.create_job("test_job", "/test/path", Some(10)).expect("Failed to create job");
+        let job_id = job_queue_service
+            .create_job("test_job", "/test/path", Some(10))
+            .expect("Failed to create job");
 
         // Cancel the job
-        job_queue_service.cancel_job(&job_id).expect("Failed to cancel job");
+        job_queue_service
+            .cancel_job(&job_id)
+            .expect("Failed to cancel job");
 
         // Get the job and verify it's cancelled
-        let job = job_queue_service.get_job_by_id(&job_id).expect("Failed to get job");
+        let job = job_queue_service
+            .get_job_by_id(&job_id)
+            .expect("Failed to get job");
         assert_eq!(job["status"].as_str().unwrap(), "cancelled");
     }
 
     #[test]
     fn test_queue_health_snapshot_metrics() {
         let temp_dir = tempdir().unwrap();
-        let db_service = DatabaseService::new_with_path(Some(temp_dir.path().to_path_buf())).expect("Database service failed to initialize");
+        let db_service = DatabaseService::new_with_path(Some(temp_dir.path().to_path_buf()))
+            .expect("Database service failed to initialize");
         let db_service_arc = Arc::new(db_service);
         let schema_service = SchemaService::new(Arc::clone(&db_service_arc));
         let schema_service_arc = Arc::new(schema_service);
-        let job_queue_service = JobQueueService::new(Arc::clone(&db_service_arc), Arc::clone(&schema_service_arc));
+        let job_queue_service =
+            JobQueueService::new(Arc::clone(&db_service_arc), Arc::clone(&schema_service_arc));
 
         let connection = db_service_arc.get_connection();
         let db = connection.lock().unwrap();
-        schema_service_arc.ensure_jobs_table_exists(&db).expect("Jobs table setup failed");
+        schema_service_arc
+            .ensure_jobs_table_exists(&db)
+            .expect("Jobs table setup failed");
         drop(db);
 
-        let pending_job = job_queue_service.create_job("file", "/test/pending.jpg", Some(1)).unwrap();
-        let running_job = job_queue_service.create_job("file", "/test/running.jpg", Some(1)).unwrap();
+        let pending_job = job_queue_service
+            .create_job("file", "/test/pending.jpg", Some(1))
+            .unwrap();
+        let running_job = job_queue_service
+            .create_job("file", "/test/running.jpg", Some(1))
+            .unwrap();
         job_queue_service
-            .update_job_progress(&running_job, "running", Some("running"), Some(0), None, None)
+            .update_job_progress(
+                &running_job,
+                "running",
+                Some("running"),
+                Some(0),
+                None,
+                None,
+            )
             .unwrap();
 
-        let completed_job = job_queue_service.create_job("file", "/test/completed.jpg", Some(1)).unwrap();
+        let completed_job = job_queue_service
+            .create_job("file", "/test/completed.jpg", Some(1))
+            .unwrap();
         job_queue_service
-            .update_job_progress(&completed_job, "completed", Some("done"), Some(1), None, None)
+            .update_job_progress(
+                &completed_job,
+                "completed",
+                Some("done"),
+                Some(1),
+                None,
+                None,
+            )
             .unwrap();
 
-        let failed_job = job_queue_service.create_job("file", "/test/failed.jpg", Some(1)).unwrap();
+        let failed_job = job_queue_service
+            .create_job("file", "/test/failed.jpg", Some(1))
+            .unwrap();
         job_queue_service
             .update_job_progress(
                 &failed_job,
@@ -937,20 +1086,35 @@ mod tests {
             )
             .unwrap();
 
-        let cancelled_job = job_queue_service.create_job("file", "/test/cancelled.jpg", Some(1)).unwrap();
+        let cancelled_job = job_queue_service
+            .create_job("file", "/test/cancelled.jpg", Some(1))
+            .unwrap();
         job_queue_service.cancel_job(&cancelled_job).unwrap();
 
-        let retry_job = job_queue_service.create_job("file", "/test/retry.jpg", Some(1)).unwrap();
+        let retry_job = job_queue_service
+            .create_job("file", "/test/retry.jpg", Some(1))
+            .unwrap();
         job_queue_service
             .schedule_job_retry(&retry_job, "Connection timeout")
             .unwrap();
 
-        let stale_running_job = job_queue_service.create_job("file", "/test/stale-running.jpg", Some(1)).unwrap();
+        let stale_running_job = job_queue_service
+            .create_job("file", "/test/stale-running.jpg", Some(1))
+            .unwrap();
         job_queue_service
-            .update_job_progress(&stale_running_job, "running", Some("stale"), Some(0), None, None)
+            .update_job_progress(
+                &stale_running_job,
+                "running",
+                Some("stale"),
+                Some(0),
+                None,
+                None,
+            )
             .unwrap();
 
-        let orphaned_pending_job = job_queue_service.create_job("file", "/test/orphaned-pending.jpg", Some(1)).unwrap();
+        let orphaned_pending_job = job_queue_service
+            .create_job("file", "/test/orphaned-pending.jpg", Some(1))
+            .unwrap();
 
         let two_hours_ago = (chrono::Utc::now() - chrono::Duration::hours(2)).to_rfc3339();
         let connection = db_service_arc.get_connection();

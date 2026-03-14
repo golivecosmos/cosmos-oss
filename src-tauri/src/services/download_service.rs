@@ -1,8 +1,5 @@
 use crate::constants::{
-    model_namespace,
-    model_registry_base_url,
-    text_model_slug,
-    vision_model_slug,
+    model_namespace, model_registry_base_url, text_model_slug, vision_model_slug,
 };
 use crate::utils::path_utils;
 use crate::{app_log_debug, app_log_error, app_log_info, app_log_warn};
@@ -106,7 +103,13 @@ impl DownloadService {
 
         // Helper closure to compose URLs without assuming trailing slashes
         let build_url = |slug: &str, file: &str| -> String {
-            format!("{}/{}/{}/{}", base_url.trim_end_matches('/'), namespace.trim_matches('/'), slug.trim_matches('/'), file.trim_start_matches('/'))
+            format!(
+                "{}/{}/{}/{}",
+                base_url.trim_end_matches('/'),
+                namespace.trim_matches('/'),
+                slug.trim_matches('/'),
+                file.trim_start_matches('/')
+            )
         };
 
         let models = vec![
@@ -202,7 +205,8 @@ impl DownloadService {
                 let config_file = whisper_dir.join("config.json");
                 let tokenizer_file = whisper_dir.join("tokenizer.json");
 
-                let files_exist = model_file.exists() && config_file.exists() && tokenizer_file.exists();
+                let files_exist =
+                    model_file.exists() && config_file.exists() && tokenizer_file.exists();
 
                 if files_exist {
                     app_log_debug!("🎤 Whisper model files available");

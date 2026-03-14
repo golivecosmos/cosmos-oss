@@ -1,7 +1,7 @@
-use anyhow::{Result, anyhow};
-use std::path::{Path, PathBuf};
-use std::fs;
+use anyhow::{anyhow, Result};
 use dirs;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 /// Recursively copy a directory and its contents
 fn copy_directory_recursive(src: &Path, dst: &Path) -> Result<()> {
@@ -10,8 +10,8 @@ fn copy_directory_recursive(src: &Path, dst: &Path) -> Result<()> {
         .map_err(|e| anyhow!("Failed to create destination directory: {}", e))?;
 
     // Read source directory
-    let entries = fs::read_dir(src)
-        .map_err(|e| anyhow!("Failed to read source directory: {}", e))?;
+    let entries =
+        fs::read_dir(src).map_err(|e| anyhow!("Failed to read source directory: {}", e))?;
 
     for entry in entries {
         let entry = entry.map_err(|e| anyhow!("Failed to read directory entry: {}", e))?;
@@ -23,8 +23,14 @@ fn copy_directory_recursive(src: &Path, dst: &Path) -> Result<()> {
             copy_directory_recursive(&src_path, &dst_path)?;
         } else {
             // Copy file
-            fs::copy(&src_path, &dst_path)
-                .map_err(|e| anyhow!("Failed to copy file {:?} to {:?}: {}", src_path, dst_path, e))?;
+            fs::copy(&src_path, &dst_path).map_err(|e| {
+                anyhow!(
+                    "Failed to copy file {:?} to {:?}: {}",
+                    src_path,
+                    dst_path,
+                    e
+                )
+            })?;
         }
     }
 
@@ -43,8 +49,8 @@ pub fn is_migration_needed() -> bool {
 }
 
 pub fn migrate_app_data_if_needed() -> Result<()> {
-    let data_local_dir = dirs::data_local_dir()
-        .ok_or_else(|| anyhow!("Could not determine data directory"))?;
+    let data_local_dir =
+        dirs::data_local_dir().ok_or_else(|| anyhow!("Could not determine data directory"))?;
 
     let old_dir = data_local_dir.join("desktop-docs");
     let new_dir = data_local_dir.join("cosmos");
@@ -66,7 +72,7 @@ pub fn migrate_app_data_if_needed() -> Result<()> {
             Ok(_) => {
                 log::info!("Successfully migrated app data directory using atomic rename");
                 Ok(())
-            },
+            }
             Err(e) => {
                 log::error!("Failed to migrate with rename: {}", e);
                 log::info!("Attempting fallback copy-and-delete migration...");
@@ -79,10 +85,14 @@ pub fn migrate_app_data_if_needed() -> Result<()> {
                             log::warn!("Failed to remove old directory after copy: {}", e);
                         }
                         Ok(())
-                    },
+                    }
                     Err(copy_err) => {
                         log::error!("Failed to copy directory: {}", copy_err);
-                        Err(anyhow!("Data migration failed: rename failed ({}), copy failed ({})", e, copy_err))
+                        Err(anyhow!(
+                            "Data migration failed: rename failed ({}), copy failed ({})",
+                            e,
+                            copy_err
+                        ))
                     }
                 }
             }

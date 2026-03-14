@@ -1,10 +1,10 @@
-use crate::{app_log_info, app_log_error};
-use crate::utils::logger;
-use crate::app_log_warn;
 use crate::app_log_debug;
+use crate::app_log_warn;
+use crate::utils::logger;
+use crate::{app_log_error, app_log_info};
 use tempfile;
-use zip;
 use walkdir;
+use zip;
 
 /// Create an error report and save it to disk
 #[tauri::command]
@@ -16,7 +16,10 @@ pub async fn create_error_report(
     reproduction_steps: Option<String>,
     app_state: Option<String>,
 ) -> Result<String, String> {
-    app_log_info!("🐛 ERROR REPORT: Creating error report for type: {}", error_type);
+    app_log_info!(
+        "🐛 ERROR REPORT: Creating error report for type: {}",
+        error_type
+    );
 
     let logger = logger::LOGGER.get_or_init(|| logger::AppLogger::new());
 
@@ -33,7 +36,7 @@ pub async fn create_error_report(
         Ok(report_path) => {
             app_log_info!("✅ ERROR REPORT: Saved to {}", report_path.display());
             Ok(report.id)
-        },
+        }
         Err(e) => {
             app_log_error!("❌ ERROR REPORT: Failed to save: {}", e);
             Err(format!("Failed to save error report: {}", e))
@@ -89,7 +92,11 @@ pub async fn package_logs_for_support() -> Result<String, String> {
         if let Some(file_name) = log_file.file_name() {
             let dest_path = package_dir.join(file_name);
             if let Err(e) = std::fs::copy(&log_file, &dest_path) {
-                app_log_warn!("⚠️ PACKAGE LOGS: Failed to copy {}: {}", log_file.display(), e);
+                app_log_warn!(
+                    "⚠️ PACKAGE LOGS: Failed to copy {}: {}",
+                    log_file.display(),
+                    e
+                );
             } else {
                 copied_files += 1;
             }
@@ -140,7 +147,10 @@ pub async fn package_logs_for_support() -> Result<String, String> {
         copied_files += 1;
     }
 
-    app_log_info!("✅ PACKAGE LOGS: Created package with {} files", copied_files);
+    app_log_info!(
+        "✅ PACKAGE LOGS: Created package with {} files",
+        copied_files
+    );
 
     // Create zip file in a persistent location instead of temp directory
     let app_data_dir = match crate::utils::path_utils::get_app_data_dir() {
@@ -163,7 +173,10 @@ pub async fn package_logs_for_support() -> Result<String, String> {
 
     match create_zip_from_directory(&package_dir, &zip_path) {
         Ok(_) => {
-            app_log_info!("✅ PACKAGE LOGS: Created zip file at {}", zip_path.display());
+            app_log_info!(
+                "✅ PACKAGE LOGS: Created zip file at {}",
+                zip_path.display()
+            );
 
             // Verify the file exists before returning
             if zip_path.exists() {
@@ -182,11 +195,14 @@ pub async fn package_logs_for_support() -> Result<String, String> {
 }
 
 /// Helper function to create a zip file from a directory
-fn create_zip_from_directory(source_dir: &std::path::Path, zip_path: &std::path::Path) -> Result<(), String> {
+fn create_zip_from_directory(
+    source_dir: &std::path::Path,
+    zip_path: &std::path::Path,
+) -> Result<(), String> {
     use zip::write::FileOptions;
 
-    let file = std::fs::File::create(zip_path)
-        .map_err(|e| format!("Failed to create zip file: {}", e))?;
+    let file =
+        std::fs::File::create(zip_path).map_err(|e| format!("Failed to create zip file: {}", e))?;
 
     let mut zip = zip::ZipWriter::new(file);
     let options = FileOptions::default()
@@ -199,7 +215,8 @@ fn create_zip_from_directory(source_dir: &std::path::Path, zip_path: &std::path:
     for entry in it {
         let entry = entry.map_err(|e| format!("Failed to read directory entry: {}", e))?;
         let path = entry.path();
-        let name = path.strip_prefix(source_dir)
+        let name = path
+            .strip_prefix(source_dir)
             .map_err(|e| format!("Failed to strip prefix: {}", e))?;
 
         if path.is_file() {
@@ -220,6 +237,7 @@ fn create_zip_from_directory(source_dir: &std::path::Path, zip_path: &std::path:
         }
     }
 
-    zip.finish().map_err(|e| format!("Failed to finish zip file: {}", e))?;
+    zip.finish()
+        .map_err(|e| format!("Failed to finish zip file: {}", e))?;
     Ok(())
 }

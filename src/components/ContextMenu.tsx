@@ -22,6 +22,7 @@ import {
 import { FileItem } from "./FileTree";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
+import { getErrorMessage } from "../utils/errorMessage";
 
 interface FileContextMenuProps {
   children: React.ReactNode;
@@ -56,15 +57,15 @@ export function FileContextMenu({
 }: FileContextMenuProps) {
   const handleIndexFile = async () => {
     try {
-      toast.success("Added file to search index queue");
       await invoke("index_file", {
         path: item.path,
         name: item.name,
         isDirectory: item.is_dir,
       });
+      toast.success("Added file to search index queue");
     } catch (error) {
       console.error("Failed to index file:", error);
-      toast.error("Failed to index file");
+      toast.error(`Failed to index file: ${getErrorMessage(error)}`);
     }
   };
 
