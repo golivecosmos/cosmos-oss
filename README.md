@@ -22,16 +22,34 @@ Cosmos OSS is a cross-platform desktop application for local-first, AI-assisted 
 | `src/` | React + Tailwind UI, contexts, and feature modules |
 | `src-tauri/` | Rust backend (commands, services, model loaders) |
 | `docs/` | Build guide, roadmap, contributing, code of conduct, security |
+| `docs/THIRD_PARTY_NOTICES.md` | Third-party binary/model attribution guidance |
 | `scripts/` | *(intentionally empty—release scripts lived in the private repo)* |
 
-## Prerequisites
+## Run Cosmos (3 options)
+
+### 1. Download the DMG from GitHub
+1. Open [GitHub Releases](https://github.com/cosmos-oss/cosmos-oss/releases).
+2. Download the latest macOS `.dmg`.
+3. Drag Cosmos into `Applications`, then launch it.
+4. On first launch, use **Quick Menu → Manage Models** to download models.
+
+### 2. Download the packaged app from our website
+1. Open the Cosmos download page: [app.meetcosmos.com/download](https://app.meetcosmos.com/download).
+2. Choose the package for your OS (`.dmg`, `.msi`, AppImage/deb/rpm as available).
+3. Install and launch the app.
+4. On first launch, use **Quick Menu → Manage Models** to download models.
+
+### 3. Build from source
+Use this path if you want to develop, customize, or run unreleased code.
+
+## Prerequisites (build from source)
 - **Node.js** 20.x and **pnpm** 9.x (install via `corepack enable` or `npm install -g pnpm`).
 - **Rust** stable toolchain (`rustup default stable`) plus the [Tauri prerequisites](https://tauri.app/v1/guides/getting-started/prerequisites) for your OS (Xcode CLT on macOS, Visual Studio Build Tools on Windows, `libgtk-3-dev` et al. on Linux).
 - **FFmpeg** available on `$PATH` for video thumbnailing.
 - **Poppler `pdftotext`** on `$PATH` if you want PDF text indexing.
 - **Git LFS** if you plan to check in large sample assets.
 
-## Quick start (development)
+## Quick start (option 3: build from source)
 ```bash
 # 1. Clone the public repo
 git clone https://github.com/cosmos-oss/cosmos-oss.git
@@ -46,6 +64,8 @@ pnpm dev
 When the window opens:
 1. Use **Quick Menu → Manage Models** to download the Nomic + Whisper artifacts (or drop files directly in `~/Library/Application Support/cosmos/models` on macOS and the analogous AppData path on Windows).
 2. Start indexing folders from the sidebar and try visual/text search immediately.
+
+For full build details and platform-specific packaging, see [`docs/BUILDING.md`](docs/BUILDING.md).
 
 ## Building signed binaries
 Detailed walkthroughs live in [`docs/BUILDING.md`](docs/BUILDING.md). At a glance:
@@ -105,3 +125,5 @@ If you discover a vulnerability, please follow [`docs/SECURITY.md`](docs/SECURIT
 
 ## License
 This project is released under the [MIT License](LICENSE). By contributing, you agree that your contributions will be licensed under MIT as well.
+
+For bundled dependencies (FFmpeg/ONNX runtime/model artifacts), see [Third-Party Notices](docs/THIRD_PARTY_NOTICES.md).

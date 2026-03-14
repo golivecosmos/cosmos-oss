@@ -23,6 +23,7 @@ fn create_test_app_state() -> AppState {
         drive_service::DriveService, embedding_service::EmbeddingService,
         file_service::FileService, model_service::ModelService,
         sqlite_service::SqliteVectorService, video_service::VideoService,
+        watched_folder_service::WatchedFolderService,
     };
 
     // Create lightweight services - no model loading, in-memory DB
@@ -32,8 +33,10 @@ fn create_test_app_state() -> AppState {
         SqliteVectorService::new_in_memory()
             .expect("Failed to create in-memory test SQLite service"),
     );
-    let db_service = DatabaseService::new_in_memory().expect("Failed to create database service");
-    let drive_service = Arc::new(DriveService::new(Arc::new(db_service)));
+    let db_service =
+        Arc::new(DatabaseService::new_in_memory().expect("Failed to create database service"));
+    let drive_service = Arc::new(DriveService::new(db_service.clone()));
+    let watched_folder_service = Arc::new(WatchedFolderService::new(db_service));
     let embedding_service = Arc::new(EmbeddingService::new(
         model_service.clone(),
         sqlite_service.clone(),
@@ -52,6 +55,7 @@ fn create_test_app_state() -> AppState {
         video_service,
         download_service,
         drive_service,
+        watched_folder_service,
         video_generation_status: Arc::new(
             tokio::sync::Mutex::new(std::collections::HashMap::new()),
         ),

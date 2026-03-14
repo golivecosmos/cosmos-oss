@@ -6,6 +6,21 @@ This guide explains how to reproduce the development environment, download the o
 
 ---
 
+## 0. Choose your setup path
+
+### Option 1: GitHub DMG download
+1. Open [GitHub Releases](https://github.com/cosmos-oss/cosmos-oss/releases).
+2. Download the latest macOS `.dmg`.
+3. Install and launch Cosmos.
+
+### Option 2: Packaged download from the Cosmos website
+1. Open the Cosmos website download page: [app.meetcosmos.com/download](https://app.meetcosmos.com/download).
+2. Download the package for your OS.
+3. Install and launch Cosmos.
+
+### Option 3: Build from source (this document)
+Continue with the steps below.
+
 ## 1. Common prerequisites
 
 | Tool | Version | Notes |
@@ -79,6 +94,8 @@ pnpm dev
 pnpm build:desktop
 ```
 Outputs a universal app bundle and DMG under `src-tauri/target/release/bundle/macos`.
+
+If your release includes bundled third-party binaries, include the notices in [`docs/THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) with your packaged artifacts.
 
 ### Windows MSI / NSIS
 ```bash

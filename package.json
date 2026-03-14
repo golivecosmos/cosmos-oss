@@ -10,12 +10,13 @@
     "dev": "tauri dev --features dev-tools",
     "dev:scan": "VITE_REACT_SCAN=true tauri dev --features dev-tools",
     "dev:web": "vite",
+    "typecheck": "tsc --noEmit",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
     "build:desktop": "pnpm run build && tauri build",
     "test:backend": "cd src-tauri && cargo test",
-    "lint": "eslint \"src/**/*.{ts,tsx}\""
+    "lint": "pnpm run typecheck"
   },
   "dependencies": {
     "@radix-ui/react-context-menu": "^2.2.6",

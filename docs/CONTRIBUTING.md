@@ -2,6 +2,8 @@
 
 Thanks for helping Cosmos OSS! This document describes expectations for issues, pull requests, style, and testing.
 
+If you only need to run the app (not contribute code), use the 3 setup options in [`README.md`](../README.md): GitHub DMG, website package, or build from source.
+
 ## 1. Ground rules
 - Respect the [Code of Conduct](CODE_OF_CONDUCT.md).
 - Discuss large/controversial features in GitHub Discussions before opening a PR.
@@ -33,7 +35,7 @@ Use the Quick Menu → Manage Models to fetch models the first time.
 ## 4. Testing & linting
 | Command | Purpose |
 | ------- | ------- |
-| `pnpm lint` | ESLint across `src/` |
+| `pnpm lint` | TypeScript type/lint gate (`tsc --noEmit`) |
 | `pnpm tauri build --debug` | Smoke-test Rust + bundling |
 | `cd src-tauri && cargo test` | Backend unit/integration tests |
 | Manual | Use the Quick Menu to download models and index the sample folders referenced in the PR |
