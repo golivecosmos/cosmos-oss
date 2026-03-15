@@ -68,11 +68,16 @@ percent-encoding = "2.3.1"
 aes-gcm = "0.10"
 sha2 = "0.10"
 # Audio transcription dependencies
+candle-core = "0.8.0"
+candle-nn = "0.8.0"
+candle-transformers = "0.8.0"
+symphonia = { version = "0.5", features = ["all"] }
+byteorder = "1.5"
+
+[target.'cfg(target_os = "macos")'.dependencies]
 candle-core = { version = "0.8.0", features = ["metal"] }
 candle-nn = { version = "0.8.0", features = ["metal"] }
 candle-transformers = { version = "0.8.0", features = ["metal"] }
-symphonia = { version = "0.5", features = ["all"] }
-byteorder = "1.5"
 
 [dev-dependencies]
 tokio-test = "0.4"
