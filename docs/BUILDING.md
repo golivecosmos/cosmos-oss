@@ -121,11 +121,44 @@ pnpm tauri build --target x86_64-unknown-linux-gnu
 ```
 Install platform packages such as `appimagetool` if Tauri requests them.
 
-## 5. Optional integrations
+## 5. Secure macOS release (signed + notarized + audited)
+For public GitHub releases, use the secure release pipeline instead of uploading ad-hoc DMGs.
+
+Prerequisites:
+- Developer ID Application certificate installed in Keychain.
+- `xcrun notarytool` keychain profile configured:
+  ```bash
+  xcrun notarytool store-credentials "notarytool-profile" \
+    --apple-id <apple-id> \
+    --team-id <team-id> \
+    --password <app-specific-password>
+  ```
+- GitHub CLI authenticated (`gh auth login`) for release asset upload.
+
+Commands:
+```bash
+# Build + sign + notarize + security audit (no upload)
+pnpm release:production
+
+# Build + sign + notarize + security audit + upload artifacts to an existing/new GitHub release tag
+pnpm release:production:upload -- --tag v0.1.0 --repo golivecosmos/cosmos-oss
+```
+
+Security guarantees in this pipeline:
+- Refuses unsigned/ad-hoc app bundles by default.
+- Runs notarization + stapling for DMGs.
+- Runs `scripts/release-security-audit.mjs` before upload:
+  - scans tracked source for high-risk secret patterns,
+  - scans built `.app` / mounted `.dmg` contents,
+  - blocks known sensitive file types (`.env`, private keys, credential files).
+
+Allowlist file: `.release-audit-allowlist` (keep minimal; every exception weakens the gate).
+
+## 6. Optional integrations
 - **Google Gemini / Veo**: open **Settings → App Store**, install “Google Gemini,” and provide the API key. Keys are stored locally via SQLCipher.
 - **Whisper transcription**: automatically enabled after the Whisper model downloads (FastEmbed uses Candle).
 
-## 6. Testing & QA
+## 7. Testing & QA
 | Command | Purpose |
 | ------- | ------- |
 | `pnpm lint` | ESLint over all TypeScript/TSX code |
@@ -135,10 +168,10 @@ Install platform packages such as `appimagetool` if Tauri requests them.
 
 Whenever you change database schemas or long-running commands, please add or update tests in `src-tauri/src/services/tests/` and describe manual QA steps in your PR.
 
-## 7. Updater & signing
+## 8. Updater & signing
 The updater plugin is enabled, but OSS configs ship with empty updater settings (`"plugins.updater.endpoints": []`, `"plugins.updater.pubkey": ""`), so update checks are effectively disabled until you provide your own endpoint(s) and minisign key. macOS signing/notarization can be automated via `apple-id` secrets in CI.
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 | Symptom | Fix |
 | ------- | --- |
 | `Download timed out` when fetching models | Check connectivity or host your own mirror via the env vars above |

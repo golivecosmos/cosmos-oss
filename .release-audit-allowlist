@@ -1,0 +1,9 @@
+# Release Security Audit Allowlist
+# One item per line. Supports:
+# 1) literal text match (case-insensitive)
+# 2) regex format: /pattern/flags
+#
+# Keep this file minimal. Every allowlisted match weakens release checks.
+
+# Test fixture in encryption unit tests (not a real credential)
+sk-test-api-key-123456789

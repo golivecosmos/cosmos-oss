@@ -82,8 +82,11 @@ You can also run focused commands:
 ## Building signed binaries
 Detailed walkthroughs live in [`docs/BUILDING.md`](docs/BUILDING.md). At a glance:
 ```bash
-# macOS universal DMG
-pnpm build:desktop
+# Secure public macOS release (sign + notarize + audit)
+pnpm release:production
+
+# Same, then upload artifacts to a GitHub release tag
+pnpm release:production:upload -- --tag v0.1.0 --repo golivecosmos/cosmos-oss
 
 # Windows MSI (requires the Windows build tools shell)
 pnpm tauri build --target x86_64-pc-windows-msvc
