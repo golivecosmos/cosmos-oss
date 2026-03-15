@@ -8,6 +8,10 @@ This file tracks required attribution and license context for those components.
 - **Component**: `ffmpeg`, `ffprobe`
 - **Location in repo**: `src-tauri/bin/ffmpeg`, `src-tauri/bin/ffprobe`
 - **Upstream project**: https://ffmpeg.org/
+- **Bootstrap sources used by `scripts/bootstrap-assets.mjs`**:
+  - macOS: `https://evermeet.cx/ffmpeg/getrelease/zip` and `https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip`
+  - Windows: `https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip`
+  - Linux x64/arm64: `https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-lgpl-shared.tar.xz` and `...linuxarm64...`
 - **License**: FFmpeg is generally distributed under LGPL-2.1-or-later, with some builds/options requiring GPL.
 
 Important:
@@ -29,3 +33,7 @@ If you distribute bundles containing ONNX Runtime, include ONNX Runtime attribut
 Cosmos downloads model files from upstream registries at runtime based on configured model endpoints.
 Those model assets have their own licenses/terms from their respective providers.
 When redistributing pre-bundled model files, verify and comply with each model license.
+
+Default bootstrap endpoints:
+- Nomic text/vision: `https://huggingface.co/nomic-ai/...`
+- Whisper base: `https://huggingface.co/openai/whisper-base/...`

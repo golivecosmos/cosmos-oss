@@ -10,13 +10,18 @@
     "dev": "tauri dev --features dev-tools",
     "dev:scan": "VITE_REACT_SCAN=true tauri dev --features dev-tools",
     "dev:web": "vite",
+    "bootstrap:assets": "node scripts/bootstrap-assets.mjs",
+    "bootstrap:assets:force": "node scripts/bootstrap-assets.mjs --force",
+    "bootstrap:assets:models": "node scripts/bootstrap-assets.mjs --skip-ffmpeg",
+    "bootstrap:assets:ffmpeg": "node scripts/bootstrap-assets.mjs --skip-models",
     "typecheck": "tsc --noEmit",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
     "build:desktop": "pnpm run build && tauri build",
     "test:backend": "cd src-tauri && cargo test",
-    "lint": "pnpm run typecheck"
+    "lint": "pnpm run typecheck",
+    "postinstall": "node scripts/bootstrap-assets.mjs --optional"
   },
   "dependencies": {
     "@radix-ui/react-context-menu": "^2.2.6",

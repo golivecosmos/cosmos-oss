@@ -29,12 +29,22 @@ Continue with the steps below.
 | pnpm | 9.x | Needed for workspaces + lockfile |
 | Rust | Stable (1.78+) | Install via `rustup` |
 | Tauri toolchain | per [guide](https://tauri.app/v1/guides/getting-started/prerequisites) | Xcode CLT (mac), MSVC Build Tools (Win), `libgtk-3-dev` & friends (Linux) |
-| FFmpeg | latest | On PATH for thumbnail/video support |
+| FFmpeg binaries | latest | Place in `src-tauri/bin` or run `pnpm bootstrap:assets:ffmpeg` |
 | Git LFS (optional) | latest | Required if you plan to commit sample assets |
 
 Install JS deps once:
 ```bash
 pnpm install
+```
+
+Optional: prefetch FFmpeg + model assets immediately:
+```bash
+pnpm bootstrap:assets
+```
+
+`postinstall` can do this automatically when explicitly enabled:
+```bash
+COSMOS_BOOTSTRAP_ASSETS=1 pnpm install
 ```
 
 ## 2. OS-specific setup

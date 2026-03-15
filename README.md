@@ -45,7 +45,7 @@ Use this path if you want to develop, customize, or run unreleased code.
 ## Prerequisites (build from source)
 - **Node.js** 20.x and **pnpm** 9.x (install via `corepack enable` or `npm install -g pnpm`).
 - **Rust** stable toolchain (`rustup default stable`) plus the [Tauri prerequisites](https://tauri.app/v1/guides/getting-started/prerequisites) for your OS (Xcode CLT on macOS, Visual Studio Build Tools on Windows, `libgtk-3-dev` et al. on Linux).
-- **FFmpeg** available on `$PATH` for video thumbnailing.
+- **FFmpeg binaries** in `src-tauri/bin` (run `pnpm bootstrap:assets:ffmpeg` to fetch them automatically).
 - **Poppler `pdftotext`** on `$PATH` if you want PDF text indexing.
 - **Git LFS** if you plan to check in large sample assets.
 
@@ -58,6 +58,9 @@ cd cosmos-oss
 # 2. Install JS deps
 pnpm install
 
+# 2b. Optional: prefetch FFmpeg + model files now (instead of first launch)
+pnpm bootstrap:assets
+
 # 3. Run the desktop dev shell (Vite + Tauri dev tools)
 pnpm dev
 ```
@@ -66,6 +69,15 @@ When the window opens:
 2. Start indexing folders from the sidebar and try visual/text search immediately.
 
 For full build details and platform-specific packaging, see [`docs/BUILDING.md`](docs/BUILDING.md).
+
+### Optional install-time bootstrap
+`postinstall` is wired but opt-in only. To auto-run bootstrap during `pnpm install`, set:
+```bash
+COSMOS_BOOTSTRAP_ASSETS=1 pnpm install
+```
+You can also run focused commands:
+- `pnpm bootstrap:assets:ffmpeg`
+- `pnpm bootstrap:assets:models`
 
 ## Building signed binaries
 Detailed walkthroughs live in [`docs/BUILDING.md`](docs/BUILDING.md). At a glance:
