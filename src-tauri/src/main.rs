@@ -1,4 +1,9 @@
-use tauri::generate_context;
+use tauri::{
+    generate_context,
+    menu::{Menu, MenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    WindowEvent,
+};
 
 mod commands;
 mod constants;
@@ -12,6 +17,7 @@ mod utils;
 use services::startup::{AppState, StartupManager};
 
 use commands::{
+    add_watched_folder,
     bulk_job_operations,
     cancel_download,
     check_models_status,
@@ -19,14 +25,17 @@ use commands::{
     clean_stale_entries,
     clear_and_redownload_models,
     clear_search_index,
+    consume_full_app_handoff,
     copy_to_clipboard,
     create_error_report,
     delete_drive_from_database,
     delete_generation,
     download_models,
     edit_video,
+    ensure_quick_window,
     // File operations
     file_exists,
+    focus_quick_search_input,
     generate_video_prompt,
     get_all_drives,
     get_all_drives_with_metadata,
@@ -60,6 +69,7 @@ use commands::{
     get_system_info,
     get_transcription_by_path,
     get_video_generation_status,
+    hide_quick_panel,
     index_directory,
     index_file,
     index_image,
@@ -75,7 +85,10 @@ use commands::{
     list_directory_contents,
     list_directory_paginated,
     list_directory_recursive,
+    list_watched_folders,
     manage_job_queue,
+    open_full_app,
+    open_full_app_internal,
     open_with_default_app,
     package_logs_for_support,
     read_file_as_base64,
@@ -83,6 +96,7 @@ use commands::{
     read_file_preview,
     refresh_drives,
     reload_models,
+    remove_watched_folder,
     retry_job,
     search_semantic,
     search_visual,
@@ -92,21 +106,25 @@ use commands::{
     set_queue_processing,
     set_watched_folder_enabled,
     show_in_file_manager,
+    show_quick_panel,
     stop_and_clear_queue,
     sync_drives_to_database,
-    trigger_watched_folder_backfill,
+    toggle_quick_panel,
+    toggle_quick_panel_internal,
     // Audio commands
     transcribe_audio_file,
     // Transcription
     transcribe_file,
+    trigger_watched_folder_backfill,
     trim_video,
     uninstall_app,
     update_drive_metadata,
     update_drive_status,
     validate_audio_file,
-    add_watched_folder,
-    list_watched_folders,
-    remove_watched_folder,
+    FullAppHandoffState,
+    WindowMetricsState,
+    MAIN_WINDOW_LABEL,
+    QUICK_WINDOW_LABEL,
 };
 
 use thumbnail::generate_video_thumbnail;
@@ -116,6 +134,74 @@ use thumbnail::generate_video_thumbnail;
 use commands::{
     debug_model_status, get_database_schema_info, get_sqlite_stats, recreate_sqlite_virtual_table,
 };
+
+const QUICK_SHORTCUT: &str = "CommandOrControl+Shift+Space";
+const TRAY_MENU_OPEN_QUICK: &str = "tray_open_quick";
+const TRAY_MENU_OPEN_FULL: &str = "tray_open_full";
+const TRAY_MENU_QUIT: &str = "tray_quit";
+
+fn setup_tray(app: &tauri::App) -> Result<(), String> {
+    let open_quick = MenuItem::with_id(
+        app,
+        TRAY_MENU_OPEN_QUICK,
+        "Open Quick Panel",
+        true,
+        None::<&str>,
+    )
+    .map_err(|e| format!("Failed to create tray menu item (quick): {}", e))?;
+    let open_full = MenuItem::with_id(
+        app,
+        TRAY_MENU_OPEN_FULL,
+        "Open Full App",
+        true,
+        None::<&str>,
+    )
+    .map_err(|e| format!("Failed to create tray menu item (full): {}", e))?;
+    let quit = MenuItem::with_id(app, TRAY_MENU_QUIT, "Quit", true, None::<&str>)
+        .map_err(|e| format!("Failed to create tray menu item (quit): {}", e))?;
+
+    let menu = Menu::with_items(app, &[&open_quick, &open_full, &quit])
+        .map_err(|e| format!("Failed to create tray menu: {}", e))?;
+
+    let mut tray_builder = TrayIconBuilder::with_id("cosmos_tray")
+        .menu(&menu)
+        .tooltip("Cosmos")
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app_handle, event| match event.id().as_ref() {
+            TRAY_MENU_OPEN_QUICK => {
+                let _ = toggle_quick_panel_internal(app_handle);
+            }
+            TRAY_MENU_OPEN_FULL => {
+                let _ = open_full_app_internal(app_handle, None);
+            }
+            TRAY_MENU_QUIT => {
+                app_handle.exit(0);
+            }
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button,
+                button_state,
+                ..
+            } = event
+            {
+                if button == MouseButton::Left && button_state == MouseButtonState::Up {
+                    let _ = toggle_quick_panel_internal(tray.app_handle());
+                }
+            }
+        });
+
+    if let Some(default_icon) = app.default_window_icon() {
+        tray_builder = tray_builder.icon(default_icon.clone().into());
+    }
+
+    tray_builder
+        .build(app)
+        .map_err(|e| format!("Failed to build tray icon: {}", e))?;
+
+    Ok(())
+}
 
 #[tokio::main]
 async fn main() {
@@ -133,14 +219,47 @@ async fn main() {
 
     // Launch Tauri application
     let mut builder = tauri::Builder::default()
+        .on_window_event(|window, event| match event {
+            WindowEvent::CloseRequested { api, .. } => {
+                if window.label() == QUICK_WINDOW_LABEL || window.label() == MAIN_WINDOW_LABEL {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+            _ => {}
+        })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_single_instance::init(|app, _, _| {
+            let _ = toggle_quick_panel_internal(app);
+        }))
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_shortcuts([QUICK_SHORTCUT])
+                .expect("Failed to register global shortcut")
+                .with_handler(|app, _shortcut, event| {
+                    if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                        let _ = toggle_quick_panel_internal(app);
+                    }
+                })
+                .build(),
+        )
         .manage(app_state)
+        .manage(FullAppHandoffState::default())
+        .manage(WindowMetricsState::default())
         .setup(move |app| {
             #[cfg(desktop)]
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;
+
+            if let Err(e) = ensure_quick_window(&app.handle()) {
+                return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, e)));
+            }
+
+            if let Err(e) = setup_tray(app) {
+                return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, e)));
+            }
 
             // Setup background tasks using the startup manager
             if let Err(e) = startup_manager.setup_background_tasks(app) {
@@ -247,6 +366,12 @@ async fn main() {
             install_app,
             get_installed_apps,
             get_app_by_id,
+            show_quick_panel,
+            hide_quick_panel,
+            toggle_quick_panel,
+            open_full_app,
+            focus_quick_search_input,
+            consume_full_app_handoff,
             uninstall_app,
         ]);
     }
@@ -344,6 +469,12 @@ async fn main() {
             install_app,
             get_installed_apps,
             get_app_by_id,
+            show_quick_panel,
+            hide_quick_panel,
+            toggle_quick_panel,
+            open_full_app,
+            focus_quick_search_input,
+            consume_full_app_handoff,
             uninstall_app,
         ]);
     }

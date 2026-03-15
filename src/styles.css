@@ -57,6 +57,18 @@
   body {
     @apply text-text;
   }
+
+  html.quick-window,
+  html.quick-window body,
+  html.quick-window #root {
+    background: transparent !important;
+  }
+
+  html.quick-window,
+  html.quick-window body {
+    border-radius: 24px;
+    overflow: hidden;
+  }
 }
 
 *::-webkit-scrollbar {

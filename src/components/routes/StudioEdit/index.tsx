@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useRef } from "react";
+import { PointerEvent, useState, useEffect, useRef } from "react";
 import { useLoaderData, useNavigate, useSearchParams } from "react-router-dom";
 import { CircleMinus, CirclePlus, Info, Mic, Loader2 } from "lucide-react";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
@@ -12,6 +12,7 @@ import { cn, formatFileSize } from "../../../lib/utils";
 import { ContentPreview, ContentPreviewRef } from "./ContentPreview";
 import { TranscriptionDisplay } from "../../TranscriptionDisplay";
 import { useAppLayout } from "../../../contexts/AppLayoutContext";
+import { isSupportedImageExtension, isSupportedVideoExtension } from "../../../constants";
 
 const getFileNameFromPath = (path: string): string => {
     const normalized = path.replace(/\\/g, "/");
@@ -25,9 +26,18 @@ export const StudioEdit = () => {
     const { transcribingPaths, handleTranscribeFile } = useAppLayout();
 
     const [scale, setScale] = useState<number>(0.8);
+    const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
     const [showInfo, setShowInfo] = useState(false);
     const [transcriptionRefreshCounter, setTranscriptionRefreshCounter] = useState(0);
     const contentPreviewRef = useRef<ContentPreviewRef>(null);
+    const dragStateRef = useRef({
+        isDragging: false,
+        pointerId: -1,
+        startX: 0,
+        startY: 0,
+        startOffsetX: 0,
+        startOffsetY: 0,
+    });
 
     const handleBack = () => {
         const returnTo = searchParams.get('returnTo');
@@ -71,7 +81,51 @@ export const StudioEdit = () => {
         }
     }, [transcribingPaths, file?.path]);
 
-    const getTransformMatrix = (scale: number) => `translate3d(0, 0, 0) scale(${scale})`
+    const fileExtension = file?.path?.split(".").pop()?.toLowerCase() || "";
+    const isPannablePreview = isSupportedImageExtension(fileExtension) || isSupportedVideoExtension(fileExtension);
+    const isPanActive = isPannablePreview;
+
+    useEffect(() => {
+        // Reset pan whenever file changes.
+        setPanOffset({ x: 0, y: 0 });
+    }, [file?.path]);
+
+    const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+        if (!isPannablePreview) return;
+        dragStateRef.current = {
+            isDragging: true,
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startY: event.clientY,
+            startOffsetX: panOffset.x,
+            startOffsetY: panOffset.y,
+        };
+        event.currentTarget.setPointerCapture(event.pointerId);
+    };
+
+    const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
+        const dragState = dragStateRef.current;
+        if (!dragState.isDragging || dragState.pointerId !== event.pointerId) return;
+
+        const deltaX = event.clientX - dragState.startX;
+        const deltaY = event.clientY - dragState.startY;
+        setPanOffset({
+            x: dragState.startOffsetX + deltaX,
+            y: dragState.startOffsetY + deltaY,
+        });
+    };
+
+    const handlePointerEnd = (event: PointerEvent<HTMLDivElement>) => {
+        if (dragStateRef.current.pointerId === event.pointerId) {
+            dragStateRef.current.isDragging = false;
+            dragStateRef.current.pointerId = -1;
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                event.currentTarget.releasePointerCapture(event.pointerId);
+            }
+        }
+    };
+
+    const getTransformMatrix = (scale: number) => `translate3d(${panOffset.x}px, ${panOffset.y}px, 0) scale(${scale})`
 
     return (
         <div className="h-full bg-gray-50 dark:bg-darkBg relative">
@@ -93,11 +147,19 @@ export const StudioEdit = () => {
                     style={{ touchAction: "none" }}
                 >
                     <div
-                        className="transition-transform duration-75 ease-out w-full"
+                        className={cn(
+                            "transition-transform duration-75 ease-out inline-flex items-center justify-center",
+                            isPanActive ? "cursor-grab active:cursor-grabbing" : "cursor-default"
+                        )}
                         style={{
                             transform: getTransformMatrix(scale),
                             transformOrigin: "center center",
+                            touchAction: "none",
                         }}
+                        onPointerDown={handlePointerDown}
+                        onPointerMove={handlePointerMove}
+                        onPointerUp={handlePointerEnd}
+                        onPointerCancel={handlePointerEnd}
                     >
                         <div className="relative">
                             <ContentPreview ref={contentPreviewRef} file={file} />

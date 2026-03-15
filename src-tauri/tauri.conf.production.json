@@ -32,7 +32,8 @@
         "minWidth": 800,
         "minHeight": 800
       }
-    ]
+    ],
+    "macOSPrivateApi": true
   },
   "bundle": {
     "active": true,

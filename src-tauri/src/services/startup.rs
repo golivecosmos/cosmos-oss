@@ -585,7 +585,11 @@ impl StartupManager {
     }
 
     /// Setup watched folder monitoring for automatic incremental indexing.
-    fn setup_watched_folder_monitoring(&self, app: &App, app_state: &AppState) -> Result<(), String> {
+    fn setup_watched_folder_monitoring(
+        &self,
+        app: &App,
+        app_state: &AppState,
+    ) -> Result<(), String> {
         app_log_info!("🚀 STARTUP: Setting up watched folder monitoring");
         let watched_folder_service = app_state.watched_folder_service.clone();
         let sqlite_service = app_state.sqlite_service.clone();
@@ -605,46 +609,49 @@ impl StartupManager {
         // Security: Disable devtools in production builds
         #[cfg(not(debug_assertions))]
         {
-            // Disable right-click context menu in production
-            let window = _app
-                .get_webview_window("main")
-                .ok_or("Main window not found")?;
-            window.eval(r#"
-                document.addEventListener('contextmenu', function(e) {
-                    e.preventDefault();
-                });
-
-                // Disable F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+U
-                document.addEventListener('keydown', function(e) {
-                    if (e.key === 'F12' ||
-                        (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) ||
-                        (e.ctrlKey && e.key === 'U')) {
+            for label in ["main", "quick"] {
+                if let Some(window) = _app.get_webview_window(label) {
+                    window
+                        .eval(
+                            r#"
+                    document.addEventListener('contextmenu', function(e) {
                         e.preventDefault();
-                    }
-                });
+                    });
 
-                // Disable console in production
-                if (typeof console !== 'undefined') {
-                    console.log = function() {};
-                    console.warn = function() {};
-                    console.error = function() {};
-                    console.info = function() {};
-                    console.debug = function() {};
-                    console.trace = function() {};
-                    console.dir = function() {};
-                    console.table = function() {};
-                    console.clear = function() {};
+                    // Disable F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+U
+                    document.addEventListener('keydown', function(e) {
+                        if (e.key === 'F12' ||
+                            (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) ||
+                            (e.ctrlKey && e.key === 'U')) {
+                            e.preventDefault();
+                        }
+                    });
+
+                    // Disable console in production
+                    if (typeof console !== 'undefined') {
+                        console.log = function() {};
+                        console.warn = function() {};
+                        console.error = function() {};
+                        console.info = function() {};
+                        console.debug = function() {};
+                        console.trace = function() {};
+                        console.dir = function() {};
+                        console.table = function() {};
+                        console.clear = function() {};
+                    }
+                "#,
+                        )
+                        .map_err(|e| format!("Failed to setup security: {}", e))?;
                 }
-            "#).map_err(|e| format!("Failed to setup security: {}", e))?;
+            }
         }
 
         // Development mode: Enable devtools (only if feature is available)
         #[cfg(all(debug_assertions, feature = "dev-tools"))]
         {
-            let window = _app
-                .get_webview_window("main")
-                .ok_or("Main window not found")?;
-            window.open_devtools();
+            if let Some(window) = _app.get_webview_window("main") {
+                window.open_devtools();
+            }
         }
 
         Ok(())

@@ -1,4 +1,5 @@
 import { Route, createBrowserRouter, createRoutesFromElements, RouterProvider } from "react-router-dom";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { AppLayout } from "./components/AppLayout";
 import { AppLayoutProvider } from "./contexts/AppLayoutContext";
 import { IndexingJobsProvider } from "./contexts/IndexingJobsContext";
@@ -9,6 +10,7 @@ import { Toaster } from "sonner";
 import { Studio } from "./components/routes/Studio";
 import { StudioEdit } from "./components/routes/StudioEdit";
 import { StudioLayout } from "./components/routes/Studio/Layout";
+import { QuickShell } from "./components/quick/QuickShell";
 
 // Security: Disable console and devtools in production
 if (process.env.NODE_ENV === "production") {
@@ -79,24 +81,47 @@ const router = createBrowserRouter(
   )
 );
 
+const currentWindowLabel = (() => {
+  try {
+    return getCurrentWebviewWindow().label;
+  } catch {
+    return "main";
+  }
+})();
+
+function AppToaster() {
+  return (
+    <Toaster
+      toastOptions={{
+        className: "bg-transparent dark:bg-[darkBg] dark:border-blueShadow",
+        style: { backgroundColor: "var(--toast-bg, white)" },
+        classNames: {
+          icon: "dark:!text-customWhite",
+          title: "dark:!text-customWhite",
+          description: "text-xs !text-gray-600 dark:!text-customGray",
+          actionButton: "!bg-blue-500 hover:!bg-blue-600 dark:hover:!bg-customBlue dark:!bg-blueShadow ",
+          cancelButton: "dark:!bg-darkBgMid dark:!text-customWhite",
+        },
+      }}
+    />
+  );
+}
+
 export default function App() {
+  if (currentWindowLabel === "quick") {
+    return (
+      <>
+        <QuickShell />
+        <AppToaster />
+      </>
+    );
+  }
+
   return (
     <IndexingJobsProvider>
       <AppLayoutProvider>
         <RouterProvider router={router} />
-        <Toaster
-          toastOptions={{
-            className: "bg-white dark:bg-darkBg dark:border-blueShadow",
-            style: { backgroundColor: "var(--toast-bg, white)" },
-            classNames: {
-              icon: "dark:!text-customWhite",
-              title: "dark:!text-customWhite",
-              description: "text-xs !text-gray-600 dark:!text-customGray",
-              actionButton: "!bg-blue-500 hover:!bg-blue-600 dark:hover:!bg-customBlue dark:!bg-blueShadow ",
-              cancelButton: "dark:!bg-darkBgMid dark:!text-customWhite",
-            },
-          }}
-        />
+        <AppToaster />
       </AppLayoutProvider>
     </IndexingJobsProvider>
   );

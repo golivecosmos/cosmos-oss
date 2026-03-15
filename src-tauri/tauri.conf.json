@@ -22,17 +22,8 @@
         "main-capability"
       ]
     },
-    "windows": [
-      {
-        "fullscreen": false,
-        "height": 800,
-        "resizable": true,
-        "title": "Cosmos",
-        "width": 1200,
-        "minWidth": 800,
-        "minHeight": 800
-      }
-    ]
+    "windows": [],
+    "macOSPrivateApi": true
   },
   "bundle": {
     "active": true,

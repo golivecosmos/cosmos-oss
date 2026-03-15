@@ -3,10 +3,12 @@
   "identifier": "main-capability",
   "description": "Default capability set for the main Cosmos desktop window.",
   "windows": [
-    "main"
+    "main",
+    "quick"
   ],
   "permissions": [
     "core:default",
+    "core:window:allow-start-dragging",
     "dialog:default",
     "opener:default",
     "opener:allow-open-path",

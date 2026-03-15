@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useLocation, useNavigate, Outlet } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { Onboarding } from "./onboarding/Onboarding";
@@ -14,7 +15,15 @@ import { Download, AlertCircle } from "lucide-react";
 import { Button } from "./ui/button";
 import { useAppLayout } from "../contexts/AppLayoutContext";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { useIndexingJobs } from "../contexts/IndexingJobsContext";
+
+interface FullAppHandoffPayload {
+  query?: string;
+  selectedPath?: string;
+  timestamp?: number;
+  semanticFileTypeFilter?: "all" | "image" | "video" | "audio" | "document";
+}
 
 export const AppLayout = () => {
   const location = useLocation();
@@ -48,6 +57,7 @@ export const AppLayout = () => {
     showAppStore,
     handleOpenAppStore,
     handleCloseAppStore,
+    handleSearch,
   } = useAppLayout();
   const { loadIndexedCount } = useIndexingJobs();
   // Check if settings modal should be shown based on query param
@@ -72,6 +82,50 @@ export const AppLayout = () => {
     handleCloseSettings();
     handleStartTour();
   };
+
+  useEffect(() => {
+    const handleHandoffPayload = (payload?: FullAppHandoffPayload) => {
+      if (!payload) return;
+
+      if (payload.query && payload.query.trim().length > 0) {
+        void handleSearch(payload.query, "text", {
+          semanticFileTypeFilter: payload.semanticFileTypeFilter ?? "all",
+        });
+        navigate("/");
+      }
+
+      if (payload.selectedPath) {
+        const params = new URLSearchParams();
+        params.set("path", payload.selectedPath);
+        params.set("returnTo", "/");
+        if (typeof payload.timestamp === "number" && !Number.isNaN(payload.timestamp)) {
+          params.set("timestamp", `${payload.timestamp}`);
+        }
+        navigate(`/studio/edit?${params.toString()}`);
+      }
+    };
+
+    let unlisten: (() => void) | undefined;
+
+    const setupListener = async () => {
+      unlisten = await listen<FullAppHandoffPayload>(
+        "quick_panel:open_full_app_payload",
+        (event) => handleHandoffPayload(event.payload)
+      );
+    };
+
+    setupListener();
+
+    void invoke<FullAppHandoffPayload | null>("consume_full_app_handoff")
+      .then((payload) => handleHandoffPayload(payload ?? undefined))
+      .catch(() => null);
+
+    return () => {
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  }, [handleSearch, navigate]);
 
   // Render model status indicator
   const renderModelStatus = () => {
