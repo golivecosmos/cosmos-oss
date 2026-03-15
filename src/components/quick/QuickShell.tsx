@@ -1,4 +1,4 @@
-import { FormEvent, KeyboardEvent, MouseEvent, startTransition, useDeferredValue, useEffect, useRef, useState } from "react";
+import { FormEvent, KeyboardEvent, MouseEvent, startTransition, useEffect, useRef, useState } from "react";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
@@ -20,7 +20,12 @@ const MAX_RECENT_QUERIES = 10;
 const MAX_RECENT_FILES = 20;
 const RESULT_LIMIT = 20;
 const COLLAPSED_WINDOW_SIZE = { width: 920, height: 128 };
-const EXPANDED_WINDOW_SIZE = { width: 1120, height: 700 };
+const EXPANDED_WINDOW_WIDTH = 1120;
+const EXPANDED_MIN_HEIGHT = 420;
+const EXPANDED_MAX_HEIGHT = 760;
+const EXPANDED_BASE_HEIGHT = 360;
+const EXPANDED_PER_RESULT_HEIGHT = 34;
+const EXPANDED_RESULT_COUNT_CAP = 10;
 const quickPanelWindow = getCurrentWindow();
 
 interface QuickSearchResult {
@@ -155,7 +160,6 @@ export function QuickShell() {
   const isHidePendingRef = useRef(false);
   const [isVisible, setIsVisible] = useState(false);
   const [query, setQuery] = useState("");
-  const deferredQuery = useDeferredValue(query);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [semanticFilter, setSemanticFilter] = useState<SemanticFileTypeFilter>("all");
   const [previewText, setPreviewText] = useState<string | null>(null);
@@ -167,14 +171,26 @@ export function QuickShell() {
   const results = (searchState.results as QuickSearchResult[]).slice(0, RESULT_LIMIT);
   const selectedResult = results[selectedIndex] ?? null;
   const selectedTimestamp = selectedResult ? resolveResultTimestamp(selectedResult) : undefined;
-  const isExpanded = searchState.isSearching || results.length > 0;
+  const isExpanded = query.trim().length > 0 || searchState.isSearching || results.length > 0;
+  const expandedResultCount = Math.min(results.length, EXPANDED_RESULT_COUNT_CAP);
+  const expandedHeight = Math.min(
+    EXPANDED_MAX_HEIGHT,
+    Math.max(
+      EXPANDED_MIN_HEIGHT,
+      EXPANDED_BASE_HEIGHT + expandedResultCount * EXPANDED_PER_RESULT_HEIGHT + (searchState.isSearching ? 48 : 0)
+    )
+  );
 
   useEffect(() => {
-    const target = isExpanded ? EXPANDED_WINDOW_SIZE : COLLAPSED_WINDOW_SIZE;
+    const target = isExpanded
+      ? { width: EXPANDED_WINDOW_WIDTH, height: expandedHeight }
+      : COLLAPSED_WINDOW_SIZE;
     void quickPanelWindow
       .setSize(new LogicalSize(target.width, target.height))
-      .catch(() => undefined);
-  }, [isExpanded]);
+      .catch((error) => {
+        console.error("Quick panel resize failed", error);
+      });
+  }, [expandedHeight, isExpanded]);
 
   const handleWindowDragStart = (event: MouseEvent<HTMLElement>) => {
     if (event.button !== 0) return;
@@ -231,20 +247,20 @@ export function QuickShell() {
   }, [pinnedActions]);
 
   useEffect(() => {
-    const timeout = setTimeout(() => {
-      const trimmed = deferredQuery.trim();
-      if (!trimmed) {
-        clearSearch();
-        return;
-      }
+    const trimmed = query.trim();
+    if (!trimmed) {
+      clearSearch();
+      return;
+    }
 
+    const timeout = window.setTimeout(() => {
       startTransition(() => {
         handleSearch(trimmed, "text", { semanticFileTypeFilter: semanticFilter });
       });
     }, 150);
 
-    return () => clearTimeout(timeout);
-  }, [clearSearch, deferredQuery, handleSearch, semanticFilter]);
+    return () => window.clearTimeout(timeout);
+  }, [clearSearch, handleSearch, query, semanticFilter]);
 
   useEffect(() => {
     setSelectedIndex(0);
@@ -454,6 +470,14 @@ export function QuickShell() {
     await handleSearch(trimmed, "text", { semanticFileTypeFilter: semanticFilter });
   };
 
+  const onQueryChange = (value: string) => {
+    setQuery(value);
+    if (!value.trim()) {
+      clearSearch();
+      setSelectedIndex(0);
+    }
+  };
+
   const onInputKeyDown = async (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "ArrowDown") {
       event.preventDefault();
@@ -602,7 +626,7 @@ export function QuickShell() {
               <Input
                 ref={inputRef}
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={(event) => onQueryChange(event.target.value)}
                 onKeyDown={onInputKeyDown}
                 placeholder="Search your files semantically..."
                 className="h-11 rounded-xl border-gray-200 bg-white pl-9 pr-3 dark:border-darkBgHighlight dark:bg-darkBg"
@@ -612,10 +636,10 @@ export function QuickShell() {
               value={semanticFilter}
               onValueChange={(value) => setSemanticFilter(value as SemanticFileTypeFilter)}
             >
-              <SelectTrigger className="h-11 w-36 rounded-xl">
+              <SelectTrigger className="h-11 w-36 rounded-xl border-gray-200 bg-white dark:border-darkBgHighlight dark:bg-white">
                 <SelectValue placeholder="All Files" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="border-gray-200 bg-white text-gray-900 dark:border-darkBgHighlight dark:bg-white dark:text-gray-900">
                 <SelectItem value="all">All Files</SelectItem>
                 <SelectItem value="image">Images</SelectItem>
                 <SelectItem value="video">Videos</SelectItem>

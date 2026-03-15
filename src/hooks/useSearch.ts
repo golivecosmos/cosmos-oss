@@ -37,15 +37,19 @@ export const useSearch = (): UseSearchReturn => {
   });
   // Initialize cache with 5 minute TTL and max 50 entries
   const cacheRef = useRef(new SearchCache(5 * 60 * 1000, 50));
+  const activeRequestIdRef = useRef(0);
 
   const handleSearch = useCallback(async (
     query: string,
     type: SearchType,
     options: SearchOptions = {}
   ): Promise<void> => {
+    const requestId = ++activeRequestIdRef.current;
+
     try {
       // Handle empty query (clear search)
       if (!query && type !== "visual") {
+        if (requestId !== activeRequestIdRef.current) return;
         setSearchState({
           query: "",
           results: [],
@@ -71,6 +75,7 @@ export const useSearch = (): UseSearchReturn => {
       if (type !== "visual") {
         const cachedResults = cacheRef.current.get(cacheKey);
         if (cachedResults) {
+          if (requestId !== activeRequestIdRef.current) return;
           setSearchState(prev => ({
             ...prev,
             results: cachedResults,
@@ -145,6 +150,7 @@ export const useSearch = (): UseSearchReturn => {
       }
 
       // Update state with results
+      if (requestId !== activeRequestIdRef.current) return;
       setSearchState(prev => ({
         ...prev,
         results: searchResults,
@@ -153,6 +159,7 @@ export const useSearch = (): UseSearchReturn => {
 
     } catch (error) {
       console.error("Search error:", error);
+      if (requestId !== activeRequestIdRef.current) return;
       setSearchState(prev => ({
         ...prev,
         results: [],
@@ -162,6 +169,7 @@ export const useSearch = (): UseSearchReturn => {
   }, []);
 
   const clearSearch = useCallback(() => {
+    activeRequestIdRef.current += 1;
     setSearchState({
       query: "",
       results: [],
