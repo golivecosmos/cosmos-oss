@@ -126,6 +126,10 @@ For public GitHub releases, use the secure release pipeline instead of uploading
 
 Prerequisites:
 - Developer ID Application certificate installed in Keychain.
+- Signing identity exported for the release command:
+  ```bash
+  export APPLE_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)"
+  ```
 - `xcrun notarytool` keychain profile configured:
   ```bash
   xcrun notarytool store-credentials "notarytool-profile" \
@@ -137,6 +141,8 @@ Prerequisites:
 
 Commands:
 ```bash
+export APPLE_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)"
+
 # Build + sign + notarize + security audit (no upload)
 pnpm release:production
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -27,6 +28,10 @@ const options = {
   config: "src-tauri/tauri.conf.production.json",
   notaryProfile: process.env.COSMOS_NOTARY_PROFILE || "notarytool-profile",
 };
+
+const envSigningIdentity =
+  process.env.COSMOS_APPLE_SIGNING_IDENTITY || process.env.APPLE_SIGNING_IDENTITY || "";
+let generatedConfigDir = null;
 
 for (let i = 0; i < args.length; i += 1) {
   const arg = args[i];
@@ -94,6 +99,10 @@ Options:
   --allow-unsigned         Allow ad-hoc/unsigned build output
   --allow-dirty            Allow uncommitted changes
   --allow-non-main         Allow running outside main/master
+
+Environment:
+  APPLE_SIGNING_IDENTITY or COSMOS_APPLE_SIGNING_IDENTITY
+                           Developer ID Application identity used only at release time
 `);
     process.exit(0);
   }
@@ -101,6 +110,12 @@ Options:
 
 function log(message) {
   console.log(`[release] ${message}`);
+}
+
+function cleanupGeneratedConfig() {
+  if (!generatedConfigDir) return;
+  fs.rmSync(generatedConfigDir, { recursive: true, force: true });
+  generatedConfigDir = null;
 }
 
 function run(command, commandArgs, opts = {}) {
@@ -134,10 +149,37 @@ function assertBranchAndCleanState() {
   }
 }
 
+function resolveBuildConfig() {
+  const configPath = path.resolve(repoRoot, options.config);
+  const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  const configuredIdentity = config?.bundle?.macOS?.signingIdentity || "";
+
+  if (!envSigningIdentity) {
+    if (!configuredIdentity && !options.allowUnsigned) {
+      throw new Error(
+        "No macOS signing identity configured. Set APPLE_SIGNING_IDENTITY or COSMOS_APPLE_SIGNING_IDENTITY for release builds, or use --allow-unsigned for internal testing.",
+      );
+    }
+    return options.config;
+  }
+
+  config.bundle ??= {};
+  config.bundle.macOS ??= {};
+  config.bundle.macOS.signingIdentity = envSigningIdentity;
+
+  generatedConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), "cosmos-release-config-"));
+  const generatedConfigPath = path.join(generatedConfigDir, path.basename(configPath));
+  fs.writeFileSync(generatedConfigPath, `${JSON.stringify(config, null, 2)}\n`);
+
+  log(`Using signing identity from environment for ${options.config}`);
+  return generatedConfigPath;
+}
+
 function buildRelease() {
   log("Building frontend and Tauri production bundle...");
+  const buildConfig = resolveBuildConfig();
   run("pnpm", ["run", "build"]);
-  run("pnpm", ["run", "tauri", "build", "--config", options.config]);
+  run("pnpm", ["run", "tauri", "build", "--config", buildConfig]);
 }
 
 function listApps() {
@@ -298,4 +340,6 @@ try {
 } catch (error) {
   console.error(`[release] ERROR: ${error.message}`);
   process.exit(1);
+} finally {
+  cleanupGeneratedConfig();
 }
