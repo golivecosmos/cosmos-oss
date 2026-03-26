@@ -141,7 +141,7 @@ Commands:
 pnpm release:production
 
 # Build + sign + notarize + security audit + upload artifacts to an existing/new GitHub release tag
-pnpm release:production:upload -- --tag v0.1.0 --repo golivecosmos/cosmos-oss
+pnpm release:production:upload -- --tag v0.1.1 --repo golivecosmos/cosmos-oss
 ```
 
 Security guarantees in this pipeline:
