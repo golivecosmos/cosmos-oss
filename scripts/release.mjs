@@ -303,7 +303,29 @@ function uploadArtifacts(artifacts) {
   if (!options.upload) return;
   ensureGhReady();
   ensureReleaseExists();
-  run("gh", ["release", "upload", options.tag, ...artifacts, "--repo", options.repo, "--clobber"]);
+  const uploadableArtifacts = artifacts.filter(
+    (artifact) => fs.existsSync(artifact) && fs.statSync(artifact).isFile(),
+  );
+
+  artifacts
+    .filter((artifact) => !uploadableArtifacts.includes(artifact))
+    .forEach((artifact) => {
+      log(`Skipping non-file artifact during GitHub upload: ${artifact}`);
+    });
+
+  if (uploadableArtifacts.length === 0) {
+    throw new Error("No file artifacts available to upload.");
+  }
+
+  run("gh", [
+    "release",
+    "upload",
+    options.tag,
+    ...uploadableArtifacts,
+    "--repo",
+    options.repo,
+    "--clobber",
+  ]);
 }
 
 function main() {
