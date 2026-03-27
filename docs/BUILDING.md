@@ -13,12 +13,7 @@ This guide explains how to reproduce the development environment, download the o
 2. Download the latest macOS `.dmg`.
 3. Install and launch Cosmos.
 
-### Option 2: Packaged download from the Cosmos website
-1. Open the Cosmos website download page: [app.meetcosmos.com/download](https://app.meetcosmos.com/download).
-2. Download the package for your OS.
-3. Install and launch Cosmos.
-
-### Option 3: Build from source (this document)
+### Option 2: Build from source (this document)
 Continue with the steps below.
 
 ## 1. Common prerequisites
