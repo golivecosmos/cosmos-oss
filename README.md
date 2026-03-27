@@ -161,7 +161,7 @@ Detailed walkthroughs live in [`docs/BUILDING.md`](docs/BUILDING.md). At a glanc
 pnpm release:production
 
 # Same, then upload artifacts to a GitHub release tag
-pnpm release:production:upload -- --tag v0.1.5 --repo golivecosmos/cosmos-oss
+pnpm release:production:upload -- --tag v0.1.6 --repo golivecosmos/cosmos-oss
 
 # Windows MSI (requires the Windows build tools shell)
 pnpm tauri build --target x86_64-pc-windows-msvc
