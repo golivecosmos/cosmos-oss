@@ -34,6 +34,7 @@ const options = {
 const envSigningIdentity =
   process.env.COSMOS_APPLE_SIGNING_IDENTITY || process.env.APPLE_SIGNING_IDENTITY || "";
 let generatedConfigDir = null;
+let generatedUploadDir = null;
 
 for (let i = 0; i < args.length; i += 1) {
   const arg = args[i];
@@ -180,10 +181,20 @@ function updaterPlatformKey() {
   return `${osName}-${archMap[process.arch] || process.arch}`;
 }
 
+function normalizedReleaseAssetName(filePath) {
+  return path.basename(filePath).replaceAll(" ", ".");
+}
+
 function cleanupGeneratedConfig() {
   if (!generatedConfigDir) return;
   fs.rmSync(generatedConfigDir, { recursive: true, force: true });
   generatedConfigDir = null;
+}
+
+function cleanupGeneratedUploadDir() {
+  if (!generatedUploadDir) return;
+  fs.rmSync(generatedUploadDir, { recursive: true, force: true });
+  generatedUploadDir = null;
 }
 
 function run(command, commandArgs, opts = {}) {
@@ -409,7 +420,7 @@ function createLatestJson(updaterArchives, updaterSignatures) {
 
   const signature = fs.readFileSync(signaturePath, "utf8").trim();
   const latestJsonPath = path.join(bundleRoot, "latest.json");
-  const encodedAssetName = encodeURIComponent(path.basename(archivePath));
+  const encodedAssetName = encodeURIComponent(normalizedReleaseAssetName(archivePath));
   const updateManifest = {
     version: pkg.version,
     notes: `Cosmos OSS ${pkg.version}`,
@@ -452,6 +463,12 @@ function uploadArtifacts(artifacts) {
   const uploadableArtifacts = artifacts.filter(
     (artifact) => fs.existsSync(artifact) && fs.statSync(artifact).isFile(),
   );
+  generatedUploadDir = fs.mkdtempSync(path.join(os.tmpdir(), "cosmos-release-upload-"));
+  const preparedArtifacts = uploadableArtifacts.map((artifact) => {
+    const normalizedPath = path.join(generatedUploadDir, normalizedReleaseAssetName(artifact));
+    fs.copyFileSync(artifact, normalizedPath);
+    return normalizedPath;
+  });
 
   artifacts
     .filter((artifact) => !uploadableArtifacts.includes(artifact))
@@ -467,7 +484,7 @@ function uploadArtifacts(artifacts) {
     "release",
     "upload",
     options.tag,
-    ...uploadableArtifacts,
+    ...preparedArtifacts,
     "--repo",
     options.repo,
     "--clobber",
@@ -513,4 +530,5 @@ try {
   process.exit(1);
 } finally {
   cleanupGeneratedConfig();
+  cleanupGeneratedUploadDir();
 }

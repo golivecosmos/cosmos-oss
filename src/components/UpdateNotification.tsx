@@ -67,6 +67,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
       console.warn('Update installation completed but app did not restart');
       toast.dismiss("installing")
     } catch (error) {
+      toast.dismiss("installing")
       console.error('Update installation failed:', error);
       renderUpdateToast({
         error: error.message
@@ -107,12 +108,12 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
                 <button onClick={() => {
                   setIsInstalling(true)
                   toast.dismiss(update.updateInfo.version)
-                  handleInstallUpdate(update)
                   toast.loading("Installing...", {
                     id: "installing",
                     duration: Infinity,
                   }
                   )
+                  handleInstallUpdate(update)
                 }
                 }
                   className="p-1 rounded w-32 h-6 text-white bg-blue-500 dark:bg-[rgb(117,135,163)] hover:bg-blue-600 dark:hover:bg-[rgb(181,204,216)]"> Install Now </button>
