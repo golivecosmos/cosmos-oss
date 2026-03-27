@@ -122,7 +122,13 @@ pnpm tauri build --target x86_64-unknown-linux-gnu
 Install platform packages such as `appimagetool` if Tauri requests them.
 
 ## 5. Secure macOS release (signed + notarized + audited)
-For public GitHub releases, use the secure release pipeline instead of uploading ad-hoc DMGs.
+For public macOS releases, use the secure release pipeline instead of uploading ad-hoc DMGs.
+
+Current distribution status:
+- Public packaged distribution is GitHub Releases only.
+- The only published package today is the macOS DMG.
+- There is no separate download website or hosted updater feed yet.
+- Windows and Linux users should build from source until public packages exist for those platforms.
 
 Prerequisites:
 - Developer ID Application certificate installed in Keychain.
@@ -175,7 +181,9 @@ Allowlist file: `.release-audit-allowlist` (keep minimal; every exception weaken
 Whenever you change database schemas or long-running commands, please add or update tests in `src-tauri/src/services/tests/` and describe manual QA steps in your PR.
 
 ## 8. Updater & signing
-The updater plugin is enabled, but OSS configs ship with empty updater settings (`"plugins.updater.endpoints": []`, `"plugins.updater.pubkey": ""`), so update checks are effectively disabled until you provide your own endpoint(s) and minisign key. macOS signing/notarization can be automated via `apple-id` secrets in CI.
+The updater plugin is enabled, but OSS configs ship with empty updater settings (`"plugins.updater.endpoints": []`, `"plugins.updater.pubkey": ""`), so update checks are effectively disabled until you provide your own endpoint(s) and minisign key.
+
+In other words: this repo does not currently ship a hosted updater service. Public distribution is the notarized DMG uploaded to GitHub Releases.
 
 ## 9. Troubleshooting
 | Symptom | Fix |

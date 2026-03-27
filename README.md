@@ -25,7 +25,13 @@ Cosmos OSS is a cross-platform desktop application for local-first, AI-assisted 
 | `docs/THIRD_PARTY_NOTICES.md` | Third-party binary/model attribution guidance |
 | `scripts/` | *(intentionally empty—release scripts lived in the private repo)* |
 
-## Run Cosmos (3 options)
+## Run Cosmos
+
+Today there are only two supported ways to use Cosmos OSS:
+- build it from source
+- download the published macOS DMG from GitHub Releases
+
+There is no separate download website, hosted updater feed, or external distribution channel yet.
 
 ### 1. Download the DMG from GitHub
 1. Open [GitHub Releases](https://github.com/cosmos-oss/cosmos-oss/releases).
@@ -33,13 +39,7 @@ Cosmos OSS is a cross-platform desktop application for local-first, AI-assisted 
 3. Drag Cosmos into `Applications`, then launch it.
 4. On first launch, use **Quick Menu → Manage Models** to download models.
 
-### 2. Download the packaged app from our website
-1. Open the Cosmos download page: [app.meetcosmos.com/download](https://app.meetcosmos.com/download).
-2. Choose the package for your OS (`.dmg`, `.msi`, AppImage/deb/rpm as available).
-3. Install and launch the app.
-4. On first launch, use **Quick Menu → Manage Models** to download models.
-
-### 3. Build from source
+### 2. Build from source
 Use this path if you want to develop, customize, or run unreleased code.
 
 ## Prerequisites (build from source)
@@ -49,7 +49,7 @@ Use this path if you want to develop, customize, or run unreleased code.
 - **Poppler `pdftotext`** on `$PATH` if you want PDF text indexing.
 - **Git LFS** if you plan to check in large sample assets.
 
-## Quick start (option 3: build from source)
+## Quick start (option 2: build from source)
 ```bash
 # 1. Clone the public repo
 git clone https://github.com/cosmos-oss/cosmos-oss.git
@@ -94,7 +94,9 @@ pnpm tauri build --target x86_64-pc-windows-msvc
 # Linux AppImage / deb
 pnpm tauri build --target x86_64-unknown-linux-gnu
 ```
-The default bundle identifier is `com.cosmos.oss`. Customize signing identities/secrets by editing `src-tauri/tauri.conf*.json`.
+At the moment, only the macOS DMG is published publicly, and it is published on GitHub Releases. Windows and Linux users should build from source until hosted packages exist for those platforms.
+
+The default bundle identifier is `com.cosmos.oss`. The release flow now reads the macOS signing identity from `APPLE_SIGNING_IDENTITY` instead of hardcoding it in `src-tauri/tauri.conf*.json`.
 
 ## Model registry configuration
 Cosmos ships with Hugging Face URLs, but every model path can be overridden without recompiling:
