@@ -122,7 +122,8 @@ For public macOS releases, use the secure release pipeline instead of uploading 
 Current distribution status:
 - Public packaged distribution is GitHub Releases only.
 - The only published package today is the macOS DMG.
-- There is no separate download website or hosted updater feed yet.
+- There is no separate download website.
+- Official macOS releases built with `pnpm release:production` or `pnpm release:production:upload` use GitHub Releases as their updater feed.
 - Windows and Linux users should build from source until public packages exist for those platforms.
 
 Prerequisites:
@@ -131,6 +132,8 @@ Prerequisites:
   ```bash
   export APPLE_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)"
   ```
+- Tauri updater signing key available locally (the official setup uses `~/.tauri/desktop-docs.key` and `~/.tauri/desktop-docs.key.pub`, or you can override with `TAURI_SIGNING_PRIVATE_KEY` and `COSMOS_TAURI_UPDATER_PUBKEY`).
+- If that updater key is password-protected, export `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (or `COSMOS_TAURI_SIGNING_PRIVATE_KEY_PASSWORD`) before running the release script.
 - `xcrun notarytool` keychain profile configured:
   ```bash
   xcrun notarytool store-credentials "notarytool-profile" \
@@ -148,11 +151,12 @@ export APPLE_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)"
 pnpm release:production
 
 # Build + sign + notarize + security audit + upload artifacts to an existing/new GitHub release tag
-pnpm release:production:upload -- --tag v0.1.4 --repo golivecosmos/cosmos-oss
+pnpm release:production:upload -- --tag v0.1.5 --repo golivecosmos/cosmos-oss
 ```
 
 Security guarantees in this pipeline:
 - Refuses unsigned/ad-hoc app bundles by default.
+- Generates signed updater artifacts (`.app.tar.gz` + `.sig`) and uploads `latest.json` for GitHub Releases.
 - Runs notarization + stapling for DMGs.
 - Runs `scripts/release-security-audit.mjs` before upload:
   - scans tracked source for high-risk secret patterns,
@@ -176,9 +180,13 @@ Allowlist file: `.release-audit-allowlist` (keep minimal; every exception weaken
 Whenever you change database schemas or long-running commands, please add or update tests in `src-tauri/src/services/tests/` and describe manual QA steps in your PR.
 
 ## 8. Updater & signing
-The updater plugin is enabled, but OSS configs ship with empty updater settings (`"plugins.updater.endpoints": []`, `"plugins.updater.pubkey": ""`), so update checks are effectively disabled until you provide your own endpoint(s) and minisign key.
+Official macOS release-script builds inject updater settings at build time:
+- `createUpdaterArtifacts: true`
+- updater public key for minisign verification
+- GitHub Releases `latest.json` endpoint
+- signed `.app.tar.gz` updater bundle plus matching `.sig`
 
-In other words: this repo does not currently ship a hosted updater service. Public distribution is the notarized DMG uploaded to GitHub Releases.
+The checked-in OSS Tauri configs remain neutral, so ad-hoc local builds do not automatically point at the public updater feed. Use the release script for official distributable builds.
 
 ## 9. Troubleshooting
 | Symptom | Fix |

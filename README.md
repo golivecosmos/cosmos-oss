@@ -106,7 +106,7 @@ Today there are only two supported ways to use Cosmos OSS:
 - build it from source
 - download the published macOS DMG from GitHub Releases
 
-There is no separate download website, hosted updater feed, or external distribution channel yet.
+There is no separate download website or external distribution channel yet. Official macOS builds are distributed on GitHub Releases, and official release-script builds can check that same GitHub release feed for in-app updates.
 
 ### 1. Download the DMG from GitHub
 1. Open [GitHub Releases](https://github.com/cosmos-oss/cosmos-oss/releases).
@@ -161,7 +161,7 @@ Detailed walkthroughs live in [`docs/BUILDING.md`](docs/BUILDING.md). At a glanc
 pnpm release:production
 
 # Same, then upload artifacts to a GitHub release tag
-pnpm release:production:upload -- --tag v0.1.4 --repo golivecosmos/cosmos-oss
+pnpm release:production:upload -- --tag v0.1.5 --repo golivecosmos/cosmos-oss
 
 # Windows MSI (requires the Windows build tools shell)
 pnpm tauri build --target x86_64-pc-windows-msvc
@@ -169,7 +169,7 @@ pnpm tauri build --target x86_64-pc-windows-msvc
 # Linux AppImage / deb
 pnpm tauri build --target x86_64-unknown-linux-gnu
 ```
-At the moment, only the macOS DMG is published publicly, and it is published on GitHub Releases. Windows and Linux users should build from source until hosted packages exist for those platforms.
+At the moment, only the macOS DMG is published publicly, and it is published on GitHub Releases. Official macOS release-script builds also use GitHub Releases as their in-app update feed. Windows and Linux users should build from source until hosted packages exist for those platforms.
 
 The default bundle identifier is `com.cosmos.oss`. The release flow now reads the macOS signing identity from `APPLE_SIGNING_IDENTITY` instead of hardcoding it in `src-tauri/tauri.conf*.json`.
 
@@ -200,7 +200,7 @@ If you are upgrading from an older local database, reindex your files after pull
 ## Privacy & telemetry stance
 - No analytics SDKs, crash reporters, or remote logging remain in the tree.
 - Error reports stay local; the UI simply packages logs into a zip that you can attach to an issue.
-- Network access occurs **only** when you opt-in (model downloads, Gemini API usage, OS-level update checks if you re-enable them).
+- Network access occurs **only** when you opt-in (model downloads, Gemini API usage, and OS-level update checks/downloads on official macOS release builds).
 
 ## Roadmap highlights
 - **Tauri 2 migration** (multi-window, sidecar improvements) — see [`docs/ROADMAP.md`](docs/ROADMAP.md).

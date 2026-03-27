@@ -11,6 +11,8 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..");
 const bundleRoot = path.join(repoRoot, "src-tauri", "target", "release", "bundle");
 const packageJsonPath = path.join(repoRoot, "package.json");
+const defaultUpdaterPrivateKeyPath = path.join(os.homedir(), ".tauri", "desktop-docs.key");
+const defaultUpdaterPublicKeyPath = `${defaultUpdaterPrivateKeyPath}.pub`;
 
 const args = process.argv.slice(2);
 const pkg = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
@@ -103,6 +105,12 @@ Options:
 Environment:
   APPLE_SIGNING_IDENTITY or COSMOS_APPLE_SIGNING_IDENTITY
                            Developer ID Application identity used only at release time
+  TAURI_SIGNING_PRIVATE_KEY or COSMOS_TAURI_SIGNING_PRIVATE_KEY
+                           Tauri updater private key path or inline key content
+  TAURI_SIGNING_PRIVATE_KEY_PASSWORD or COSMOS_TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+                           Optional password for the updater private key
+  TAURI_SIGNING_PUBLIC_KEY or COSMOS_TAURI_UPDATER_PUBKEY
+                           Updater public key content (falls back to ~/.tauri/desktop-docs.key.pub)
 `);
     process.exit(0);
   }
@@ -110,6 +118,66 @@ Environment:
 
 function log(message) {
   console.log(`[release] ${message}`);
+}
+
+function resolveUpdaterEndpoint() {
+  return (
+    process.env.COSMOS_UPDATER_ENDPOINT ||
+    `https://github.com/${options.repo}/releases/latest/download/latest.json`
+  );
+}
+
+function resolveUpdaterPrivateKey() {
+  const configuredKey =
+    process.env.COSMOS_TAURI_SIGNING_PRIVATE_KEY || process.env.TAURI_SIGNING_PRIVATE_KEY || "";
+
+  if (configuredKey) {
+    return configuredKey;
+  }
+
+  if (fs.existsSync(defaultUpdaterPrivateKeyPath)) {
+    return defaultUpdaterPrivateKeyPath;
+  }
+
+  throw new Error(
+    "No Tauri updater private key configured. Set TAURI_SIGNING_PRIVATE_KEY or COSMOS_TAURI_SIGNING_PRIVATE_KEY, or place a key at ~/.tauri/desktop-docs.key.",
+  );
+}
+
+function resolveUpdaterPrivateKeyPassword() {
+  const configuredPassword =
+    process.env.COSMOS_TAURI_SIGNING_PRIVATE_KEY_PASSWORD ||
+    process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD;
+
+  return configuredPassword ?? null;
+}
+
+function resolveUpdaterPublicKey() {
+  const configuredPubkey =
+    process.env.COSMOS_TAURI_UPDATER_PUBKEY || process.env.TAURI_SIGNING_PUBLIC_KEY || "";
+
+  if (configuredPubkey) {
+    return configuredPubkey.trim();
+  }
+
+  if (fs.existsSync(defaultUpdaterPublicKeyPath)) {
+    return fs.readFileSync(defaultUpdaterPublicKeyPath, "utf8").trim();
+  }
+
+  throw new Error(
+    "No Tauri updater public key configured. Set COSMOS_TAURI_UPDATER_PUBKEY or TAURI_SIGNING_PUBLIC_KEY, or place a public key at ~/.tauri/desktop-docs.key.pub.",
+  );
+}
+
+function updaterPlatformKey() {
+  const osName = process.platform === "darwin" ? "darwin" : process.platform;
+  const archMap = {
+    x64: "x86_64",
+    arm64: "aarch64",
+    ia32: "i686",
+    arm: "armv7",
+  };
+  return `${osName}-${archMap[process.arch] || process.arch}`;
 }
 
 function cleanupGeneratedConfig() {
@@ -123,7 +191,7 @@ function run(command, commandArgs, opts = {}) {
     cwd: repoRoot,
     stdio: opts.capture ? "pipe" : "inherit",
     encoding: "utf8",
-    env: process.env,
+    env: opts.env || process.env,
   });
 
   if (opts.allowFailure) return result;
@@ -157,6 +225,8 @@ function resolveBuildConfig() {
   const availableFfmpegResources = ffmpegResourcePaths.filter((resourcePath) =>
     fs.existsSync(path.join(repoRoot, "src-tauri", resourcePath)),
   );
+  const updaterPublicKey = resolveUpdaterPublicKey();
+  const updaterEndpoint = resolveUpdaterEndpoint();
 
   if (!envSigningIdentity) {
     if (!configuredIdentity && !options.allowUnsigned) {
@@ -164,32 +234,49 @@ function resolveBuildConfig() {
         "No macOS signing identity configured. Set APPLE_SIGNING_IDENTITY or COSMOS_APPLE_SIGNING_IDENTITY for release builds, or use --allow-unsigned for internal testing.",
       );
     }
-    return options.config;
   }
 
   config.bundle ??= {};
+  config.bundle.createUpdaterArtifacts = true;
   config.bundle.macOS ??= {};
-  config.bundle.macOS.signingIdentity = envSigningIdentity;
+  if (envSigningIdentity) {
+    config.bundle.macOS.signingIdentity = envSigningIdentity;
+  }
   config.bundle.resources = Array.from(
     new Set([...(config.bundle.resources || []), ...availableFfmpegResources]),
   );
+  config.plugins ??= {};
+  config.plugins.updater ??= {};
+  config.plugins.updater.pubkey = updaterPublicKey;
+  config.plugins.updater.endpoints = [updaterEndpoint];
 
   generatedConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), "cosmos-release-config-"));
   const generatedConfigPath = path.join(generatedConfigDir, path.basename(configPath));
   fs.writeFileSync(generatedConfigPath, `${JSON.stringify(config, null, 2)}\n`);
 
-  log(`Using signing identity from environment for ${options.config}`);
+  if (envSigningIdentity) {
+    log(`Using signing identity from environment for ${options.config}`);
+  }
   if (availableFfmpegResources.length > 0) {
     log(`Bundling FFmpeg resources for release: ${availableFfmpegResources.join(", ")}`);
   }
+  log(`Configuring updater endpoint: ${updaterEndpoint}`);
   return generatedConfigPath;
 }
 
 function buildRelease() {
   log("Building frontend and Tauri production bundle...");
   const buildConfig = resolveBuildConfig();
+  const buildEnv = {
+    ...process.env,
+    TAURI_SIGNING_PRIVATE_KEY: resolveUpdaterPrivateKey(),
+  };
+  const updaterPrivateKeyPassword = resolveUpdaterPrivateKeyPassword();
+  if (updaterPrivateKeyPassword !== null) {
+    buildEnv.TAURI_SIGNING_PRIVATE_KEY_PASSWORD = updaterPrivateKeyPassword;
+  }
   run("pnpm", ["run", "build"]);
-  run("pnpm", ["run", "tauri", "build", "--config", buildConfig]);
+  run("pnpm", ["run", "tauri", "build", "--config", buildConfig], { env: buildEnv });
 }
 
 function listApps() {
@@ -208,6 +295,24 @@ function listDmgs() {
     .readdirSync(dmgDir)
     .filter((name) => name.endsWith(".dmg"))
     .map((name) => path.join(dmgDir, name));
+}
+
+function listUpdaterArchives() {
+  const macosDir = path.join(bundleRoot, "macos");
+  if (!fs.existsSync(macosDir)) return [];
+  return fs
+    .readdirSync(macosDir)
+    .filter((name) => name.endsWith(".app.tar.gz"))
+    .map((name) => path.join(macosDir, name));
+}
+
+function listUpdaterSignatures() {
+  const macosDir = path.join(bundleRoot, "macos");
+  if (!fs.existsSync(macosDir)) return [];
+  return fs
+    .readdirSync(macosDir)
+    .filter((name) => name.endsWith(".app.tar.gz.sig"))
+    .map((name) => path.join(macosDir, name));
 }
 
 function createDmgFromApp(appPath) {
@@ -291,6 +396,37 @@ function runSecurityAudit(artifacts) {
   run("node", commandArgs);
 }
 
+function createLatestJson(updaterArchives, updaterSignatures) {
+  if (updaterArchives.length === 0 || updaterSignatures.length === 0) {
+    throw new Error("Updater artifacts are missing. Expected a .app.tar.gz and matching .sig file.");
+  }
+
+  const archivePath = updaterArchives[0];
+  const signaturePath = updaterSignatures.find((candidate) => candidate === `${archivePath}.sig`);
+  if (!signaturePath) {
+    throw new Error(`No updater signature found for ${archivePath}`);
+  }
+
+  const signature = fs.readFileSync(signaturePath, "utf8").trim();
+  const latestJsonPath = path.join(bundleRoot, "latest.json");
+  const encodedAssetName = encodeURIComponent(path.basename(archivePath));
+  const updateManifest = {
+    version: pkg.version,
+    notes: `Cosmos OSS ${pkg.version}`,
+    pub_date: new Date().toISOString(),
+    platforms: {
+      [updaterPlatformKey()]: {
+        signature,
+        url: `https://github.com/${options.repo}/releases/download/${options.tag}/${encodedAssetName}`,
+      },
+    },
+  };
+
+  fs.writeFileSync(latestJsonPath, `${JSON.stringify(updateManifest, null, 2)}\n`);
+  log(`Generated updater manifest: ${latestJsonPath}`);
+  return latestJsonPath;
+}
+
 function ensureGhReady() {
   run("gh", ["--version"], { allowFailure: false });
   const auth = run("gh", ["auth", "status"], { allowFailure: true, capture: true });
@@ -356,10 +492,13 @@ function main() {
   if (dmgs.length === 0) {
     dmgs = [createDmgFromApp(apps[0])];
   }
+  const updaterArchives = listUpdaterArchives();
+  const updaterSignatures = listUpdaterSignatures();
+  const latestJson = createLatestJson(updaterArchives, updaterSignatures);
 
   notarizeDmgs(dmgs);
 
-  const artifacts = [...apps, ...dmgs];
+  const artifacts = [...apps, ...dmgs, ...updaterArchives, ...updaterSignatures, latestJson];
   runSecurityAudit(artifacts);
   uploadArtifacts(artifacts);
 
