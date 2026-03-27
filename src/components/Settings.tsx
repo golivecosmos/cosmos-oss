@@ -1154,14 +1154,14 @@ export function Settings({ isOpen, onClose, onRestartTour, modelDownloadState, o
                                   {modelDownloadState.state === 'ready' && 'Models Ready'}
                                   {modelDownloadState.state === 'checking' && 'Checking Models'}
                                   {modelDownloadState.state === 'downloading' && 'Downloading Models'}
-                                  {modelDownloadState.state === 'installing' && 'Installing Models'}
+                                  {modelDownloadState.state === 'installing' && 'Loading Models'}
                                   {modelDownloadState.state === 'failed' && 'Setup Failed'}
                                 </h4>
                                 <p className="text-sm dark:text-customGray text-gray-600">
                                   {modelDownloadState.state === 'ready' && 'All AI models are loaded and ready for use'}
                                   {modelDownloadState.state === 'checking' && 'Verifying model availability...'}
                                   {modelDownloadState.state === 'downloading' && 'Downloading required AI models for search...'}
-                                  {modelDownloadState.state === 'installing' && 'Finalizing AI model setup...'}
+                                  {modelDownloadState.state === 'installing' && 'Download complete. Finalizing AI model setup...'}
                                   {modelDownloadState.state === 'failed' && (modelDownloadState.error || 'Failed to setup AI models')}
                                 </p>
                               </div>

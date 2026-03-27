@@ -344,18 +344,24 @@ export const AppLayoutProvider: React.FC<AppLayoutProviderProps> = ({ children }
 
               // Average progress across all files
               const averageProgress = totalProgress / actualTotalFiles;
+              const completedFiles = fileNames.filter(
+                (name) => fileProgressRef.current[name] === 100
+              ).length;
+              const allFilesCompleted =
+                completedFiles >= actualTotalFiles && actualTotalFiles > 0;
 
               // Smooth progress transitions - only update if there's a meaningful change
               const progressDiff = Math.abs(averageProgress - prev.progress);
               const finalProgress = progressDiff > 0.5 ? averageProgress : prev.progress;
-
-              const newFilesCompleted = progress.status === "Completed" ? prev.filesCompleted + 1 : prev.filesCompleted;
+              const visibleProgress = allFilesCompleted
+                ? 100
+                : Math.min(finalProgress, 99);
 
               return {
                 ...prev,
-                state: progress.status === "Completed" ? "installing" : "downloading",
-                progress: Math.round(finalProgress * 10) / 10, // Round to 1 decimal place for smoothness
-                filesCompleted: newFilesCompleted,
+                state: allFilesCompleted ? "installing" : "downloading",
+                progress: Math.round(visibleProgress * 10) / 10, // Round to 1 decimal place for smoothness
+                filesCompleted: completedFiles,
                 totalFiles: actualTotalFiles,
               };
             });
@@ -601,7 +607,7 @@ export const AppLayoutProvider: React.FC<AppLayoutProviderProps> = ({ children }
       setModelDownload((prev) => ({
         ...prev,
         state: "installing",
-        progress: 95,
+        progress: 100,
       }));
 
       // Reload models

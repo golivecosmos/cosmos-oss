@@ -156,6 +156,8 @@ export const AppLayout = () => {
         case 'installing':
           return {
             icon: Download,
+            title: 'Loading AI Models',
+            message: 'Download complete. Finalizing model setup...',
             bg: 'bg-blue-50 dark:bg-customBlue',
             border: 'border-blue-300 dark:border-blueShadow',
             text: "text-blue-600 dark:text-blueShadow",
