@@ -52,6 +52,33 @@ lazy_static::lazy_static! {
 }
 
 impl DownloadService {
+    fn is_non_empty_file(path: &PathBuf) -> bool {
+        path.metadata().map(|metadata| metadata.is_file() && metadata.len() > 0).unwrap_or(false)
+    }
+
+    fn is_whisper_model_file(model: &ModelFile) -> bool {
+        model.destination_path.to_string_lossy().contains("whisper-base")
+    }
+
+    fn set_whisper_download_status(status: WhisperStatus) {
+        if let Ok(mut state) = WHISPER_DOWNLOAD_STATE.lock() {
+            *state = status;
+        }
+    }
+
+    fn whisper_files_ready() -> Result<bool> {
+        let whisper_dir = Self::get_whisper_model_path()?;
+        let model_file = whisper_dir.join("model.safetensors");
+        let config_file = whisper_dir.join("config.json");
+        let tokenizer_file = whisper_dir.join("tokenizer.json");
+
+        Ok(
+            Self::is_non_empty_file(&model_file)
+                && Self::is_non_empty_file(&config_file)
+                && Self::is_non_empty_file(&tokenizer_file),
+        )
+    }
+
     pub fn new() -> Self {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(300)) // 5 minute timeout
@@ -116,7 +143,7 @@ impl DownloadService {
             // **Text model files - pulled from the configured registry (defaults to Hugging Face)**
             ModelFile {
                 name: "nomic-text-model.onnx".to_string(),
-                url: build_url(&text_slug, "model.onnx"),
+                url: build_url(&text_slug, "onnx/model.onnx"),
                 destination_path: text_onnx_dir.join("model.onnx"),
             },
             ModelFile {
@@ -142,7 +169,7 @@ impl DownloadService {
             // **Vision model files - same registry**
             ModelFile {
                 name: "nomic-vision-model.onnx".to_string(),
-                url: build_url(&vision_slug, "model.onnx"),
+                url: build_url(&vision_slug, "onnx/model.onnx"),
                 destination_path: vision_onnx_dir.join("model.onnx"),
             },
             ModelFile {
@@ -193,28 +220,25 @@ impl DownloadService {
         if let Ok(state) = WHISPER_DOWNLOAD_STATE.lock() {
             match *state {
                 WhisperStatus::Downloading => return WhisperStatus::Downloading,
-                WhisperStatus::Failed(ref msg) => return WhisperStatus::Failed(msg.clone()),
+                WhisperStatus::Failed(ref msg) => {
+                    if matches!(Self::whisper_files_ready(), Ok(true)) {
+                        return WhisperStatus::Ready;
+                    }
+                    return WhisperStatus::Failed(msg.clone());
+                }
                 _ => {}
             }
         }
 
         // Check file availability
-        match Self::get_whisper_model_path() {
-            Ok(whisper_dir) => {
-                let model_file = whisper_dir.join("model.safetensors");
-                let config_file = whisper_dir.join("config.json");
-                let tokenizer_file = whisper_dir.join("tokenizer.json");
-
-                let files_exist =
-                    model_file.exists() && config_file.exists() && tokenizer_file.exists();
-
-                if files_exist {
-                    app_log_debug!("🎤 Whisper model files available");
-                    WhisperStatus::Ready
-                } else {
-                    app_log_debug!("🎤 Whisper model files missing");
-                    WhisperStatus::NotAvailable
-                }
+        match Self::whisper_files_ready() {
+            Ok(true) => {
+                app_log_debug!("🎤 Whisper model files available");
+                WhisperStatus::Ready
+            }
+            Ok(false) => {
+                app_log_debug!("🎤 Whisper model files missing");
+                WhisperStatus::NotAvailable
             }
             Err(e) => {
                 app_log_error!("Failed to get Whisper model path: {}", e);
@@ -228,7 +252,7 @@ impl DownloadService {
         let required_models = Self::get_required_models()?;
         let missing_models: Vec<ModelFile> = required_models
             .into_iter()
-            .filter(|model| !model.destination_path.exists())
+            .filter(|model| !Self::is_non_empty_file(&model.destination_path))
             .collect();
 
         app_log_info!("Found {} missing model files", missing_models.len());
@@ -336,8 +360,20 @@ impl DownloadService {
             fs::create_dir_all(parent)?;
         }
 
+        let temp_path = model.destination_path.with_extension(format!(
+            "{}.part",
+            model.destination_path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .unwrap_or("download")
+        ));
+
+        if temp_path.exists() {
+            let _ = tokio::fs::remove_file(&temp_path).await;
+        }
+
         // Create the file
-        let mut file = tokio::fs::File::create(&model.destination_path)
+        let mut file = tokio::fs::File::create(&temp_path)
             .await
             .map_err(|e| anyhow!("Failed to create file: {}", e))?;
 
@@ -392,7 +428,7 @@ impl DownloadService {
             .map_err(|e| anyhow!("Failed to flush file: {}", e))?;
 
         // Verify the file was written correctly
-        let file_size = tokio::fs::metadata(&model.destination_path)
+        let file_size = tokio::fs::metadata(&temp_path)
             .await
             .map_err(|e| anyhow!("Failed to get file metadata: {}", e))?
             .len();
@@ -400,7 +436,7 @@ impl DownloadService {
         if let Some(expected_size) = total_size {
             if file_size != expected_size {
                 // Remove corrupted file
-                let _ = tokio::fs::remove_file(&model.destination_path).await;
+                let _ = tokio::fs::remove_file(&temp_path).await;
                 let error = format!(
                     "File size mismatch: expected {}, got {}",
                     expected_size, file_size
@@ -415,6 +451,10 @@ impl DownloadService {
                 return Err(anyhow!(error));
             }
         }
+
+        tokio::fs::rename(&temp_path, &model.destination_path)
+            .await
+            .map_err(|e| anyhow!("Failed to finalize file: {}", e))?;
 
         // Send completion (always send final progress)
         progress_callback(DownloadProgress {
@@ -439,10 +479,15 @@ impl DownloadService {
         progress_callback: impl Fn(DownloadProgress) + Send + Sync + Clone,
     ) -> Result<()> {
         let missing_models = Self::check_missing_models()?;
+        let whisper_missing = missing_models.iter().any(Self::is_whisper_model_file);
 
         if missing_models.is_empty() {
             app_log_info!("All models are already available");
             return Ok(());
+        }
+
+        if whisper_missing {
+            Self::set_whisper_download_status(WhisperStatus::Downloading);
         }
 
         app_log_info!("Downloading {} missing models", missing_models.len());
@@ -454,6 +499,9 @@ impl DownloadService {
                 }
                 Err(e) => {
                     app_log_error!("Failed to download {}: {}", model.name, e);
+                    if Self::is_whisper_model_file(&model) {
+                        Self::set_whisper_download_status(WhisperStatus::Failed(e.to_string()));
+                    }
                     progress_callback(DownloadProgress {
                         file_name: model.name.clone(),
                         downloaded_bytes: 0,
@@ -464,6 +512,15 @@ impl DownloadService {
                     return Err(e);
                 }
             }
+        }
+
+        if whisper_missing {
+            let final_status = match Self::whisper_files_ready() {
+                Ok(true) => WhisperStatus::Ready,
+                Ok(false) => WhisperStatus::NotAvailable,
+                Err(error) => WhisperStatus::Failed(format!("Path error: {}", error)),
+            };
+            Self::set_whisper_download_status(final_status);
         }
 
         app_log_info!("All models downloaded successfully");

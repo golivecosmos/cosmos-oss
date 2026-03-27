@@ -142,6 +142,24 @@ impl VideoService {
 
             app_log_info!("🔍 Checking {}: {:?}", binary_name, path);
             if path.exists() {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+
+                    if let Ok(metadata) = std::fs::metadata(&path) {
+                        let mut permissions = metadata.permissions();
+                        if permissions.mode() & 0o111 == 0 {
+                            permissions.set_mode(0o755);
+                            if let Err(error) = std::fs::set_permissions(&path, permissions) {
+                                app_log_warn!(
+                                    "⚠️ Failed to set executable bit on {}: {}",
+                                    binary_name,
+                                    error
+                                );
+                            }
+                        }
+                    }
+                }
                 app_log_info!("✅ Found {} at: {:?}", binary_name, path);
                 Some(path)
             } else {

@@ -34,7 +34,7 @@
 /// - Set FASTEMBED_CACHE_DIR to our models/ directory
 /// - Initialize with explicit cache_dir parameter
 /// - NO auto-download (local files only)
-/// - Models must be pre-downloaded from our S3 bucket
+/// - Models must be pre-downloaded from the configured model registry
 ///
 /// **4. Benefits:**
 /// - ✅ Predictable, controlled model loading
@@ -89,7 +89,7 @@ impl NomicModel {
     ///
     /// **Goals:**
     /// 1. Disable FastEmbed's auto-download from HuggingFace
-    /// 2. Use our own S3-hosted models for production reliability
+    /// 2. Use registry-hosted models for production reliability
     /// 3. Use simplified directory structure: app_data_dir/models/model-name/
     /// 4. Use local_files_only=true to prevent any external downloads
     ///
@@ -136,7 +136,9 @@ impl NomicModel {
         let models_available = Self::check_local_models_available();
         if !models_available {
             app_log_error!("❌ Required model files not found in local cache");
-            app_log_error!("💡 Please run download_models command first to download from S3");
+            app_log_error!(
+                "💡 Please run download_models command first to download from the model registry"
+            );
             return Err(anyhow::anyhow!(
                 "Model files not found. Please download models first."
             ));

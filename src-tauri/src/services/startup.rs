@@ -365,9 +365,9 @@ impl StartupManager {
             app_log_info!("🔍 Background: Checking for required models in simplified structure...");
 
             if !DownloadService::are_models_available() {
-                app_log_info!("📥 Background: Models missing, starting S3 download...");
+                app_log_info!("📥 Background: Models missing, starting model download...");
                 app_log_info!(
-                    "🚀 Using LOCAL FILES ONLY strategy - downloading from secure model repository"
+                    "🚀 Using LOCAL FILES ONLY strategy - downloading from configured model registry"
                 );
 
                 let background_progress_callback = |progress: DownloadProgress| {
@@ -404,14 +404,16 @@ impl StartupManager {
                     .await
                 {
                     Ok(_) => {
-                        app_log_info!("✅ Background: All models downloaded from secure repository successfully");
+                        app_log_info!(
+                            "✅ Background: All models downloaded from configured model registry successfully"
+                        );
                         app_log_info!(
                             "✅ Background: Download complete - frontend will handle model loading"
                         );
                     }
                     Err(e) => {
                         app_log_error!(
-                            "❌ Background: Failed to download models from secure repository: {}",
+                            "❌ Background: Failed to download models from configured model registry: {}",
                             e
                         );
                         app_log_warn!("⚠️ Background: AI features will remain disabled until models are downloaded manually");

@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Cosmos OSS",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "identifier": "com.cosmos.oss",
   "build": {
     "beforeDevCommand": "vite",
@@ -42,7 +42,10 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [],
+    "resources": [
+      "bin/ffmpeg",
+      "bin/ffprobe"
+    ],
     "copyright": "",
     "category": "Productivity",
     "shortDescription": "A desktop application for managing and searching documents",

@@ -1,7 +1,7 @@
 {
   "name": "cosmos-oss",
   "private": false,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Cosmos OSS desktop app for local-first multimodal search",
   "license": "MIT",
   "repository": "https://github.com/cosmos-oss/cosmos-oss",

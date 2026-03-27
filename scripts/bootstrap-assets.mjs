@@ -245,7 +245,7 @@ function buildModelManifest() {
   return [
     {
       destination: "nomic-embed-text-v1.5/onnx/model.onnx",
-      url: buildModelUrl(baseUrl, namespace, textSlug, "model.onnx"),
+      url: buildModelUrl(baseUrl, namespace, textSlug, "onnx/model.onnx"),
     },
     {
       destination: "nomic-embed-text-v1.5/config.json",
@@ -265,7 +265,7 @@ function buildModelManifest() {
     },
     {
       destination: "nomic-embed-vision-v1.5/onnx/model.onnx",
-      url: buildModelUrl(baseUrl, namespace, visionSlug, "model.onnx"),
+      url: buildModelUrl(baseUrl, namespace, visionSlug, "onnx/model.onnx"),
     },
     {
       destination: "nomic-embed-vision-v1.5/preprocessor_config.json",

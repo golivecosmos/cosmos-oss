@@ -24,7 +24,7 @@ Continue with the steps below.
 | pnpm | 9.x | Needed for workspaces + lockfile |
 | Rust | Stable (1.78+) | Install via `rustup` |
 | Tauri toolchain | per [guide](https://tauri.app/v1/guides/getting-started/prerequisites) | Xcode CLT (mac), MSVC Build Tools (Win), `libgtk-3-dev` & friends (Linux) |
-| FFmpeg binaries | latest | Place in `src-tauri/bin` or run `pnpm bootstrap:assets:ffmpeg` |
+| FFmpeg binaries | latest | Place in `src-tauri/bin` or run `pnpm bootstrap:assets:ffmpeg`; packaged macOS builds bundle them into the app |
 | Git LFS (optional) | latest | Required if you plan to commit sample assets |
 
 Install JS deps once:
@@ -77,7 +77,7 @@ This command rebuilds Rust on file changes, launches the Tauri window, and attac
 ### Downloading the models
 1. Open the running desktop app.
 2. Click the lightning-bolt menu in the top bar → **Manage AI Models**.
-3. Press **Download models**. Progress events are streamed from the Rust backend.
+3. Press **Download models**. This fetches the Nomic embedding models plus Whisper-base. Progress events are streamed from the Rust backend.
 4. Once complete, the files live at:
    - macOS: `~/Library/Application Support/cosmos/models`
    - Windows: `%APPDATA%/cosmos/models`
@@ -148,7 +148,7 @@ export APPLE_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)"
 pnpm release:production
 
 # Build + sign + notarize + security audit + upload artifacts to an existing/new GitHub release tag
-pnpm release:production:upload -- --tag v0.1.1 --repo golivecosmos/cosmos-oss
+pnpm release:production:upload -- --tag v0.1.2 --repo golivecosmos/cosmos-oss
 ```
 
 Security guarantees in this pipeline:

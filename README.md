@@ -120,7 +120,7 @@ Use this path if you want to develop, customize, or run unreleased code.
 ## Prerequisites (build from source)
 - **Node.js** 20.x and **pnpm** 9.x (install via `corepack enable` or `npm install -g pnpm`).
 - **Rust** stable toolchain (`rustup default stable`) plus the [Tauri prerequisites](https://tauri.app/v1/guides/getting-started/prerequisites) for your OS (Xcode CLT on macOS, Visual Studio Build Tools on Windows, `libgtk-3-dev` et al. on Linux).
-- **FFmpeg binaries** in `src-tauri/bin` (run `pnpm bootstrap:assets:ffmpeg` to fetch them automatically).
+- **FFmpeg binaries** in `src-tauri/bin` for local/source builds (run `pnpm bootstrap:assets:ffmpeg` to fetch them automatically). Packaged macOS builds bundle these into the app resources.
 - **Poppler `pdftotext`** on `$PATH` if you want PDF text indexing.
 - **Git LFS** if you plan to check in large sample assets.
 
@@ -133,14 +133,14 @@ cd cosmos-oss
 # 2. Install JS deps
 pnpm install
 
-# 2b. Optional: prefetch FFmpeg + model files now (instead of first launch)
+# 2b. Optional: prefetch FFmpeg + model files now (Nomic + Whisper, instead of first launch)
 pnpm bootstrap:assets
 
 # 3. Run the desktop dev shell (Vite + Tauri dev tools)
 pnpm dev
 ```
 When the window opens:
-1. Use **Quick Menu → Manage Models** to download the Nomic + Whisper artifacts (or drop files directly in `~/Library/Application Support/cosmos/models` on macOS and the analogous AppData path on Windows).
+1. Use **Quick Menu → Manage Models** to download the Nomic + Whisper artifacts (or prefetch them with `pnpm bootstrap:assets:models` into `~/Library/Application Support/cosmos/models` on macOS and the analogous AppData path on Windows).
 2. Start indexing folders from the sidebar and try visual/text search immediately.
 
 For full build details and platform-specific packaging, see [`docs/BUILDING.md`](docs/BUILDING.md).
@@ -161,7 +161,7 @@ Detailed walkthroughs live in [`docs/BUILDING.md`](docs/BUILDING.md). At a glanc
 pnpm release:production
 
 # Same, then upload artifacts to a GitHub release tag
-pnpm release:production:upload -- --tag v0.1.1 --repo golivecosmos/cosmos-oss
+pnpm release:production:upload -- --tag v0.1.2 --repo golivecosmos/cosmos-oss
 
 # Windows MSI (requires the Windows build tools shell)
 pnpm tauri build --target x86_64-pc-windows-msvc
