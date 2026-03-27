@@ -20,6 +20,36 @@ Cosmos OSS is a cross-platform desktop application for local-first, AI-assisted 
 
 Cosmos OSS is a local desktop app, not a hosted service. The React frontend handles the UI, Tauri provides the desktop shell and native windowing, and the Rust backend does the heavy lifting for indexing, search, file operations, model management, and media processing.
 
+### Architecture at a glance
+
+```mermaid
+flowchart LR
+    user["User"]
+    ui["React UI\nsrc/"]
+    tauri["Tauri desktop shell"]
+    backend["Rust backend\nsrc-tauri/"]
+
+    files["Local files, folders,\nand external drives"]
+    models["Local models\nNomic + Whisper + tools"]
+    db["Local SQLite/SQLCipher\n+ sqlite-vec index"]
+    jobs["Background jobs\nindexing, watched folders,\nmodel downloads"]
+    optional["Optional external APIs\nGemini / Veo,\nmodel downloads"]
+
+    user --> ui
+    ui --> tauri
+    tauri --> backend
+
+    backend --> files
+    backend --> models
+    backend --> db
+    backend --> jobs
+    backend -. "only when enabled" .-> optional
+
+    files --> backend
+    models --> backend
+    db --> backend
+```
+
 ### 1. You choose what Cosmos can see
 - Cosmos does not crawl your whole machine by default.
 - You explicitly point it at folders, drives, or watched folders from the UI.
@@ -58,12 +88,15 @@ Cosmos OSS is a local desktop app, not a hosted service. The React frontend hand
 4. You search with text or an image.
 5. Cosmos runs semantic retrieval locally and returns ranked results in the desktop UI.
 
+For deeper diagrams, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 ## Repository layout
 | Path | Description |
 | ---- | ----------- |
 | `src/` | React + Tailwind UI, contexts, and feature modules |
 | `src-tauri/` | Rust backend (commands, services, model loaders) |
 | `docs/` | Build guide, roadmap, contributing, code of conduct, security |
+| `docs/ARCHITECTURE.md` | Mermaid diagrams for system, indexing, and search flows |
 | `docs/THIRD_PARTY_NOTICES.md` | Third-party binary/model attribution guidance |
 | `scripts/` | *(intentionally empty—release scripts lived in the private repo)* |
 
