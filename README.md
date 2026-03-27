@@ -16,6 +16,48 @@ Cosmos OSS is a cross-platform desktop application for local-first, AI-assisted 
 - Video generation helpers (Gemini/Veo3) once you add your own API key.
 - Quick menu for managing downloads, checking GPU availability, and packaging diagnostic logs.
 
+## How It Works
+
+Cosmos OSS is a local desktop app, not a hosted service. The React frontend handles the UI, Tauri provides the desktop shell and native windowing, and the Rust backend does the heavy lifting for indexing, search, file operations, model management, and media processing.
+
+### 1. You choose what Cosmos can see
+- Cosmos does not crawl your whole machine by default.
+- You explicitly point it at folders, drives, or watched folders from the UI.
+- The backend keeps track of indexed paths, watched folders, and external drive metadata so disconnected drives can still appear in the library.
+
+### 2. Files are analyzed locally
+- Images and videos are processed into visual embeddings using local Nomic/FastEmbed models.
+- Text documents are split into chunks and embedded for semantic text retrieval.
+- Audio or video can optionally be transcribed with Whisper, and those transcripts become searchable too.
+- Supporting tools like FFmpeg and `pdftotext` are used locally when needed.
+
+### 3. Search data is stored in a local encrypted database
+- Cosmos stores metadata, text chunks, transcripts, job state, and vector indexes in local SQLite/SQLCipher-backed storage.
+- Semantic search uses `sqlite-vec` tables for embedding similarity lookup.
+- The app keeps enough metadata around to reopen files, show previews, and reconnect offline drive content later.
+
+### 4. Search is semantic, not just filename matching
+- Text search embeds your query and compares it against embedded document chunks.
+- Visual search compares images against previously indexed visual embeddings.
+- The UI then combines those ranked results with file metadata and previews so you can inspect or open matches quickly.
+
+### 5. Background jobs keep the index fresh
+- Indexing runs through backend job queues instead of blocking the UI.
+- Watched folders can automatically pick up new or changed files and queue them for indexing.
+- The Quick Menu and Settings screens expose model download state, index health, job progress, and diagnostic tools.
+
+### 6. External APIs are optional and explicit
+- Core indexing and search work fully offline once models are available.
+- Network access only happens when you choose features that need it, such as downloading models or adding a third-party integration like Gemini/Veo.
+- The built-in App Store is really a local integration manager for user-supplied keys, not a cloud dependency.
+
+### End-to-end flow
+1. Pick a folder or watched folder.
+2. Cosmos scans files and extracts text/media features locally.
+3. Embeddings, metadata, and transcripts are written to the local database.
+4. You search with text or an image.
+5. Cosmos runs semantic retrieval locally and returns ranked results in the desktop UI.
+
 ## Repository layout
 | Path | Description |
 | ---- | ----------- |
@@ -86,7 +128,7 @@ Detailed walkthroughs live in [`docs/BUILDING.md`](docs/BUILDING.md). At a glanc
 pnpm release:production
 
 # Same, then upload artifacts to a GitHub release tag
-pnpm release:production:upload -- --tag v0.1.0 --repo golivecosmos/cosmos-oss
+pnpm release:production:upload -- --tag v0.1.1 --repo golivecosmos/cosmos-oss
 
 # Windows MSI (requires the Windows build tools shell)
 pnpm tauri build --target x86_64-pc-windows-msvc
