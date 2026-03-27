@@ -4,7 +4,7 @@ use tauri::{App, Emitter, Manager};
 
 use crate::services::{
     audio_service::AudioService,
-    download_service::{DownloadProgress, DownloadService, DownloadStatus},
+    download_service::DownloadService,
     drive_service::DriveService,
     embedding_service::EmbeddingService,
     file_service::FileService,
@@ -170,7 +170,8 @@ impl StartupManager {
 
         app_log_info!("🚀 STARTUP: Setting up background tasks");
 
-        // Setup model download background task
+        // Model downloads are triggered by the frontend so startup and UI
+        // don't race on the same files.
         self.setup_model_download_task(app, &app_state.download_service)?;
 
         // Setup database schema checking
@@ -355,75 +356,12 @@ impl StartupManager {
     /// Setup background model download task
     fn setup_model_download_task(
         &self,
-        app: &App,
-        download_service: &Arc<DownloadService>,
+        _app: &App,
+        _download_service: &Arc<DownloadService>,
     ) -> Result<(), String> {
-        let download_service_clone = download_service.clone();
-        let app_handle = app.handle().clone();
-
-        tokio::spawn(async move {
-            app_log_info!("🔍 Background: Checking for required models in simplified structure...");
-
-            if !DownloadService::are_models_available() {
-                app_log_info!("📥 Background: Models missing, starting model download...");
-                app_log_info!(
-                    "🚀 Using LOCAL FILES ONLY strategy - downloading from configured model registry"
-                );
-
-                let background_progress_callback = |progress: DownloadProgress| {
-                    // Log to console for debugging
-                    match progress.status {
-                        DownloadStatus::Downloading => {
-                            app_log_info!(
-                                "📥 Model download {}: {:.1}%",
-                                progress.file_name,
-                                progress.percentage
-                            );
-                        }
-                        DownloadStatus::Completed => {
-                            app_log_info!("✅ Model downloaded: {}", progress.file_name);
-                        }
-                        DownloadStatus::Failed(ref error) => {
-                            app_log_error!(
-                                "❌ Model download failed {}: {}",
-                                progress.file_name,
-                                error
-                            );
-                        }
-                        _ => {}
-                    }
-
-                    // Emit progress event to frontend
-                    if let Err(e) = app_handle.emit("download_progress", &progress) {
-                        app_log_error!("Failed to emit download progress to frontend: {}", e);
-                    }
-                };
-
-                match download_service_clone
-                    .download_all_missing_models(background_progress_callback)
-                    .await
-                {
-                    Ok(_) => {
-                        app_log_info!(
-                            "✅ Background: All models downloaded from configured model registry successfully"
-                        );
-                        app_log_info!(
-                            "✅ Background: Download complete - frontend will handle model loading"
-                        );
-                    }
-                    Err(e) => {
-                        app_log_error!(
-                            "❌ Background: Failed to download models from configured model registry: {}",
-                            e
-                        );
-                        app_log_warn!("⚠️ Background: AI features will remain disabled until models are downloaded manually");
-                    }
-                }
-            } else {
-                app_log_info!("✅ Background: All required models are already available locally");
-            }
-        });
-
+        app_log_info!(
+            "ℹ️ STARTUP: Skipping automatic background model download; frontend owns model download lifecycle"
+        );
         Ok(())
     }
 

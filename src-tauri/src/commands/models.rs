@@ -138,6 +138,10 @@ pub async fn download_models(
             Ok("All models downloaded successfully".to_string())
         }
         Ok(Err(e)) => {
+            if e.to_string() == DownloadService::DOWNLOAD_ALREADY_IN_PROGRESS_MESSAGE {
+                app_log_info!("ℹ️ MODEL DOWNLOAD: Another download is already in progress");
+                return Ok("Model download already in progress".to_string());
+            }
             app_log_error!("❌ MODEL DOWNLOAD: Failed to download models: {}", e);
             Err(format!("Failed to download models: {}", e))
         }

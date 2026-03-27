@@ -52,10 +52,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [
-      "bin/ffmpeg",
-      "bin/ffprobe"
-    ],
+    "resources": [],
     "copyright": "",
     "category": "Productivity",
     "shortDescription": "A desktop application for managing and searching documents",

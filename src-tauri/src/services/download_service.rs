@@ -49,9 +49,23 @@ pub struct DownloadService {
 // Global state to track whisper download status
 lazy_static::lazy_static! {
     static ref WHISPER_DOWNLOAD_STATE: Arc<Mutex<WhisperStatus>> = Arc::new(Mutex::new(WhisperStatus::NotAvailable));
+    static ref MODEL_DOWNLOAD_ACTIVE: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
+}
+
+struct ModelDownloadGuard;
+
+impl Drop for ModelDownloadGuard {
+    fn drop(&mut self) {
+        if let Ok(mut active) = MODEL_DOWNLOAD_ACTIVE.lock() {
+            *active = false;
+        }
+    }
 }
 
 impl DownloadService {
+    pub(crate) const DOWNLOAD_ALREADY_IN_PROGRESS_MESSAGE: &'static str =
+        "Model download already in progress";
+
     fn is_non_empty_file(path: &PathBuf) -> bool {
         path.metadata().map(|metadata| metadata.is_file() && metadata.len() > 0).unwrap_or(false)
     }
@@ -64,6 +78,19 @@ impl DownloadService {
         if let Ok(mut state) = WHISPER_DOWNLOAD_STATE.lock() {
             *state = status;
         }
+    }
+
+    fn begin_model_download() -> Result<ModelDownloadGuard> {
+        let mut active = MODEL_DOWNLOAD_ACTIVE
+            .lock()
+            .map_err(|_| anyhow!("Failed to acquire model download state lock"))?;
+
+        if *active {
+            return Err(anyhow!(Self::DOWNLOAD_ALREADY_IN_PROGRESS_MESSAGE));
+        }
+
+        *active = true;
+        Ok(ModelDownloadGuard)
     }
 
     fn whisper_files_ready() -> Result<bool> {
@@ -478,6 +505,7 @@ impl DownloadService {
         &self,
         progress_callback: impl Fn(DownloadProgress) + Send + Sync + Clone,
     ) -> Result<()> {
+        let _download_guard = Self::begin_model_download()?;
         let missing_models = Self::check_missing_models()?;
         let whisper_missing = missing_models.iter().any(Self::is_whisper_model_file);
 

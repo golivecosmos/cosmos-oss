@@ -153,6 +153,10 @@ function resolveBuildConfig() {
   const configPath = path.resolve(repoRoot, options.config);
   const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
   const configuredIdentity = config?.bundle?.macOS?.signingIdentity || "";
+  const ffmpegResourcePaths = ["bin/ffmpeg", "bin/ffprobe"];
+  const availableFfmpegResources = ffmpegResourcePaths.filter((resourcePath) =>
+    fs.existsSync(path.join(repoRoot, "src-tauri", resourcePath)),
+  );
 
   if (!envSigningIdentity) {
     if (!configuredIdentity && !options.allowUnsigned) {
@@ -166,12 +170,18 @@ function resolveBuildConfig() {
   config.bundle ??= {};
   config.bundle.macOS ??= {};
   config.bundle.macOS.signingIdentity = envSigningIdentity;
+  config.bundle.resources = Array.from(
+    new Set([...(config.bundle.resources || []), ...availableFfmpegResources]),
+  );
 
   generatedConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), "cosmos-release-config-"));
   const generatedConfigPath = path.join(generatedConfigDir, path.basename(configPath));
   fs.writeFileSync(generatedConfigPath, `${JSON.stringify(config, null, 2)}\n`);
 
   log(`Using signing identity from environment for ${options.config}`);
+  if (availableFfmpegResources.length > 0) {
+    log(`Bundling FFmpeg resources for release: ${availableFfmpegResources.join(", ")}`);
+  }
   return generatedConfigPath;
 }
 
