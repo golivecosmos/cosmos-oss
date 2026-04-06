@@ -117,7 +117,13 @@ impl VectorService {
                 now,
             ],
         )?;
-        let rowid = tx.last_insert_rowid();
+        // Get actual rowid via SELECT. last_insert_rowid() is unreliable with
+        // TEXT primary keys + INSERT OR REPLACE (returns stale values, often 1).
+        let rowid: i64 = tx.query_row(
+            "SELECT rowid FROM images WHERE id = ?1",
+            rusqlite::params![&id],
+            |row| row.get(0),
+        )?;
         tx.execute(
             "INSERT OR REPLACE INTO vec_images(rowid, embedding) VALUES (?, ?)",
             rusqlite::params![rowid, embedding.as_bytes()],
@@ -234,7 +240,13 @@ impl VectorService {
                     )
                 })?;
 
-            let rowid = tx.last_insert_rowid();
+            let rowid: i64 = tx.query_row(
+                "SELECT rowid FROM images WHERE id = ?1",
+                rusqlite::params![&vector.id],
+                |row| row.get(0),
+            ).map_err(|e| {
+                anyhow!("Failed to get rowid for {}: {}", file_path_for_error, e)
+            })?;
             vec_stmt
                 .execute(rusqlite::params![rowid, vector.embedding.as_bytes()])
                 .map_err(|e| {
@@ -845,7 +857,11 @@ impl VectorService {
                 &now,
             ])?;
 
-            let rowid = tx.last_insert_rowid();
+            let rowid: i64 = tx.query_row(
+                "SELECT rowid FROM text_chunks WHERE id = ?1",
+                rusqlite::params![&chunk.id],
+                |row| row.get(0),
+            )?;
             vec_stmt.execute(rusqlite::params![rowid, chunk.embedding.as_bytes()])?;
             success_count += 1;
         }
