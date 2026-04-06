@@ -74,6 +74,9 @@ candle-nn = "0.8.0"
 candle-transformers = "0.8.0"
 symphonia = { version = "0.5", features = ["all"] }
 byteorder = "1.5"
+# LLM inference for the understanding layer (Gemma 4 E2B via GGUF)
+llama-cpp-4 = { version = "0.2", features = ["metal"] }
+sysinfo = "0.33"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 candle-core = { version = "0.8.0", features = ["metal"] }

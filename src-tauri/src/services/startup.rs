@@ -32,6 +32,7 @@ pub struct AppState {
     pub download_service: Arc<DownloadService>,
     pub drive_service: Arc<DriveService>,
     pub watched_folder_service: Arc<WatchedFolderService>,
+    pub gemma4_service: Arc<crate::services::gemma4_service::Gemma4Service>,
     pub video_generation_status: Arc<
         tokio::sync::Mutex<
             std::collections::HashMap<String, crate::commands::video::VideoGenerationStatus>,
@@ -101,6 +102,7 @@ impl StartupManager {
             download_service,
             drive_service,
             watched_folder_service,
+            gemma4_service: Arc::new(crate::services::gemma4_service::Gemma4Service::new()),
             video_generation_status: Arc::new(tokio::sync::Mutex::new(
                 std::collections::HashMap::new(),
             )),
@@ -153,6 +155,7 @@ impl StartupManager {
             download_service,
             drive_service,
             watched_folder_service,
+            gemma4_service: Arc::new(crate::services::gemma4_service::Gemma4Service::new()),
             video_generation_status: Arc::new(tokio::sync::Mutex::new(
                 std::collections::HashMap::new(),
             )),
@@ -610,6 +613,7 @@ impl Clone for AppState {
             download_service: self.download_service.clone(),
             drive_service: self.drive_service.clone(),
             watched_folder_service: self.watched_folder_service.clone(),
+            gemma4_service: self.gemma4_service.clone(),
             video_generation_status: self.video_generation_status.clone(),
         }
     }

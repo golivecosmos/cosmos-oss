@@ -269,10 +269,17 @@ async fn main() {
             Ok(())
         });
 
-    // Add debug commands only in debug builds
+    // All shared commands registered once. Debug-only commands added via cfg below.
+    //
+    //   ADDING A NEW COMMAND?
+    //   1. Add it to the shared list below.
+    //   2. If it's debug-only, add it to the #[cfg(debug_assertions)] block instead.
+    //   3. Import it in the `use commands::{...}` block at the top of this file.
+    //
     #[cfg(debug_assertions)]
     {
         builder = builder.invoke_handler(tauri::generate_handler![
+            // --- shared commands (also in release) ---
             list_directory_contents,
             get_file_metadata,
             read_file_content,
@@ -318,11 +325,6 @@ async fn main() {
             get_system_info,
             get_app_state_info,
             clean_stale_entries,
-            // Debug commands - only available in debug builds
-            debug_model_status,
-            get_sqlite_stats,
-            recreate_sqlite_virtual_table,
-            get_database_schema_info,
             get_jobs,
             manage_job_queue,
             retry_job,
@@ -375,10 +377,14 @@ async fn main() {
             focus_quick_search_input,
             consume_full_app_handoff,
             uninstall_app,
+            // --- debug-only commands ---
+            debug_model_status,
+            get_sqlite_stats,
+            recreate_sqlite_virtual_table,
+            get_database_schema_info,
         ]);
     }
 
-    // Add production commands only in release builds
     #[cfg(not(debug_assertions))]
     {
         builder = builder.invoke_handler(tauri::generate_handler![

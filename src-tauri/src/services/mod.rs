@@ -9,6 +9,7 @@ pub mod drive_service;
 pub mod embedding_service;
 pub mod encryption_key_service;
 pub mod file_service;
+pub mod gemma4_service;
 pub mod generations_service;
 pub mod job_queue_service;
 pub mod migration_service;

@@ -56,6 +56,7 @@ fn create_test_app_state() -> AppState {
         download_service,
         drive_service,
         watched_folder_service,
+        gemma4_service: Arc::new(crate::services::gemma4_service::Gemma4Service::new()),
         video_generation_status: Arc::new(
             tokio::sync::Mutex::new(std::collections::HashMap::new()),
         ),
