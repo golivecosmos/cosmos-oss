@@ -233,44 +233,91 @@ fn file_name_from_path(path: &str) -> String {
 /// Directories that should never be indexed. These are build artifacts, caches,
 /// dependency trees, and version control internals that produce thousands of
 /// files with no user value.
+/// Directories that should never be indexed. Build artifacts, caches,
+/// dependency trees, version control internals, and OS bundles.
 pub const EXCLUDED_DIR_NAMES: &[&str] = &[
-    "node_modules",
+    // Version control
     ".git",
-    "target",            // Rust build output
-    "dist",
-    "build",
-    ".cache",
+    ".svn",
+    ".hg",
+    // JS/Node
+    "node_modules",
+    "bower_components",
+    "jspm_packages",
+    ".next",
+    ".nuxt",
+    ".svelte-kit",
+    ".turbo",
+    ".parcel-cache",
+    ".sass-cache",
+    ".nyc_output",
+    // Rust
+    "target",
+    // Python
     "__pycache__",
     ".venv",
     "venv",
     ".tox",
     ".mypy_cache",
     ".pytest_cache",
-    ".next",             // Next.js
-    ".nuxt",             // Nuxt.js
-    ".svelte-kit",
-    ".turbo",
-    ".parcel-cache",
-    "Pods",              // iOS CocoaPods
-    "DerivedData",       // Xcode
+    // Java/Kotlin
     ".gradle",
-    ".m2",               // Maven
-    "vendor",            // Go, PHP, Ruby
+    ".m2",
+    // iOS/macOS
+    "Pods",
+    "DerivedData",
+    // General build/cache
+    "dist",
+    "build",
+    ".cache",
+    "vendor",
     "coverage",
-    ".nyc_output",
     "tmp",
     ".tmp",
-    "bower_components",
-    "jspm_packages",
-    ".sass-cache",
-    "discovery_cache",   // Google API client cache (the 481-file offender)
+    "discovery_cache",
+    // macOS system
+    "Library",           // ~/Library contains caches, app support, etc.
+    "Applications",      // /Applications contains .app bundles
+    "System",            // /System is macOS internals
+    "Caches",            // Library/Caches
+    "Logs",              // Library/Logs
+    "WebKit",
+    "GPUCache",
+    "ShaderCache",
+    "Code Cache",
+    "CachedData",
+    "CachedExtensions",
+];
+
+/// File extensions inside app bundles or system dirs that should never be indexed.
+const NON_USER_EXTENSIONS: &[&str] = &[
+    "dylib", "so", "o", "a",       // Compiled libraries
+    "nib", "storyboardc", "car",    // iOS/macOS compiled resources
+    "plist",                         // Property lists (system config)
+    "strings",                       // Localization files
+    "lproj",                         // Localization dirs (caught as ext sometimes)
+    "metallib",                      // Compiled Metal shaders
+    "dSYM",                          // Debug symbols
 ];
 
 fn is_hidden_or_system_name(name: &str) -> bool {
     name.starts_with(".")
+        || name.ends_with(".app")       // macOS application bundles
+        || name.ends_with(".framework") // macOS frameworks
+        || name.ends_with(".xpc")       // macOS XPC services
+        || name.ends_with(".bundle")    // macOS loadable bundles
+        || name.ends_with(".plugin")    // macOS plugins
+        || name.ends_with(".kext")      // Kernel extensions
+        || name.ends_with(".dSYM")      // Debug symbol bundles
         || name == "DS_Store"
         || name == "Thumbs.db"
+        || name == "desktop.ini"
         || EXCLUDED_DIR_NAMES.contains(&name)
+}
+
+/// Check if a file extension is a non-user system file that shouldn't be indexed.
+pub fn is_non_user_extension(ext: &str) -> bool {
+    NON_USER_EXTENSIONS.contains(&ext.to_lowercase().as_str())
 }
 
 /// Cancel all pending jobs whose target path starts with the given folder prefix.

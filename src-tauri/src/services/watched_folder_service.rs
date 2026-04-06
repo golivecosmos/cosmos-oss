@@ -654,8 +654,16 @@ pub async fn run_watched_folder_monitor_loop(
 
 fn is_hidden_or_system_name(name: &str) -> bool {
     name.starts_with('.')
+        || name.ends_with(".app")
+        || name.ends_with(".framework")
+        || name.ends_with(".xpc")
+        || name.ends_with(".bundle")
+        || name.ends_with(".plugin")
+        || name.ends_with(".kext")
+        || name.ends_with(".dSYM")
         || name == "DS_Store"
         || name == "Thumbs.db"
+        || name == "desktop.ini"
         || crate::commands::indexing::EXCLUDED_DIR_NAMES.contains(&name)
 }
 
