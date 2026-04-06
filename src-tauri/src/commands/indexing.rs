@@ -268,6 +268,7 @@ pub const EXCLUDED_DIR_NAMES: &[&str] = &[
 
 fn is_hidden_or_system_name(name: &str) -> bool {
     name.starts_with(".")
+        || name.ends_with(".app")  // Skip macOS .app bundle internals
         || name == "DS_Store"
         || name == "Thumbs.db"
         || EXCLUDED_DIR_NAMES.contains(&name)

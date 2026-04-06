@@ -654,6 +654,7 @@ pub async fn run_watched_folder_monitor_loop(
 
 fn is_hidden_or_system_name(name: &str) -> bool {
     name.starts_with('.')
+        || name.ends_with(".app")  // Skip macOS .app bundle internals
         || name == "DS_Store"
         || name == "Thumbs.db"
         || crate::commands::indexing::EXCLUDED_DIR_NAMES.contains(&name)
