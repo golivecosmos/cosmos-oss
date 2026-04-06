@@ -339,3 +339,75 @@ pub async fn debug_model_status(state: State<'_, AppState>) -> Result<String, St
 pub async fn debug_model_status(_state: State<'_, AppState>) -> Result<String, String> {
     Err("Debug commands disabled in production".to_string())
 }
+
+// ===== GEMMA 4 UNDERSTANDING LAYER COMMANDS =====
+
+/// Check Gemma 4 model status.
+#[tauri::command]
+pub async fn get_gemma4_status(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let available = state.gemma4_service.is_available();
+    let disabled = state.gemma4_service.is_disabled();
+    Ok(serde_json::json!({
+        "available": available,
+        "disabled": disabled,
+        "model": "gemma-4-e2b",
+        "status": if disabled { "disabled" } else if available { "ready" } else { "model_missing" }
+    }))
+}
+
+/// Generate a description for a single file using Gemma 4.
+/// Reads the file content, sends it to Gemma 4, stores the result.
+#[tauri::command]
+pub async fn describe_file(
+    file_path: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    app_log_info!("🧠 GEMMA4 CMD: describe_file called for {}", file_path);
+
+    // Check if we already have a description
+    if let Ok(Some(desc)) = state.sqlite_service.get_file_description(&file_path) {
+        return Ok(desc);
+    }
+
+    // Read file content preview
+    let path = std::path::Path::new(&file_path);
+    let file_name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown");
+
+    let content_preview = match std::fs::read_to_string(&file_path) {
+        Ok(content) => content.chars().take(2000).collect::<String>(),
+        Err(_) => {
+            // For non-text files, use filename + extension as context
+            format!("Binary file: {}", file_name)
+        }
+    };
+
+    // Generate description
+    let description = state
+        .gemma4_service
+        .describe_file(file_name, &content_preview)
+        .ok_or_else(|| "Gemma 4 unavailable or inference failed".to_string())?;
+
+    // Store it
+    state
+        .sqlite_service
+        .upsert_file_description(&file_path, &description)
+        .map_err(|e| format!("Failed to store description: {}", e))?;
+
+    app_log_info!("✅ GEMMA4 CMD: Described {} -> {}", file_name, &description[..description.len().min(80)]);
+    Ok(description)
+}
+
+/// Get a stored file description (without generating).
+#[tauri::command]
+pub async fn get_file_description(
+    file_path: String,
+    state: State<'_, AppState>,
+) -> Result<Option<String>, String> {
+    state
+        .sqlite_service
+        .get_file_description(&file_path)
+        .map_err(|e| format!("Failed to get description: {}", e))
+}
