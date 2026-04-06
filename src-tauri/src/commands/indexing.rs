@@ -20,14 +20,24 @@ use tokio::sync::Semaphore;
 
 // **CONSTANTS FOR BATCH PROCESSING**
 
-/// Number of parallel workers for GPU-optimized batch processing
-pub const WORKER_COUNT: usize = 4;
+/// Number of parallel workers. Model inference (FastEmbed) is single-threaded,
+/// so more workers just adds mutex contention. 2 lets one worker do inference
+/// while the other handles DB writes and job claiming.
+pub const WORKER_COUNT: usize = 2;
 /// Optimal batch size for GPU memory and performance
 pub const BATCH_SIZE: usize = 8;
-pub const MAX_CONCURRENT_VIDEOS: usize = 3;
-pub const MAX_CONCURRENT_TRANSCRIPTIONS: usize = 2;
+pub const MAX_CONCURRENT_VIDEOS: usize = 1;
+pub const MAX_CONCURRENT_TRANSCRIPTIONS: usize = 1;
 const JOB_CREATED_EVENT_BATCH_SIZE: usize = 250;
 const JOB_CREATED_EVENT_SAMPLE_LIMIT: usize = 100;
+
+/// Maximum number of pending jobs in the queue. Prevents memory/DB explosion
+/// when indexing very large directories (e.g., entire filesystem).
+pub const MAX_PENDING_JOBS: usize = 50_000;
+
+/// Maximum files discovered per single scan operation. Safety net to prevent
+/// runaway scans from consuming all memory or taking hours.
+pub const MAX_FILES_PER_SCAN: usize = 100_000;
 
 // **GLOBAL CONCURRENT LIMITS**
 static VIDEO_SEMAPHORE: OnceLock<Arc<Semaphore>> = OnceLock::new();
@@ -220,8 +230,63 @@ fn file_name_from_path(path: &str) -> String {
     }
 }
 
+/// Directories that should never be indexed. These are build artifacts, caches,
+/// dependency trees, and version control internals that produce thousands of
+/// files with no user value.
+pub const EXCLUDED_DIR_NAMES: &[&str] = &[
+    "node_modules",
+    ".git",
+    "target",            // Rust build output
+    "dist",
+    "build",
+    ".cache",
+    "__pycache__",
+    ".venv",
+    "venv",
+    ".tox",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".next",             // Next.js
+    ".nuxt",             // Nuxt.js
+    ".svelte-kit",
+    ".turbo",
+    ".parcel-cache",
+    "Pods",              // iOS CocoaPods
+    "DerivedData",       // Xcode
+    ".gradle",
+    ".m2",               // Maven
+    "vendor",            // Go, PHP, Ruby
+    "coverage",
+    ".nyc_output",
+    "tmp",
+    ".tmp",
+    "bower_components",
+    "jspm_packages",
+    ".sass-cache",
+    "discovery_cache",   // Google API client cache (the 481-file offender)
+];
+
 fn is_hidden_or_system_name(name: &str) -> bool {
-    name.starts_with(".") || name == "DS_Store" || name == ".DS_Store" || name == "Thumbs.db"
+    name.starts_with(".")
+        || name == "DS_Store"
+        || name == "Thumbs.db"
+        || EXCLUDED_DIR_NAMES.contains(&name)
+}
+
+/// Cancel all pending jobs whose target path starts with the given folder prefix.
+#[tauri::command]
+pub async fn cancel_jobs_by_folder(
+    folder_prefix: String,
+    state: State<'_, AppState>,
+) -> Result<usize, String> {
+    app_log_info!(
+        "🗑️ QUEUE: Cancelling pending jobs for folder prefix: {}",
+        folder_prefix
+    );
+    state
+        .sqlite_service
+        .cancel_jobs_by_folder_prefix(&folder_prefix)
+        .map_err(|e| format!("Failed to cancel jobs: {}", e))
 }
 
 /// Helper function to check if a file is already indexed
@@ -534,8 +599,22 @@ pub async fn index_directory(
     let mut batch_created_jobs = 0;
     let mut job_emit_sample: Vec<String> = Vec::new();
 
+    // Build a set of already-indexed paths in one query to avoid N+1 DB hits.
+    // On a folder with 100K files, this replaces 100K individual SELECTs with one.
+    let indexed_paths: std::collections::HashSet<String> =
+        match state.sqlite_service.get_all_indexed_file_paths() {
+            Ok(paths) => paths.into_iter().collect(),
+            Err(e) => {
+                app_log_warn!(
+                    "⚠️ QUEUE INDEX: Failed to load indexed paths, will check individually: {}",
+                    e
+                );
+                std::collections::HashSet::new()
+            }
+        };
+
     let walker = walkdir::WalkDir::new(&path)
-        .follow_links(true)
+        .follow_links(false) // Prevent symlink loops on systems like macOS with /System links
         .into_iter()
         .filter_entry(|entry| {
             let name = entry.file_name().to_string_lossy();
@@ -543,6 +622,37 @@ pub async fn index_directory(
         });
 
     for entry in walker {
+        // Safety cap: don't discover more than MAX_FILES_PER_SCAN files in a single scan
+        if total_files >= MAX_FILES_PER_SCAN {
+            app_log_warn!(
+                "⚠️ QUEUE INDEX: Hit scan cap of {} files. Remaining files will be picked up on next scan.",
+                MAX_FILES_PER_SCAN
+            );
+            break;
+        }
+
+        // Backpressure: pause job creation when queue is full
+        if created_jobs > 0 && created_jobs % 1000 == 0 {
+            let pending_count = state
+                .sqlite_service
+                .get_pending_job_count()
+                .unwrap_or(0) as usize;
+            if pending_count >= MAX_PENDING_JOBS {
+                app_log_warn!(
+                    "⚠️ QUEUE INDEX: Queue full ({} pending jobs, cap {}). Pausing job creation.",
+                    pending_count,
+                    MAX_PENDING_JOBS
+                );
+                // Emit event so the UI can show a toast
+                let _ = app_handle.emit("queue_backpressure", serde_json::json!({
+                    "pending": pending_count,
+                    "cap": MAX_PENDING_JOBS,
+                    "message": format!("Indexing paused: {} files queued. Processing will resume automatically.", pending_count)
+                }));
+                break;
+            }
+        }
+
         let entry = match entry {
             Ok(entry) => entry,
             Err(e) => {
@@ -569,21 +679,8 @@ pub async fn index_directory(
 
         total_files += 1;
 
-        // Check if file is already indexed (skip job creation)
-        let already_indexed = match is_file_already_indexed(&state.sqlite_service, &file_path).await
-        {
-            Ok(result) => result,
-            Err(e) => {
-                app_log_error!("❌ QUEUE: Aborting directory indexing due to indexed-state check failure for {}: {}", file_path, e);
-                return Err(format!(
-                    "Failed checking indexed state for {}: {}",
-                    file_path, e
-                ));
-            }
-        };
-
-        if already_indexed {
-            app_log_info!("⏭️ Skipping already indexed file: {}", file_path);
+        // Check against pre-loaded set (O(1) lookup instead of DB query per file)
+        if indexed_paths.contains(&file_path) {
             skipped_files += 1;
             continue;
         }
@@ -783,6 +880,14 @@ pub async fn persistent_queue_worker(
         if worker_id == 1 && maintenance_cycles % 720 == 0 {
             if let Err(e) = sqlite_service.cleanup_old_jobs(7) {
                 app_log_warn!("⚠️ WORKER {}: Failed to cleanup old jobs: {}", worker_id, e);
+            }
+        }
+
+        // WAL checkpoint every ~5 minutes from worker 1 to keep WAL file small
+        // and reduce corruption risk on hard crashes.
+        if worker_id == 1 && maintenance_cycles % 60 == 0 && maintenance_cycles > 0 {
+            if let Err(e) = sqlite_service.wal_checkpoint() {
+                app_log_warn!("⚠️ WORKER {}: WAL checkpoint failed: {}", worker_id, e);
             }
         }
 

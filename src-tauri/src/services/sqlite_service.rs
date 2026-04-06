@@ -404,6 +404,38 @@ impl SqliteVectorService {
         self.job_queue_service.clear_all_jobs()
     }
 
+    /// Get the count of pending jobs in the queue.
+    pub fn get_pending_job_count(&self) -> Result<i64> {
+        self.job_queue_service.get_pending_job_count()
+    }
+
+    /// Cancel all pending jobs whose target_path starts with the given prefix.
+    pub fn cancel_jobs_by_folder_prefix(&self, prefix: &str) -> Result<usize> {
+        self.job_queue_service.cancel_jobs_by_folder_prefix(prefix)
+    }
+
+    /// Get all indexed file paths as a Vec for batch dedup checks.
+    /// Returns file paths from both image_vectors and text_chunks tables.
+    pub fn get_all_indexed_file_paths(&self) -> Result<Vec<String>> {
+        let db = self.db_service.get_safe_lock();
+        let mut paths = Vec::new();
+        let mut stmt = db.prepare(
+            "SELECT DISTINCT file_path FROM images UNION SELECT DISTINCT file_path FROM text_chunks",
+        )?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        for path in rows {
+            if let Ok(p) = path {
+                paths.push(p);
+            }
+        }
+        Ok(paths)
+    }
+
+    /// Run a WAL checkpoint to keep the WAL file small.
+    pub fn wal_checkpoint(&self) -> Result<()> {
+        self.db_service.wal_checkpoint()
+    }
+
     // ===== DRIVE SERVICE DELEGATIONS =====
 
     /// Update drive custom name and physical location

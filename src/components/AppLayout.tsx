@@ -127,6 +127,28 @@ export const AppLayout = () => {
     };
   }, [handleSearch, navigate]);
 
+  // Listen for queue backpressure events and show a toast so the user
+  // knows why indexing paused (instead of silently stopping).
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+
+    const setup = async () => {
+      const { toast } = await import("sonner");
+      unlisten = await listen<{ pending: number; cap: number; message: string }>(
+        "queue_backpressure",
+        (event) => {
+          toast.info("Indexing queue full", {
+            description: event.payload.message,
+            duration: 10000,
+          });
+        }
+      );
+    };
+
+    setup();
+    return () => { unlisten?.(); };
+  }, []);
+
   // Render model status indicator
   const renderModelStatus = () => {
     if (modelDownload.state === "ready") return null;

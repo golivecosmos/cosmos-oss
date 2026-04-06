@@ -381,6 +381,28 @@ impl DatabaseService {
         Ok(result)
     }
 
+    /// Get a safe lock on the database connection, recovering from mutex poison.
+    ///
+    /// If a thread panics while holding the lock, the Mutex becomes "poisoned."
+    /// Instead of cascading the panic to every other thread (which causes the
+    /// 500% CPU crash + DB corruption), we recover the inner connection and
+    /// continue. The connection itself is still valid; only the Mutex state is bad.
+    pub fn get_safe_lock(&self) -> std::sync::MutexGuard<'_, Connection> {
+        self.db.lock().unwrap_or_else(|poisoned| {
+            app_log_warn!("⚠️ DB: Recovered from poisoned mutex — a thread panicked while holding the DB lock");
+            poisoned.into_inner()
+        })
+    }
+
+    /// Run a WAL checkpoint to keep the WAL file small and reduce corruption risk.
+    /// Call this periodically (e.g., every 5 minutes from a maintenance cycle).
+    pub fn wal_checkpoint(&self) -> Result<()> {
+        let db = self.get_safe_lock();
+        db.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")?;
+        app_log_info!("✅ DB: WAL checkpoint completed");
+        Ok(())
+    }
+
     /// Get the database connection
     pub fn get_connection(&self) -> Arc<Mutex<Connection>> {
         // Check if the database is actually encrypted
@@ -531,6 +553,7 @@ impl DatabaseService {
         connection.execute_batch(&format!("PRAGMA key = '{}'", db_key))?;
         connection.execute_batch("PRAGMA cipher_compatibility = 3")?;
         connection.execute_batch("PRAGMA journal_mode = WAL")?;
+        connection.execute_batch("PRAGMA busy_timeout = 5000")?;
 
         // Load sqlite-vec extension
         unsafe {
@@ -564,6 +587,7 @@ impl DatabaseService {
 
         // Ensure the database is writable
         connection.execute_batch("PRAGMA journal_mode = WAL")?;
+        connection.execute_batch("PRAGMA busy_timeout = 5000")?;
 
         // Load sqlite-vec extension for vector search functions
         unsafe {

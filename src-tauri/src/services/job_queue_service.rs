@@ -247,6 +247,36 @@ impl JobQueueService {
         Ok(jobs)
     }
 
+    /// Cancel all pending jobs whose target_path starts with the given folder prefix.
+    /// Returns the number of jobs cancelled.
+    pub fn cancel_jobs_by_folder_prefix(&self, prefix: &str) -> Result<usize> {
+        let connection = self.db_service.get_connection();
+        let db = connection.lock().unwrap_or_else(|e| e.into_inner());
+        let like_pattern = format!("{}%", prefix);
+        let cancelled = db.execute(
+            "UPDATE jobs SET status = 'cancelled', updated_at = datetime('now') WHERE status = 'pending' AND target_path LIKE ?1",
+            rusqlite::params![like_pattern],
+        )?;
+        app_log_info!(
+            "🗑️ JOBS: Cancelled {} pending jobs matching prefix: {}",
+            cancelled,
+            prefix
+        );
+        Ok(cancelled)
+    }
+
+    /// Get count of pending jobs. Used for backpressure checks.
+    pub fn get_pending_job_count(&self) -> Result<i64> {
+        let connection = self.db_service.get_connection();
+        let db = connection.lock().unwrap_or_else(|e| e.into_inner());
+        let count: i64 = db.query_row(
+            "SELECT COUNT(*) FROM jobs WHERE status = 'pending'",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
     /// Get jobs by status
     pub fn get_jobs_by_status(&self, status: &str) -> Result<Vec<serde_json::Value>> {
         let connection = self.db_service.get_connection();
