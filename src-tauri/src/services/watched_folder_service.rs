@@ -447,13 +447,23 @@ impl WatchedFolderService {
 
     fn discover_indexable_files(&self, folder_path: &str, recursive: bool) -> Result<Vec<PathBuf>> {
         let mut files = Vec::new();
+        let max_files = crate::commands::indexing::MAX_FILES_PER_SCAN;
 
         if recursive {
             for entry in walkdir::WalkDir::new(folder_path)
-                .follow_links(true)
+                .follow_links(false) // Prevent symlink loops (macOS /System, etc.)
                 .into_iter()
                 .filter_map(|entry| entry.ok())
             {
+                if files.len() >= max_files {
+                    app_log_warn!(
+                        "⚠️ WATCH: Hit scan cap of {} files in {}",
+                        max_files,
+                        folder_path
+                    );
+                    break;
+                }
+
                 if !entry.file_type().is_file() {
                     continue;
                 }
@@ -593,16 +603,35 @@ impl WatchedFolderService {
     }
 }
 
+/// Base poll interval in seconds (when queue is small or empty).
+const POLL_INTERVAL_BASE_SECS: u64 = 10;
+/// Backoff poll interval when queue is under heavy load (>10K pending jobs).
+const POLL_INTERVAL_LOADED_SECS: u64 = 60;
+/// Pending job threshold that triggers backoff.
+const QUEUE_LOAD_THRESHOLD: i64 = 10_000;
+
 pub async fn run_watched_folder_monitor_loop(
     watched_folder_service: Arc<WatchedFolderService>,
     sqlite_service: Arc<SqliteVectorService>,
     app_handle: tauri::AppHandle,
 ) {
-    app_log_info!("👀 WATCH: Starting watched folder monitor loop");
-    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(2));
+    app_log_info!("👀 WATCH: Starting watched folder monitor loop (adaptive interval)");
 
     loop {
-        interval.tick().await;
+        // Adaptive backoff: check queue pressure and adjust poll interval.
+        let poll_secs = match sqlite_service.get_pending_job_count() {
+            Ok(count) if count >= QUEUE_LOAD_THRESHOLD => {
+                app_log_debug!(
+                    "👀 WATCH: Queue loaded ({} pending), backing off to {}s poll",
+                    count,
+                    POLL_INTERVAL_LOADED_SECS
+                );
+                POLL_INTERVAL_LOADED_SECS
+            }
+            _ => POLL_INTERVAL_BASE_SECS,
+        };
+
+        tokio::time::sleep(tokio::time::Duration::from_secs(poll_secs)).await;
 
         match watched_folder_service
             .scan_all_watched_folders(&sqlite_service, Some(&app_handle), false)
@@ -624,7 +653,10 @@ pub async fn run_watched_folder_monitor_loop(
 }
 
 fn is_hidden_or_system_name(name: &str) -> bool {
-    name.starts_with('.') || name == "DS_Store" || name == ".DS_Store" || name == "Thumbs.db"
+    name.starts_with('.')
+        || name == "DS_Store"
+        || name == "Thumbs.db"
+        || crate::commands::indexing::EXCLUDED_DIR_NAMES.contains(&name)
 }
 
 fn is_supported_indexable_path(path: &Path) -> bool {

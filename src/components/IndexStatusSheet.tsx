@@ -629,16 +629,76 @@ export function IndexStatusSheet({ isOpen, onClose }: IndexStatusSheetProps) {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
-        {queueStatus && (
-          <div className="mb-4 rounded-xl border border-gray-200 dark:border-darkBgHighlight bg-gray-50 dark:bg-darkBgMid p-4">
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-xs uppercase tracking-wide text-gray-600 dark:text-customGray">Queue Health</div>
-              <div className="text-[11px] text-gray-500 dark:text-customGray">{queueLastUpdatedLabel}</div>
+        {/* Progress Overview — the first thing the user should see */}
+        {queueStatus && (queueStatus.pending > 0 || queueStatus.running > 0) && (() => {
+          const totalProcessed = queueStatus.completed + queueStatus.failed;
+          const totalAll = totalProcessed + queueStatus.pending + queueStatus.running;
+          const pct = totalAll > 0 ? Math.round((totalProcessed / totalAll) * 100) : 0;
+          const throughputPerHour = queueStatus.completed_last_hour || 0;
+          const remaining = queueStatus.pending + queueStatus.running;
+          const etaHours = throughputPerHour > 0 ? remaining / throughputPerHour : 0;
+          const etaLabel = throughputPerHour === 0
+            ? 'Calculating...'
+            : etaHours < 1
+              ? `~${Math.round(etaHours * 60)}m remaining`
+              : etaHours < 24
+                ? `~${Math.round(etaHours)}h remaining`
+                : `~${Math.round(etaHours / 24)}d remaining`;
+
+          return (
+            <div className="mb-4 rounded-xl border border-blue-200 dark:border-customBlue bg-blue-50/50 dark:bg-blueShadow/30 p-4">
+              <div className="flex items-baseline justify-between mb-2">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-bold tabular-nums text-blue-700 dark:text-blueHighlight">{pct}%</span>
+                  <span className="text-xs text-gray-500 dark:text-customGray">
+                    {totalProcessed.toLocaleString()} of {totalAll.toLocaleString()} files
+                  </span>
+                </div>
+                <span className="text-xs text-gray-500 dark:text-customGray">{etaLabel}</span>
+              </div>
+              <div className="w-full bg-blue-100 dark:bg-customBlue/30 rounded-full h-2.5">
+                <div
+                  className="bg-blue-600 dark:bg-blueHighlight h-2.5 rounded-full transition-all duration-700 ease-out"
+                  style={{ width: `${Math.max(pct, 1)}%` }}
+                />
+              </div>
+              <div className="flex items-center justify-between mt-2 text-[11px] text-gray-500 dark:text-customGray">
+                <span>{queueStatus.running} processing now</span>
+                <span>
+                  {throughputPerHour > 0
+                    ? `${throughputPerHour}/hr`
+                    : 'Starting up...'}
+                  {queueStatus.failed_last_hour > 0 && (
+                    <span className="text-red-500 dark:text-redHighlight ml-1">
+                      ({queueStatus.failed_last_hour} failed)
+                    </span>
+                  )}
+                </span>
+              </div>
             </div>
-            <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+          );
+        })()}
+
+        {/* Queue Health — collapsed by default, expandable for power users */}
+        {queueStatus && (
+          <details className="mb-4 rounded-xl border border-gray-200 dark:border-darkBgHighlight bg-gray-50 dark:bg-darkBgMid">
+            <summary className="px-4 py-3 cursor-pointer flex items-center justify-between text-xs uppercase tracking-wide text-gray-600 dark:text-customGray select-none hover:bg-gray-100 dark:hover:bg-darkBgHighlight/40 rounded-xl transition-colors">
+              <span className="flex items-center gap-2">
+                Queue Health
+                {queueHealthLabel.text !== 'Healthy' && (
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium normal-case ${queueHealthLabel.className}`}>
+                    {queueHealthLabel.text}
+                    {queueHealthLabel.text === 'Warning' && queueStatus.failed_last_hour > 0 && ` — ${queueStatus.failed_last_hour} failed this hour`}
+                    {queueHealthLabel.text === 'Degraded' && queueStatus.stale_running > 0 && ` — ${queueStatus.stale_running} stale jobs`}
+                  </span>
+                )}
+              </span>
+              <span className="text-[11px] normal-case">{queueLastUpdatedLabel}</span>
+            </summary>
+            <div className="px-4 pb-3 grid grid-cols-2 gap-2 text-sm">
               <div className="rounded-lg border border-orange-200 dark:border-customYellow px-2 py-1.5 bg-white/70 dark:bg-darkBg/30">
                 <div className="text-[11px] text-gray-600 dark:text-customGray">Queued</div>
-                <div className="font-semibold text-orange-700 dark:text-yellowHighlight">{queueStatus.pending}</div>
+                <div className="font-semibold text-orange-700 dark:text-yellowHighlight">{queueStatus.pending.toLocaleString()}</div>
               </div>
               <div className="rounded-lg border border-blue-200 dark:border-customBlue px-2 py-1.5 bg-white/70 dark:bg-darkBg/30">
                 <div className="text-[11px] text-gray-600 dark:text-customGray">Running</div>
@@ -667,7 +727,7 @@ export function IndexStatusSheet({ isOpen, onClose }: IndexStatusSheetProps) {
                 </div>
               </div>
             </div>
-          </div>
+          </details>
         )}
 
         {!hasAnyJobs ? (
@@ -689,9 +749,9 @@ export function IndexStatusSheet({ isOpen, onClose }: IndexStatusSheetProps) {
                  >
                    <span className="flex items-center gap-2">
                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 dark:border-blueHighlight border-blue-500" />
-                     {jobCategories.running.length > 0 
-                       ? `Indexing in Progress (${jobCategories.running.length} files)` 
-                       : `Preparing to index (${jobCategories.pending.total} queued)`
+                     {jobCategories.running.length > 0
+                       ? `Processing (${jobCategories.running.length} files across 2 workers)`
+                       : `Preparing to index (${jobCategories.pending.total.toLocaleString()} queued)`
                      }
                    </span>
                    {showRunningJobs ? (
@@ -729,22 +789,115 @@ export function IndexStatusSheet({ isOpen, onClose }: IndexStatusSheetProps) {
                </div>
              )}
 
-             {/* Pending Jobs */}
-             {jobCategories.pending.total > 0 && (
-               <JobSection
-                 title="Pending Queue"
-                 jobs={jobCategories.pending.displayed}
-                 bgColor="bg-orange-50 dark:bg-yellowShadow"
-                 textColor="text-orange-700 dark:text-yellowHighlight"
-                 borderColor="border-orange-200 dark:border-customYellow"
-                 icon={Clock}
-                 isExpanded={showPendingJobs}
-                 onToggle={() => setShowPendingJobs(v => !v)}
-                 hasMore={jobCategories.hasMore.pending}
-                 limit={JOB_LIMITS.PENDING}
-                 totalCount={jobCategories.pending.total}
-               />
-             )}
+             {/* Pending Jobs — grouped by folder when large, individual when small */}
+             {jobCategories.pending.total > 0 && (() => {
+               // Group pending jobs by parent folder for a useful summary
+               const folderGroups = new Map<string, number>();
+               const typeGroups = new Map<string, number>();
+               for (const job of jobCategories.pending.all) {
+                 const path = job.progress.directory_path;
+                 const parts = path.split('/');
+                 // Use parent folder (2 levels up from filename for readability)
+                 const folder = parts.length > 2
+                   ? parts.slice(0, -1).join('/')
+                   : parts.slice(0, -1).join('/') || '/';
+                 folderGroups.set(folder, (folderGroups.get(folder) || 0) + 1);
+                 // Group by file extension
+                 const ext = path.split('.').pop()?.toLowerCase() || 'other';
+                 typeGroups.set(ext, (typeGroups.get(ext) || 0) + 1);
+               }
+               const sortedFolders = [...folderGroups.entries()].sort((a, b) => b[1] - a[1]);
+               const sortedTypes = [...typeGroups.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
+               const showGrouped = jobCategories.pending.total > 20;
+
+               return (
+                 <div className="bg-orange-50 dark:bg-yellowShadow rounded-xl border border-orange-200 dark:border-customYellow p-3">
+                   <button
+                     className="w-full flex items-center justify-between font-semibold text-orange-700 dark:text-yellowHighlight text-sm mb-2 border-b border-orange-200 dark:border-customYellow pb-2 bg-transparent hover:bg-white/60 dark:hover:bg-darkBgHighlight/40 rounded-md transition-colors duration-200 px-1"
+                     onClick={() => setShowPendingJobs(v => !v)}
+                   >
+                     <span className="flex items-center gap-2 tracking-tight">
+                       <Clock className="h-4 w-4" />
+                       Pending Queue ({jobCategories.pending.total.toLocaleString()})
+                     </span>
+                     {showPendingJobs ? <ChevronUp className="h-4 w-4 ml-2" /> : <ChevronDown className="h-4 w-4 ml-2" />}
+                   </button>
+
+                   <div className={`transition-all duration-300 ease-in-out ${showPendingJobs ? 'max-h-[500px] opacity-100 overflow-y-auto' : 'max-h-0 opacity-0 overflow-hidden'}`}>
+                     {showGrouped ? (
+                       <div className="mt-2 space-y-3">
+                         {/* File type breakdown */}
+                         <div className="flex flex-wrap gap-1.5">
+                           {sortedTypes.map(([ext, count]) => (
+                             <span key={ext} className="text-[11px] px-2 py-0.5 rounded-full bg-orange-100 dark:bg-yellowShadow/60 text-orange-700 dark:text-yellowHighlight font-medium">
+                               .{ext} ({count.toLocaleString()})
+                             </span>
+                           ))}
+                         </div>
+                         {/* Folder breakdown */}
+                         <ul className="space-y-1">
+                           {sortedFolders.slice(0, 15).map(([folder, count]) => {
+                             // Show last 2-3 path segments for readability
+                             const segments = folder.split('/');
+                             const shortPath = segments.length > 3
+                               ? '.../' + segments.slice(-3).join('/')
+                               : folder;
+                             return (
+                               <li key={folder} className="group flex items-center justify-between text-xs py-1.5 px-2 rounded-md hover:bg-white/60 dark:hover:bg-darkBg/30">
+                                 <span className="text-orange-800 dark:text-yellowHighlight truncate mr-2 font-mono" title={folder}>
+                                   {shortPath}
+                                 </span>
+                                 <div className="flex items-center gap-2 flex-shrink-0">
+                                   <span className="text-orange-600 dark:text-customYellow font-semibold tabular-nums">
+                                     {count.toLocaleString()} files
+                                   </span>
+                                   <button
+                                     className="opacity-0 group-hover:opacity-100 transition-opacity text-red-400 hover:text-red-600 dark:text-customRed/60 dark:hover:text-customRed p-0.5 rounded"
+                                     title={`Cancel ${count} pending jobs in ${folder}`}
+                                     onClick={async () => {
+                                       try {
+                                         const cancelled = await invoke<number>('cancel_jobs_by_folder', { folderPrefix: folder });
+                                         const { toast } = await import('sonner');
+                                         toast.success(`Cancelled ${cancelled} jobs in ${shortPath}`);
+                                         loadJobs();
+                                       } catch (err) {
+                                         console.error('Failed to cancel folder jobs:', err);
+                                       }
+                                     }}
+                                   >
+                                     <X className="h-3.5 w-3.5" />
+                                   </button>
+                                 </div>
+                               </li>
+                             );
+                           })}
+                           {sortedFolders.length > 15 && (
+                             <li className="text-[11px] text-orange-500 dark:text-customYellow px-2 pt-1">
+                               +{sortedFolders.length - 15} more folders
+                             </li>
+                           )}
+                         </ul>
+                       </div>
+                     ) : (
+                       /* Small queue — show individual items */
+                       <ul className="space-y-2 mt-2 pr-2">
+                         {jobCategories.pending.displayed.map(job => (
+                           <JobItem
+                             key={job.id}
+                             job={job}
+                             onCancel={handleCancelJob}
+                             onRetry={handleRetryJob}
+                             cancellingJobs={cancellingJobs}
+                             setBugReportError={setBugReportError}
+                             setShowBugReport={setShowBugReport}
+                           />
+                         ))}
+                       </ul>
+                     )}
+                   </div>
+                 </div>
+               );
+             })()}
 
              {/* Completed Jobs */}
              {jobCategories.completed.total > 0 && (
