@@ -140,6 +140,13 @@ impl SqliteVectorService {
 
     // ===== SCHEMA SERVICE DELEGATIONS =====
 
+    /// Public method to ensure clustering tables exist
+    pub fn ensure_clustering_tables(&self) -> Result<()> {
+        let connection = self.db_service.get_connection();
+        let db = connection.lock().unwrap();
+        self.schema_service.ensure_clustering_tables_exist(&db)
+    }
+
     /// Public method to ensure jobs table compatibility (for external use)
     pub fn ensure_jobs_table_compatibility(&self) -> Result<()> {
         let connection = self.db_service.get_connection();

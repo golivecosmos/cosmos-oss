@@ -1,6 +1,7 @@
 // Commands module - organizes all Tauri command handlers
 pub mod app_installation;
 pub mod audio;
+pub mod clustering;
 pub mod config_commands;
 pub mod debug;
 pub mod drive_commands;
@@ -19,6 +20,7 @@ pub mod window_control;
 // Re-export all commands for easy importing in main.rs
 pub use app_installation::*;
 pub use audio::*;
+pub use clustering::*;
 pub use config_commands::{get_config_info, set_custom_db_path};
 pub use debug::*;
 pub use drive_commands::*;

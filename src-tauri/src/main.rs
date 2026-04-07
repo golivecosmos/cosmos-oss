@@ -47,6 +47,11 @@ use commands::{
     // Drive management
     get_connected_drives,
     get_desktop_path, // App installation commands
+    // Clustering
+    compute_clusters,
+    get_cluster_files,
+    get_clusters,
+    get_file_positions,
     get_drive_for_path,
     get_drive_indexed_files,
     get_drive_info,
@@ -375,6 +380,11 @@ async fn main() {
             focus_quick_search_input,
             consume_full_app_handoff,
             uninstall_app,
+            // Clustering
+            compute_clusters,
+            get_clusters,
+            get_file_positions,
+            get_cluster_files,
         ]);
     }
 
@@ -479,6 +489,11 @@ async fn main() {
             focus_quick_search_input,
             consume_full_app_handoff,
             uninstall_app,
+            // Clustering
+            compute_clusters,
+            get_clusters,
+            get_file_positions,
+            get_cluster_files,
         ]);
     }
 

@@ -19,11 +19,11 @@ fn create_mock_task_state() -> (
 /// Create lightweight test services for background task testing
 fn create_test_app_state() -> AppState {
     use crate::services::{
-        audio_service::AudioService, download_service::DownloadService,
-        drive_service::DriveService, embedding_service::EmbeddingService,
-        file_service::FileService, model_service::ModelService,
-        sqlite_service::SqliteVectorService, video_service::VideoService,
-        watched_folder_service::WatchedFolderService,
+        audio_service::AudioService, clustering_service::ClusteringService,
+        download_service::DownloadService, drive_service::DriveService,
+        embedding_service::EmbeddingService, file_service::FileService,
+        model_service::ModelService, sqlite_service::SqliteVectorService,
+        video_service::VideoService, watched_folder_service::WatchedFolderService,
     };
 
     // Create lightweight services - no model loading, in-memory DB
@@ -45,6 +45,9 @@ fn create_test_app_state() -> AppState {
     let audio_service = Arc::new(tokio::sync::Mutex::new(AudioService::new()));
     let video_service = Arc::new(VideoService::new());
     let download_service = Arc::new(DownloadService::new());
+    let clustering_service = Arc::new(ClusteringService::new(
+        sqlite_service.get_database_service(),
+    ));
 
     AppState {
         audio_service,
@@ -56,6 +59,7 @@ fn create_test_app_state() -> AppState {
         download_service,
         drive_service,
         watched_folder_service,
+        clustering_service,
         video_generation_status: Arc::new(
             tokio::sync::Mutex::new(std::collections::HashMap::new()),
         ),

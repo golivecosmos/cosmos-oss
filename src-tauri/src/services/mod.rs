@@ -1,6 +1,7 @@
 pub mod api_key_encryption_service;
 pub mod app_installation_service;
 pub mod audio_service;
+pub mod clustering_service;
 pub mod config_service;
 pub mod database_encryption_service;
 pub mod database_service;

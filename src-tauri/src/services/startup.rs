@@ -4,6 +4,7 @@ use tauri::{App, Emitter, Manager};
 
 use crate::services::{
     audio_service::AudioService,
+    clustering_service::ClusteringService,
     download_service::DownloadService,
     drive_service::DriveService,
     embedding_service::EmbeddingService,
@@ -32,6 +33,7 @@ pub struct AppState {
     pub download_service: Arc<DownloadService>,
     pub drive_service: Arc<DriveService>,
     pub watched_folder_service: Arc<WatchedFolderService>,
+    pub clustering_service: Arc<ClusteringService>,
     pub video_generation_status: Arc<
         tokio::sync::Mutex<
             std::collections::HashMap<String, crate::commands::video::VideoGenerationStatus>,
@@ -90,6 +92,9 @@ impl StartupManager {
         let audio_service = Arc::new(tokio::sync::Mutex::new(AudioService::new()));
         let video_service = Arc::new(VideoService::new());
         let download_service = Arc::new(DownloadService::new());
+        let clustering_service = Arc::new(ClusteringService::new(
+            sqlite_service.get_database_service(),
+        ));
 
         let app_state = AppState {
             audio_service,
@@ -101,6 +106,7 @@ impl StartupManager {
             download_service,
             drive_service,
             watched_folder_service,
+            clustering_service,
             video_generation_status: Arc::new(tokio::sync::Mutex::new(
                 std::collections::HashMap::new(),
             )),
@@ -142,6 +148,9 @@ impl StartupManager {
         let audio_service = Arc::new(tokio::sync::Mutex::new(AudioService::new()));
         let video_service = Arc::new(VideoService::new());
         let download_service = Arc::new(DownloadService::new());
+        let clustering_service = Arc::new(ClusteringService::new(
+            sqlite_service.get_database_service(),
+        ));
 
         let app_state = AppState {
             audio_service,
@@ -153,6 +162,7 @@ impl StartupManager {
             download_service,
             drive_service,
             watched_folder_service,
+            clustering_service,
             video_generation_status: Arc::new(tokio::sync::Mutex::new(
                 std::collections::HashMap::new(),
             )),
@@ -307,6 +317,17 @@ impl StartupManager {
                         app_log_warn!("⚠️ STARTUP: Jobs table compatibility check failed: {}", e);
                         app_log_warn!(
                             "📝 STARTUP: Job features may not work properly, but app will continue"
+                        );
+                    }
+                }
+
+                // Ensure clustering tables exist
+                match service.ensure_clustering_tables() {
+                    Ok(_) => app_log_info!("✅ STARTUP: Clustering tables verified"),
+                    Err(e) => {
+                        app_log_warn!("⚠️ STARTUP: Clustering tables check failed: {}", e);
+                        app_log_warn!(
+                            "📝 STARTUP: Clustering features may not work properly, but app will continue"
                         );
                     }
                 }
@@ -610,6 +631,7 @@ impl Clone for AppState {
             download_service: self.download_service.clone(),
             drive_service: self.drive_service.clone(),
             watched_folder_service: self.watched_folder_service.clone(),
+            clustering_service: self.clustering_service.clone(),
             video_generation_status: self.video_generation_status.clone(),
         }
     }

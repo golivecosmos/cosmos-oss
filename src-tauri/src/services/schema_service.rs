@@ -571,6 +571,71 @@ impl SchemaService {
         Ok(())
     }
 
+    /// Ensure clustering tables exist
+    pub fn ensure_clustering_tables_exist(&self, db: &Connection) -> Result<()> {
+        let clusters_exists = match db.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='clusters'",
+            rusqlite::params![],
+            |row| row.get::<_, i64>(0),
+        ) {
+            Ok(count) => count > 0,
+            Err(_) => false,
+        };
+
+        if !clusters_exists {
+            app_log_info!("🏗️ CLUSTERING: Creating clustering tables");
+
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS clusters (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    centroid BLOB,
+                    position_x REAL,
+                    position_y REAL,
+                    dominant_type TEXT,
+                    auto_tags TEXT DEFAULT '[]',
+                    file_count INTEGER DEFAULT 0,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )",
+                rusqlite::params![],
+            )?;
+
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS cluster_members (
+                    cluster_id INTEGER NOT NULL,
+                    file_id TEXT NOT NULL,
+                    file_path TEXT NOT NULL,
+                    position_x REAL,
+                    position_y REAL,
+                    source_type TEXT,
+                    PRIMARY KEY (cluster_id, file_id),
+                    FOREIGN KEY (cluster_id) REFERENCES clusters(id) ON DELETE CASCADE
+                )",
+                rusqlite::params![],
+            )?;
+
+            db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_cluster_members_file ON cluster_members(file_id)",
+                rusqlite::params![],
+            )?;
+            db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_cluster_members_path ON cluster_members(file_path)",
+                rusqlite::params![],
+            )?;
+            db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_cluster_members_cluster ON cluster_members(cluster_id)",
+                rusqlite::params![],
+            )?;
+
+            app_log_info!("✅ CLUSTERING: Clustering tables created successfully");
+        } else {
+            app_log_debug!("✅ CLUSTERING: Clustering tables already exist");
+        }
+
+        Ok(())
+    }
+
     /// Ensure jobs table exists (backwards compatibility)
     pub fn ensure_jobs_table_exists(&self, db: &Connection) -> Result<()> {
         // Check if jobs table exists
