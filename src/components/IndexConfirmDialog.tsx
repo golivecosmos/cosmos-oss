@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Loader2, FolderOpen, Check } from "lucide-react";
 import {
@@ -62,12 +62,14 @@ export const IndexConfirmDialog: React.FC<IndexConfirmDialogProps> = ({
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
+  const scanRequestId = useRef(0);
 
   const dirName = directoryPath.split("/").pop() || directoryPath;
 
-  // Scan when dialog opens
+  // Scan when dialog opens — ignore stale responses via request counter
   useEffect(() => {
     if (!open || !directoryPath) return;
+    const requestId = ++scanRequestId.current;
     setScanResult(null);
     setError(null);
     setIsScanning(true);
@@ -75,13 +77,18 @@ export const IndexConfirmDialog: React.FC<IndexConfirmDialogProps> = ({
 
     invoke<ScanResult>("scan_directory", { path: directoryPath })
       .then((result) => {
+        if (requestId !== scanRequestId.current) return; // stale
         setScanResult(result);
-        // Select all subdirs by default
         const allPaths = new Set(result.top_subdirs.map((s) => s.path));
         setSelectedPaths(allPaths);
       })
-      .catch((e) => setError(String(e)))
-      .finally(() => setIsScanning(false));
+      .catch((e) => {
+        if (requestId !== scanRequestId.current) return; // stale
+        setError(String(e));
+      })
+      .finally(() => {
+        if (requestId === scanRequestId.current) setIsScanning(false);
+      });
   }, [open, directoryPath]);
 
   const toggleSubdir = (path: string) => {

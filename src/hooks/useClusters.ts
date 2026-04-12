@@ -55,7 +55,16 @@ export function useClusters(): UseClustersReturn {
     }
   }, []);
 
+  const isRecomputing = useRef(false);
+  const pendingRecompute = useRef(false);
+
   const recompute = useCallback(async () => {
+    // Prevent overlapping recomputes — queue one more after current finishes
+    if (isRecomputing.current) {
+      pendingRecompute.current = true;
+      return;
+    }
+    isRecomputing.current = true;
     setIsLoading(true);
     setError(null);
     try {
@@ -69,7 +78,13 @@ export function useClusters(): UseClustersReturn {
       if (!isMounted.current) return;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
+      isRecomputing.current = false;
       if (isMounted.current) setIsLoading(false);
+      // If a recompute was requested while we were running, do one more
+      if (pendingRecompute.current && isMounted.current) {
+        pendingRecompute.current = false;
+        recompute();
+      }
     }
   }, []);
 
@@ -92,7 +107,7 @@ export function useClusters(): UseClustersReturn {
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
         recompute();
-      }, 2000);
+      }, 5000);
     };
 
     const setup = async () => {
