@@ -455,6 +455,31 @@ impl SqliteVectorService {
         self.schema_service.get_file_description(file_path)
     }
 
+    /// Update cluster LLM enrichment fields.
+    pub fn update_cluster_enrichment(&self, cluster_id: i64, llm_name: &str, llm_insight: &str) -> Result<()> {
+        let connection = self.db_service.get_connection();
+        let db = connection.lock().unwrap_or_else(|e| e.into_inner());
+        db.execute(
+            "UPDATE clusters SET llm_name = ?1, llm_insight = ?2, enriched_at = datetime('now') WHERE id = ?3",
+            rusqlite::params![llm_name, llm_insight, cluster_id],
+        )?;
+        Ok(())
+    }
+
+    /// Clear and repopulate briefing notices.
+    pub fn save_briefing_notices(&self, notices: &[(String, String)]) -> Result<()> {
+        let connection = self.db_service.get_connection();
+        let db = connection.lock().unwrap_or_else(|e| e.into_inner());
+        db.execute("DELETE FROM briefing_notices", rusqlite::params![])?;
+        for (text, notice_type) in notices {
+            db.execute(
+                "INSERT INTO briefing_notices (notice_text, notice_type) VALUES (?1, ?2)",
+                rusqlite::params![text, notice_type],
+            )?;
+        }
+        Ok(())
+    }
+
     // ===== DRIVE SERVICE DELEGATIONS =====
 
     /// Update drive custom name and physical location
