@@ -6,6 +6,7 @@ import { resolve } from "@tauri-apps/api/path";
 import { FileItem } from "../components/FileTree";
 import { ReferenceImageData } from "../components/SearchBar";
 import { useSearch, SearchOptions, SearchType } from "../hooks/useSearch";
+import { useClusters, FileCluster, FilePosition2D } from "../hooks/useClusters";
 import { getErrorMessage } from "../utils/errorMessage";
 import {
   useIndexingJobs,
@@ -143,6 +144,17 @@ interface AppLayoutContextType {
   handleBulkIndex: (item: FileItem) => Promise<void>;
   handleReferenceImageClose: () => void;
   handleAddToIndex: (path: string) => Promise<void>;
+
+  // Cluster state
+  clusters: FileCluster[];
+  filePositions: FilePosition2D[];
+  selectedClusterId: number | null;
+  setSelectedClusterId: (id: number | null) => void;
+  isClustering: boolean;
+  clusterError: string | null;
+  recomputeClusters: () => Promise<void>;
+  viewMode: "grid" | "map";
+  setViewMode: (mode: "grid" | "map") => void;
 }
 
 const AppLayoutContext = createContext<AppLayoutContextType | undefined>(undefined);
@@ -176,6 +188,18 @@ export const AppLayoutProvider: React.FC<AppLayoutProviderProps> = ({ children }
     filesCompleted: 0,
     totalFiles: 0,
   });
+
+  // Cluster state
+  const { clusters, positions: filePositions, isLoading: isClustering, error: clusterError, recompute: recomputeClusters } = useClusters();
+  const [selectedClusterId, setSelectedClusterId] = useState<number | null>(null);
+  const [viewMode, setViewMode] = useState<"grid" | "map">(() => {
+    return (localStorage.getItem("cosmos-view-mode") as "grid" | "map") || "grid";
+  });
+
+  // Persist view mode
+  useEffect(() => {
+    localStorage.setItem("cosmos-view-mode", viewMode);
+  }, [viewMode]);
 
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(false);
@@ -973,6 +997,17 @@ export const AppLayoutProvider: React.FC<AppLayoutProviderProps> = ({ children }
     handleBulkIndex,
     handleReferenceImageClose,
     handleAddToIndex,
+
+    // Cluster state
+    clusters,
+    filePositions,
+    selectedClusterId,
+    setSelectedClusterId,
+    isClustering,
+    clusterError,
+    recomputeClusters,
+    viewMode,
+    setViewMode,
   };
 
   return (
