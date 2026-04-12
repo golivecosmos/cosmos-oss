@@ -96,6 +96,14 @@ impl SchemaService {
                     // Non-fatal: understanding layer is optional
                 }
             }
+
+            // Ensure briefing schema (LLM enrichment columns + notices table)
+            match self.ensure_briefing_schema(&db) {
+                Ok(_) => app_log_info!("✅ SCHEMA: Briefing schema verified/created successfully"),
+                Err(e) => {
+                    app_log_warn!("⚠️ SCHEMA: Failed to ensure briefing schema: {}", e);
+                }
+            }
         } else {
             // Check if any tables exist (old versionless database)
             let has_existing_tables = match self.check_existing_tables(&db) {
@@ -661,6 +669,48 @@ impl SchemaService {
              ON file_descriptions(updated_at)",
         )?;
         app_log_info!("✅ SCHEMA: file_descriptions table ready");
+        Ok(())
+    }
+
+    /// Ensure briefing schema: LLM enrichment columns on clusters + briefing_notices table.
+    pub fn ensure_briefing_schema(&self, db: &Connection) -> Result<()> {
+        // Add LLM enrichment columns to clusters table (idempotent via IF NOT EXISTS pattern)
+        // SQLite doesn't support IF NOT EXISTS on ALTER TABLE, so check first
+        let has_llm_name = db
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('clusters') WHERE name='llm_name'",
+                rusqlite::params![],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+
+        if !has_llm_name {
+            db.execute_batch(
+                "ALTER TABLE clusters ADD COLUMN llm_name TEXT;
+                 ALTER TABLE clusters ADD COLUMN llm_insight TEXT;
+                 ALTER TABLE clusters ADD COLUMN enriched_at TEXT;",
+            )?;
+            app_log_info!("✅ BRIEFING: Added LLM enrichment columns to clusters table");
+        }
+
+        // Create briefing_notices table
+        db.execute_batch(
+            "CREATE TABLE IF NOT EXISTS briefing_notices (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                notice_text TEXT NOT NULL,
+                notice_type TEXT,
+                cluster_ids TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )",
+        )?;
+
+        db.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_briefing_notices_created
+             ON briefing_notices(created_at)",
+        )?;
+
+        app_log_info!("✅ BRIEFING: Briefing schema ready");
         Ok(())
     }
 
