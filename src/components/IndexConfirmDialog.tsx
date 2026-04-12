@@ -25,11 +25,16 @@ interface ScanResult {
   top_subdirs: SubdirInfo[];
 }
 
+interface IndexPath {
+  path: string;
+  maxDepth?: number; // 1 = root files only, undefined = full recursion
+}
+
 interface IndexConfirmDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   directoryPath: string;
-  onConfirm: (paths: string[]) => void;
+  onConfirm: (paths: IndexPath[]) => void;
 }
 
 function formatBytes(bytes: number): string {
@@ -116,17 +121,16 @@ export const IndexConfirmDialog: React.FC<IndexConfirmDialogProps> = ({
   const handleConfirm = () => {
     if (!scanResult) return;
     if (scanResult.top_subdirs.length === 0 || selectedPaths.size === scanResult.top_subdirs.length) {
-      // All selected or no subdirs — index the whole directory
-      onConfirm([directoryPath]);
+      // All selected or no subdirs — index the whole directory fully
+      onConfirm([{ path: directoryPath }]);
     } else {
-      // Index only selected subdirectories + root files
-      const paths = Array.from(selectedPaths);
+      // Partial selection — only index selected subdirectories
+      const indexPaths: IndexPath[] = Array.from(selectedPaths).map((p) => ({ path: p }));
       if (rootFileCount > 0) {
-        // Root-level files still need the parent path
-        // The backend will handle dedup via the indexed_paths set
-        paths.unshift(directoryPath);
+        // Index root-level files only (max_depth=1 prevents recursing into deselected subdirs)
+        indexPaths.unshift({ path: directoryPath, maxDepth: 1 });
       }
-      onConfirm(paths);
+      onConfirm(indexPaths);
     }
     onOpenChange(false);
   };

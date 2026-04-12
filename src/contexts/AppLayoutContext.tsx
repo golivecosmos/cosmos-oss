@@ -150,7 +150,7 @@ interface AppLayoutContextType {
   indexConfirmPath: string | null;
   showIndexConfirm: boolean;
   setShowIndexConfirm: (show: boolean) => void;
-  handleIndexConfirm: (paths: string[]) => void;
+  handleIndexConfirm: (paths: { path: string; maxDepth?: number }[]) => void;
 
   // Cluster state
   clusters: FileCluster[];
@@ -850,17 +850,23 @@ export const AppLayoutProvider: React.FC<AppLayoutProviderProps> = ({ children }
   };
 
   // Called by IndexConfirmDialog when user confirms their selection
-  const handleIndexConfirm = async (paths: string[]) => {
-    for (const path of paths) {
+  const handleIndexConfirm = async (paths: { path: string; maxDepth?: number }[]) => {
+    const errors: string[] = [];
+    for (const { path, maxDepth } of paths) {
       try {
-        console.log("🚀 Starting bulk index for:", path);
-        await invoke("index_directory", { path });
+        console.log("🚀 Starting bulk index for:", path, maxDepth ? `(depth=${maxDepth})` : "");
+        await invoke("index_directory", { path, maxDepth: maxDepth ?? null });
         console.log("✅ Bulk index command completed for:", path);
       } catch (error) {
         console.error("❌ Failed to start bulk indexing:", error);
+        errors.push(path);
       }
     }
-    toast.success(`Indexing started for ${paths.length === 1 ? "directory" : `${paths.length} directories`}`);
+    if (errors.length > 0) {
+      toast.error(`Failed to index ${errors.length} ${errors.length === 1 ? "directory" : "directories"}`);
+    } else {
+      toast.success(`Indexing started for ${paths.length === 1 ? "directory" : `${paths.length} directories`}`);
+    }
   };
 
   const handleReferenceImageClose = () => {

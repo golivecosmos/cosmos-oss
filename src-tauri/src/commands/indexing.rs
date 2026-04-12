@@ -623,16 +623,19 @@ pub async fn index_video(
     }
 }
 
-/// Index all files in a directory using queue-based approach
+/// Index all files in a directory using queue-based approach.
+/// Optional max_depth limits recursion (1 = root files only, None = default 20).
 #[tauri::command]
 pub async fn index_directory(
     app_handle: tauri::AppHandle,
     path: String,
+    max_depth: Option<usize>,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
+    let depth = max_depth.unwrap_or(20);
     app_log_info!(
-        "🗂️ QUEUE INDEX: Starting queue-based indexing for directory: {}",
-        path
+        "🗂️ QUEUE INDEX: Starting queue-based indexing for directory: {} (max_depth: {})",
+        path, depth
     );
 
     // Check if the path is a directory
@@ -662,7 +665,7 @@ pub async fn index_directory(
         };
 
     let walker = walkdir::WalkDir::new(&path)
-        .max_depth(20) // Prevent pathological recursion into deeply nested trees
+        .max_depth(depth)
         .follow_links(false) // Prevent symlink loops on systems like macOS with /System links
         .into_iter()
         .filter_entry(|entry| {
