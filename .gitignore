@@ -130,3 +130,4 @@ Thumbs.db
 src-tauri/bin/ffmpeg
 src-tauri/bin/ffprobe
 /libs
+.gstack/

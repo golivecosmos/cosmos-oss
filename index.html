@@ -7,6 +7,62 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Browser-only mock: lets the frontend render outside Tauri for design review
+      if (!window.__TAURI_INTERNALS__) {
+        window.__TAURI_INTERNALS__ = {
+          invoke: async function(cmd, args) {
+            var m = {
+              get_connected_drives: [],
+              get_config_info: { db_path: '', custom_db_path: null },
+              get_desktop_path: '/Users/mock/Desktop',
+              check_model_availability: { available: true, missing_files: 0, missing_file_names: [] },
+              check_models_status: { models_available: true, missing_models: [], total_missing: 0 },
+              get_running_jobs: [],
+              get_jobs: [],
+              get_indexed_count: 0,
+              get_indexed_files_grouped_paginated: [],
+              get_clusters: [],
+              get_file_positions: [],
+              compute_clusters: [],
+              get_cluster_files: [],
+              search_files: [],
+              search_semantic: [],
+              list_directory: [],
+              reload_models: null,
+              sync_drives_to_database: null,
+              get_drive_info: null,
+              get_drive_indexed_files: [],
+              get_drive_for_path: null,
+              focus_quick_search_input: null,
+              consume_full_app_handoff: null,
+              uninstall_app: null,
+              download_models: null,
+              delete_file: null,
+              create_directory: null,
+              index_directory: null,
+              index_file: null,
+              transcribe_audio_file: null,
+              update_drive_metadata: null,
+              delete_drive_from_database: null,
+              get_app_version: '0.1.8-mock',
+            };
+            // Tauri plugin commands
+            if (cmd.startsWith('plugin:path|')) return '/Users/mock';
+            if (cmd.startsWith('plugin:event|')) return 0;
+            if (cmd.startsWith('plugin:')) return null;
+            return m[cmd] !== undefined ? m[cmd] : null;
+          },
+          convertFileSrc: function(p) { return p; },
+          transformCallback: function(cb, once) {
+            var id = Math.random();
+            window['_' + id] = cb;
+            return id;
+          },
+          metadata: { currentWindow: { label: 'main' }, currentWebview: { label: 'main' } }
+        };
+      }
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
