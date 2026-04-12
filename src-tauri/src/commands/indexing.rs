@@ -2,6 +2,7 @@ use crate::app_log_debug;
 use crate::app_log_error;
 use crate::app_log_info;
 use crate::app_log_warn;
+use serde::Serialize;
 use crate::constants::{
     is_supported_image_extension, is_supported_media_extension, is_supported_text_extension,
     is_supported_video_extension,
@@ -1940,4 +1941,131 @@ pub async fn clear_search_index(
             Err(format!("Failed to clear search index: {}", e))
         }
     }
+}
+
+// ===== Pre-scan for confirmation dialog =====
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SubdirInfo {
+    pub name: String,
+    pub path: String,
+    pub file_count: usize,
+    pub total_size: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ScanResult {
+    pub file_count: usize,
+    pub dir_count: usize,
+    pub total_size_bytes: u64,
+    pub top_subdirs: Vec<SubdirInfo>,
+}
+
+/// Quick directory scan without indexing. Returns file counts and top subdirectories
+/// so the UI can show a confirmation dialog before committing to index.
+#[tauri::command]
+pub async fn scan_directory(
+    path: String,
+    state: State<'_, AppState>,
+) -> Result<ScanResult, String> {
+    app_log_info!("🔍 SCAN: Pre-scanning directory: {}", path);
+
+    if !state.file_service.is_directory(&path) {
+        return Err("Path is not a directory".to_string());
+    }
+
+    let mut file_count: usize = 0;
+    let mut dir_count: usize = 0;
+    let mut total_size: u64 = 0;
+    let mut subdir_stats: HashMap<String, (String, usize, u64)> = HashMap::new();
+
+    let walker = walkdir::WalkDir::new(&path)
+        .max_depth(20)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry(|entry| {
+            let name = entry.file_name().to_string_lossy();
+            !is_hidden_or_system_name(&name)
+        });
+
+    for entry in walker {
+        if file_count >= MAX_FILES_PER_SCAN {
+            break;
+        }
+
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        if entry.file_type().is_dir() {
+            dir_count += 1;
+            continue;
+        }
+
+        if !entry.file_type().is_file() {
+            continue;
+        }
+
+        let ext = entry
+            .path()
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or_default()
+            .to_lowercase();
+
+        if !is_supported_media_extension(&ext) {
+            continue;
+        }
+
+        let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+        file_count += 1;
+        total_size += size;
+
+        // Track which top-level subdirectory this file belongs to
+        let file_path = entry.path();
+        if let Ok(rel) = file_path.strip_prefix(&path) {
+            if let Some(first_component) = rel.components().next() {
+                let subdir_name = first_component.as_os_str().to_string_lossy().to_string();
+                // Only track if the first component is a directory (not a root-level file)
+                let subdir_path =
+                    std::path::Path::new(&path).join(&subdir_name);
+                if subdir_path.is_dir() {
+                    let entry = subdir_stats
+                        .entry(subdir_name.clone())
+                        .or_insert_with(|| (subdir_path.to_string_lossy().to_string(), 0, 0));
+                    entry.1 += 1;
+                    entry.2 += size;
+                }
+            }
+        }
+    }
+
+    // Sort subdirs by file count descending, take top 20
+    let mut top_subdirs: Vec<SubdirInfo> = subdir_stats
+        .into_iter()
+        .map(|(name, (path, count, size))| SubdirInfo {
+            name,
+            path,
+            file_count: count,
+            total_size: size,
+        })
+        .collect();
+    top_subdirs.sort_by(|a, b| b.file_count.cmp(&a.file_count));
+    top_subdirs.truncate(20);
+
+    app_log_info!(
+        "🔍 SCAN: Found {} files in {} dirs ({} bytes), {} top subdirs",
+        file_count,
+        dir_count,
+        total_size,
+        top_subdirs.len()
+    );
+
+    Ok(ScanResult {
+        file_count,
+        dir_count,
+        total_size_bytes: total_size,
+        top_subdirs,
+    })
 }
