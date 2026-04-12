@@ -7,6 +7,7 @@ import { FileItem } from "../components/FileTree";
 import { ReferenceImageData } from "../components/SearchBar";
 import { useSearch, SearchOptions, SearchType } from "../hooks/useSearch";
 import { useClusters, FileCluster, FilePosition2D } from "../hooks/useClusters";
+import { IndexConfirmDialog } from "../components/IndexConfirmDialog";
 import { getErrorMessage } from "../utils/errorMessage";
 import {
   useIndexingJobs,
@@ -144,6 +145,12 @@ interface AppLayoutContextType {
   handleBulkIndex: (item: FileItem) => Promise<void>;
   handleReferenceImageClose: () => void;
   handleAddToIndex: (path: string) => Promise<void>;
+
+  // Index confirmation dialog
+  indexConfirmPath: string | null;
+  showIndexConfirm: boolean;
+  setShowIndexConfirm: (show: boolean) => void;
+  handleIndexConfirm: (paths: string[]) => void;
 
   // Cluster state
   clusters: FileCluster[];
@@ -824,7 +831,11 @@ export const AppLayoutProvider: React.FC<AppLayoutProviderProps> = ({ children }
     }
   };
 
-  // Handle bulk indexing with model check
+  // Index confirmation dialog state
+  const [indexConfirmPath, setIndexConfirmPath] = useState<string | null>(null);
+  const [showIndexConfirm, setShowIndexConfirm] = useState(false);
+
+  // Handle bulk indexing — show confirmation dialog instead of indexing immediately
   const handleBulkIndex = async (item: FileItem) => {
     if (!item.is_dir) return;
 
@@ -833,18 +844,23 @@ export const AppLayoutProvider: React.FC<AppLayoutProviderProps> = ({ children }
       return;
     }
 
-    console.log("🗂️ handleBulkIndex called for directory:", item.path);
+    console.log("🗂️ handleBulkIndex: showing confirmation for:", item.path);
+    setIndexConfirmPath(item.path);
+    setShowIndexConfirm(true);
+  };
 
-    try {
-      console.log("🚀 Starting bulk index for:", item.path);
-
-      toast.success("Added directory to search index queue");
-      await invoke("index_directory", { path: item.path });
-      console.log("✅ Bulk index command completed for:", item.path);
-    } catch (error) {
-      toast.error("Failed to add directory to search index queue");
-      console.error("❌ Failed to start bulk indexing:", error);
+  // Called by IndexConfirmDialog when user confirms their selection
+  const handleIndexConfirm = async (paths: string[]) => {
+    for (const path of paths) {
+      try {
+        console.log("🚀 Starting bulk index for:", path);
+        await invoke("index_directory", { path });
+        console.log("✅ Bulk index command completed for:", path);
+      } catch (error) {
+        console.error("❌ Failed to start bulk indexing:", error);
+      }
     }
+    toast.success(`Indexing started for ${paths.length === 1 ? "directory" : `${paths.length} directories`}`);
   };
 
   const handleReferenceImageClose = () => {
@@ -998,6 +1014,12 @@ export const AppLayoutProvider: React.FC<AppLayoutProviderProps> = ({ children }
     handleReferenceImageClose,
     handleAddToIndex,
 
+    // Index confirmation dialog
+    indexConfirmPath,
+    showIndexConfirm,
+    setShowIndexConfirm,
+    handleIndexConfirm,
+
     // Cluster state
     clusters,
     filePositions,
@@ -1013,6 +1035,12 @@ export const AppLayoutProvider: React.FC<AppLayoutProviderProps> = ({ children }
   return (
     <AppLayoutContext.Provider value={value}>
       {children}
+      <IndexConfirmDialog
+        open={showIndexConfirm}
+        onOpenChange={setShowIndexConfirm}
+        directoryPath={indexConfirmPath || ""}
+        onConfirm={handleIndexConfirm}
+      />
     </AppLayoutContext.Provider>
   );
 };
