@@ -1,11 +1,17 @@
-import React, { useState, useCallback } from "react";
-import { LayoutGrid, Map } from "lucide-react";
+import React, { useState, useCallback, useEffect } from "react";
+import { useSearchParams, useNavigate } from "react-router-dom";
+import { LayoutGrid, Map, ArrowLeft } from "lucide-react";
 import PreviewArea from "../PreviewArea";
 import { VisualMap } from "../VisualMap/VisualMap";
 import { MapControls } from "../VisualMap/MapControls";
 import { useAppLayout } from "../../contexts/AppLayoutContext";
 
 export const AILibrary: React.FC = () => {
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const clusterParam = searchParams.get("cluster");
+  const filteredClusterId = clusterParam ? parseInt(clusterParam, 10) : null;
+
   const {
     selectedCollection,
     indexingPaths,
@@ -41,6 +47,17 @@ export const AILibrary: React.FC = () => {
 
   const [showLabels, setShowLabels] = useState(true);
 
+  // Sync cluster filter from URL param
+  useEffect(() => {
+    if (filteredClusterId !== null) {
+      setSelectedClusterId(filteredClusterId);
+    }
+  }, [filteredClusterId, setSelectedClusterId]);
+
+  const filteredCluster = filteredClusterId !== null
+    ? clusters.find((c) => c.cluster_id === filteredClusterId)
+    : null;
+
   const handleSelectFile = useCallback((_fileId: string, filePath: string) => {
     // TODO: open file in preview panel
     console.log("Selected file:", filePath);
@@ -67,6 +84,24 @@ export const AILibrary: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Cluster filter header */}
+      {filteredCluster && (
+        <div className="flex items-center gap-3 px-4 py-2 border-b bg-muted/30">
+          <button
+            onClick={() => navigate("/")}
+            className="text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+          <div>
+            <h2 className="text-sm font-medium">{filteredCluster.name}</h2>
+            <p className="text-xs text-muted-foreground">
+              {filteredCluster.file_count} files · {filteredCluster.dominant_type}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* View toggle header */}
       <div className="flex items-center justify-between px-4 py-2 border-b">
         <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5">

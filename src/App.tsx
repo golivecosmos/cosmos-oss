@@ -3,6 +3,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { AppLayout } from "./components/AppLayout";
 import { AppLayoutProvider } from "./contexts/AppLayoutContext";
 import { IndexingJobsProvider } from "./contexts/IndexingJobsContext";
+import { Dashboard } from "./components/Dashboard/Dashboard";
 import { AILibrary } from "./components/routes/AILibrary";
 import { FileSystem } from "./components/routes/FileSystem";
 import { Drive } from "./components/routes/Drive";
@@ -70,7 +71,8 @@ if (process.env.NODE_ENV === "production") {
 const router = createBrowserRouter(
   createRoutesFromElements(
     <Route path="/" element={<AppLayout />}>
-      <Route index element={<AILibrary />} />
+      <Route index element={<Dashboard />} />
+      <Route path="/library" element={<AILibrary />} />
       <Route path="/fs" element={<FileSystem />} />
       <Route path="/drive/:drive_id" element={<Drive />} />
       <Route path="/studio" element={<StudioLayout />}>

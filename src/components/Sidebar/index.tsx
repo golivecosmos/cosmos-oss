@@ -7,6 +7,7 @@ import {
   Brain,
   House,
   HardDrive,
+  LayoutDashboard,
   Loader2,
   AlertCircle,
   Palette,
@@ -259,7 +260,17 @@ export function Sidebar({
             to="/"
             onClick={() => {
               clearSearch();
-              // Dispatch event for tour
+            }}>
+            <NavButton.Trigger data-tour="dashboard-button">
+              <NavButton.Icon className="bg-blue-600/20 rounded-full h-fit w-fit p-2" icon={<LayoutDashboard className="text-blue-400 font-bold w-5 h-5" />} />
+              <NavButton.Label label="Dashboard" />
+            </NavButton.Trigger>
+          </NavButton>
+
+          <NavButton
+            to="/library"
+            onClick={() => {
+              clearSearch();
               window.dispatchEvent(
                 new CustomEvent("ai-library-clicked", {
                   detail: { collection: "indexed" },
@@ -268,7 +279,7 @@ export function Sidebar({
             }}>
             <NavButton.Trigger data-tour="ai-library-button">
               <NavButton.Icon className="bg-yellow-600/20 rounded-full h-fit w-fit p-2" icon={<Brain className="text-yellow-500 font-bold w-5 h-5" />} />
-              <NavButton.Label label="AI Library" description={`${indexedCount.toLocaleString()} ${indexedCount === 1 ? 'item' : 'items'}`} />
+              <NavButton.Label label="Library" description={`${indexedCount.toLocaleString()} ${indexedCount === 1 ? 'item' : 'items'}`} />
             </NavButton.Trigger>
           </NavButton>
 
@@ -376,11 +387,8 @@ export function Sidebar({
                   <button
                     key={cluster.cluster_id}
                     onClick={() => {
-                      setSelectedClusterId(
-                        selectedClusterId === cluster.cluster_id ? null : cluster.cluster_id
-                      );
-                      setViewMode("map");
-                      navigate("/");
+                      setSelectedClusterId(cluster.cluster_id);
+                      navigate(`/library?cluster=${cluster.cluster_id}`);
                     }}
                     className={cn(
                       "w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors",
