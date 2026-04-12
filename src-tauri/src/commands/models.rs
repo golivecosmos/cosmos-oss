@@ -407,3 +407,40 @@ pub async fn get_file_description(
         .get_file_description(&file_path)
         .map_err(|e| format!("Failed to get description: {}", e))
 }
+
+/// Check if the Gemma 4 understanding model is downloaded.
+#[tauri::command]
+pub async fn is_gemma4_downloaded() -> Result<bool, String> {
+    Ok(DownloadService::is_gemma4_available())
+}
+
+/// Download the Gemma 4 understanding model.
+#[tauri::command]
+pub async fn download_gemma4_model(
+    app_handle: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    app_log_info!("🧠 GEMMA4 DOWNLOAD: Starting Gemma 4 model download");
+
+    let download_service = &state.download_service;
+
+    let progress_callback = {
+        let app_handle = app_handle.clone();
+        move |progress: DownloadProgress| {
+            if let Err(e) = app_handle.emit("gemma4_download_progress", &progress) {
+                app_log_error!("Failed to emit gemma4 download progress: {}", e);
+            }
+        }
+    };
+
+    match download_service.download_gemma4(progress_callback).await {
+        Ok(_) => {
+            app_log_info!("✅ GEMMA4 DOWNLOAD: Model downloaded successfully");
+            Ok("Gemma 4 model downloaded successfully".to_string())
+        }
+        Err(e) => {
+            app_log_error!("❌ GEMMA4 DOWNLOAD: Failed: {}", e);
+            Err(format!("Failed to download Gemma 4 model: {}", e))
+        }
+    }
+}

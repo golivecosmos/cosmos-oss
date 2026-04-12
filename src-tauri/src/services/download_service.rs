@@ -554,4 +554,45 @@ impl DownloadService {
         app_log_info!("All models downloaded successfully");
         Ok(())
     }
+
+    // ===== GEMMA 4 (OPTIONAL UNDERSTANDING MODEL) =====
+
+    /// Get the Gemma 4 GGUF model file definition.
+    pub fn get_gemma4_model() -> Result<ModelFile> {
+        let app_data_dir = path_utils::get_app_data_dir()?;
+        let models_dir = app_data_dir.join("models");
+        Ok(ModelFile {
+            name: "gemma-4-e2b.gguf".to_string(),
+            url: "https://huggingface.co/google/gemma-4-e2b-it-GGUF/resolve/main/gemma-4-e2b-it-Q4_K_M.gguf".to_string(),
+            destination_path: models_dir.join("gemma-4-e2b.gguf"),
+        })
+    }
+
+    /// Check if Gemma 4 model is downloaded.
+    pub fn is_gemma4_available() -> bool {
+        match Self::get_gemma4_model() {
+            Ok(model) => Self::is_non_empty_file(&model.destination_path),
+            Err(_) => false,
+        }
+    }
+
+    /// Download the Gemma 4 model with progress tracking.
+    pub async fn download_gemma4(
+        &self,
+        progress_callback: impl Fn(DownloadProgress) + Send + Sync,
+    ) -> Result<()> {
+        let model = Self::get_gemma4_model()?;
+        if Self::is_non_empty_file(&model.destination_path) {
+            app_log_info!("✅ Gemma 4 model already exists, skipping download");
+            progress_callback(DownloadProgress {
+                file_name: model.name.clone(),
+                downloaded_bytes: 0,
+                total_bytes: None,
+                percentage: 100.0,
+                status: DownloadStatus::Completed,
+            });
+            return Ok(());
+        }
+        self.download_model(&model, progress_callback).await
+    }
 }
