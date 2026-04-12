@@ -10,6 +10,7 @@ import {
   Loader2,
   AlertCircle,
   Palette,
+  Sparkles,
 } from "lucide-react";
 import { FileItem } from "../FileTree";
 import { homeDir } from "@tauri-apps/api/path";
@@ -51,7 +52,7 @@ export function Sidebar({
   onClearSearch,
 }: SidebarProps) {
   const navigate = useNavigate();
-  const { clearSearch, indexedCount, drives, isDrivesLoading } = useAppLayout();
+  const { clearSearch, indexedCount, drives, isDrivesLoading, clusters, selectedClusterId, setSelectedClusterId, setViewMode } = useAppLayout();
 
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(256);
@@ -362,6 +363,42 @@ export function Sidebar({
             </div>
           )}
 
+
+          {/* Clusters */}
+          {clusters.length > 0 && (
+            <>
+              <div className="border-t border-gray-200 dark:border-gray-700"></div>
+              <div className="px-3 py-2">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-3 mb-1">
+                  Clusters
+                </p>
+                {clusters.map((cluster) => (
+                  <button
+                    key={cluster.cluster_id}
+                    onClick={() => {
+                      setSelectedClusterId(
+                        selectedClusterId === cluster.cluster_id ? null : cluster.cluster_id
+                      );
+                      setViewMode("map");
+                      navigate("/");
+                    }}
+                    className={cn(
+                      "w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors",
+                      selectedClusterId === cluster.cluster_id
+                        ? "bg-accent text-accent-foreground"
+                        : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                    )}
+                  >
+                    <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">{cluster.name}</span>
+                    <span className="ml-auto text-xs opacity-60">{cluster.file_count}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          <div className="border-t border-gray-200 dark:border-gray-700"></div>
 
           <NavButton
             to="/studio"
