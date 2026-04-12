@@ -1,4 +1,5 @@
 import React, { useEffect, useCallback } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useAppLayout } from "../../contexts/AppLayoutContext";
 import { useBriefing } from "../../hooks/useBriefing";
 import { DashboardEmpty } from "./DashboardEmpty";
@@ -13,7 +14,6 @@ export const Dashboard: React.FC = () => {
     clusters,
     filePositions,
     hasActiveJobs,
-    handleBulkIndex,
   } = useAppLayout();
 
   const {
@@ -39,17 +39,19 @@ export const Dashboard: React.FC = () => {
     }
   }, [clusters.length, insights.length, isBriefingLoading, generateBriefing]);
 
-  const handleSelectFolder = useCallback(
-    (path: string) => {
-      handleBulkIndex({ path, is_dir: true, name: path.split("/").pop() || path } as any);
-    },
-    [handleBulkIndex]
-  );
+  // Called by DashboardEmpty after models are downloaded
+  const handleStartIndexing = useCallback(async (path: string) => {
+    try {
+      await invoke("index_directory", { path, maxDepth: null });
+    } catch (e) {
+      console.error("Failed to start indexing:", e);
+    }
+  }, []);
 
   return (
     <div className="flex flex-col h-full">
       {state === "empty" && (
-        <DashboardEmpty onSelectFolder={handleSelectFolder} />
+        <DashboardEmpty onStartIndexing={handleStartIndexing} />
       )}
       {state === "indexing" && <DashboardIndexing />}
       {state === "briefing" && (
