@@ -308,11 +308,7 @@ export const AppLayout = () => {
         </div>
 
         {/* Modals and overlays */}
-        {showOnboarding && !showInteractiveTour && (
-          <Onboarding
-            onComplete={handleOnboardingComplete}
-          />
-        )}
+        {/* Old onboarding wizard removed — Dashboard empty state handles first-run */}
         {showInteractiveTour && (
           <InteractiveTour
             onComplete={handleTourComplete}

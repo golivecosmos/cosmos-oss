@@ -528,7 +528,9 @@ export const AppLayoutProvider: React.FC<AppLayoutProviderProps> = ({ children }
       const hasEverIndexedFiles = localStorage.getItem("desktopDocsHasIndexedFiles");
 
       if (!hasOnboarded && !hasEverIndexedFiles) {
-        setShowOnboarding(true);
+        // Old wizard onboarding removed — Dashboard empty state handles first-run
+        // Mark as not yet completed so Dashboard knows to show onboarding flow
+        setHasCompletedOnboarding(false);
       } else if (!hasOnboarded && hasEverIndexedFiles) {
         localStorage.setItem("desktopDocsOnboardingCompleted", "true");
         setHasCompletedOnboarding(true);
