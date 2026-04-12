@@ -87,8 +87,8 @@ export const VisualMap: React.FC<VisualMapProps> = ({
       const { offsetX, offsetY, scale } = viewRef.current;
       const w = canvas.width / window.devicePixelRatio;
       const h = canvas.height / window.devicePixelRatio;
-      const normX = (dataX - minX) / (maxX - minX);
-      const normY = (dataY - minY) / (maxY - minY);
+      const normX = (dataX - minX) / Math.max(maxX - minX, 0.001);
+      const normY = (dataY - minY) / Math.max(maxY - minY, 0.001);
       return {
         x: (normX * w + offsetX) * scale + (w * (1 - scale)) / 2,
         y: (normY * h + offsetY) * scale + (h * (1 - scale)) / 2,
@@ -197,7 +197,10 @@ export const VisualMap: React.FC<VisualMapProps> = ({
     observer.observe(container);
     resize();
 
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(animFrameRef.current);
+    };
   }, [draw]);
 
   // Redraw when data or view changes
