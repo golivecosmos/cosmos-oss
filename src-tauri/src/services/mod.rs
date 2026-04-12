@@ -3,6 +3,7 @@ pub mod app_installation_service;
 pub mod audio_service;
 pub mod clustering_service;
 pub mod config_service;
+pub mod gemma4_service;
 pub mod database_encryption_service;
 pub mod database_service;
 pub mod download_service;

@@ -443,6 +443,18 @@ impl SqliteVectorService {
         self.db_service.wal_checkpoint()
     }
 
+    // ===== FILE DESCRIPTION DELEGATIONS =====
+
+    /// Store or update a Gemma 4 file description.
+    pub fn upsert_file_description(&self, file_path: &str, description: &str) -> Result<()> {
+        self.schema_service.upsert_file_description(file_path, description)
+    }
+
+    /// Get the Gemma 4 description for a file.
+    pub fn get_file_description(&self, file_path: &str) -> Result<Option<String>> {
+        self.schema_service.get_file_description(file_path)
+    }
+
     // ===== DRIVE SERVICE DELEGATIONS =====
 
     /// Update drive custom name and physical location

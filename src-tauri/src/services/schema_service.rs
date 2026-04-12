@@ -87,6 +87,15 @@ impl SchemaService {
                     return Err(e);
                 }
             }
+
+            // Ensure file_descriptions table exists (understanding layer)
+            match self.ensure_file_descriptions_table_exists(&db) {
+                Ok(_) => app_log_info!("✅ SCHEMA: File descriptions table verified/created successfully"),
+                Err(e) => {
+                    app_log_warn!("⚠️ SCHEMA: Failed to ensure file_descriptions table: {}", e);
+                    // Non-fatal: understanding layer is optional
+                }
+            }
         } else {
             // Check if any tables exist (old versionless database)
             let has_existing_tables = match self.check_existing_tables(&db) {
@@ -634,6 +643,56 @@ impl SchemaService {
         }
 
         Ok(())
+    }
+
+    /// Create file_descriptions table for Gemma 4 understanding layer.
+    pub fn ensure_file_descriptions_table_exists(&self, db: &Connection) -> Result<()> {
+        db.execute_batch(
+            "CREATE TABLE IF NOT EXISTS file_descriptions (
+                file_path TEXT PRIMARY KEY,
+                description TEXT NOT NULL,
+                model_version TEXT NOT NULL DEFAULT 'gemma-4-e2b',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )",
+        )?;
+        db.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_file_descriptions_updated
+             ON file_descriptions(updated_at)",
+        )?;
+        app_log_info!("✅ SCHEMA: file_descriptions table ready");
+        Ok(())
+    }
+
+    /// Store or update a file description.
+    pub fn upsert_file_description(&self, file_path: &str, description: &str) -> Result<()> {
+        let connection = self.db_service.get_connection();
+        let db = connection.lock().unwrap_or_else(|e| e.into_inner());
+        db.execute(
+            "INSERT INTO file_descriptions (file_path, description, updated_at)
+             VALUES (?1, ?2, datetime('now'))
+             ON CONFLICT (file_path) DO UPDATE SET
+                description = excluded.description,
+                updated_at = excluded.updated_at",
+            rusqlite::params![file_path, description],
+        )?;
+        Ok(())
+    }
+
+    /// Get the description for a file.
+    pub fn get_file_description(&self, file_path: &str) -> Result<Option<String>> {
+        let connection = self.db_service.get_connection();
+        let db = connection.lock().unwrap_or_else(|e| e.into_inner());
+        let result = db.query_row(
+            "SELECT description FROM file_descriptions WHERE file_path = ?1",
+            rusqlite::params![file_path],
+            |row| row.get::<_, String>(0),
+        );
+        match result {
+            Ok(desc) => Ok(Some(desc)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(anyhow::anyhow!("Failed to get description: {}", e)),
+        }
     }
 
     /// Ensure jobs table exists (backwards compatibility)

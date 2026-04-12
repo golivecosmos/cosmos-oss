@@ -22,6 +22,7 @@ fn create_test_app_state() -> AppState {
         audio_service::AudioService, clustering_service::ClusteringService,
         download_service::DownloadService, drive_service::DriveService,
         embedding_service::EmbeddingService, file_service::FileService,
+        gemma4_service::Gemma4Service,
         model_service::ModelService, sqlite_service::SqliteVectorService,
         video_service::VideoService, watched_folder_service::WatchedFolderService,
     };
@@ -48,6 +49,7 @@ fn create_test_app_state() -> AppState {
     let clustering_service = Arc::new(ClusteringService::new(
         sqlite_service.get_database_service(),
     ));
+    let gemma4_service = Arc::new(Gemma4Service::new());
 
     AppState {
         audio_service,
@@ -60,6 +62,7 @@ fn create_test_app_state() -> AppState {
         drive_service,
         watched_folder_service,
         clustering_service,
+        gemma4_service,
         video_generation_status: Arc::new(
             tokio::sync::Mutex::new(std::collections::HashMap::new()),
         ),

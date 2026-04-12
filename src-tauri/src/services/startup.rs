@@ -6,6 +6,7 @@ use crate::services::{
     audio_service::AudioService,
     clustering_service::ClusteringService,
     download_service::DownloadService,
+    gemma4_service::Gemma4Service,
     drive_service::DriveService,
     embedding_service::EmbeddingService,
     file_service::FileService,
@@ -34,6 +35,7 @@ pub struct AppState {
     pub drive_service: Arc<DriveService>,
     pub watched_folder_service: Arc<WatchedFolderService>,
     pub clustering_service: Arc<ClusteringService>,
+    pub gemma4_service: Arc<Gemma4Service>,
     pub video_generation_status: Arc<
         tokio::sync::Mutex<
             std::collections::HashMap<String, crate::commands::video::VideoGenerationStatus>,
@@ -95,6 +97,7 @@ impl StartupManager {
         let clustering_service = Arc::new(ClusteringService::new(
             sqlite_service.get_database_service(),
         ));
+        let gemma4_service = Arc::new(Gemma4Service::new());
 
         let app_state = AppState {
             audio_service,
@@ -107,6 +110,7 @@ impl StartupManager {
             drive_service,
             watched_folder_service,
             clustering_service,
+            gemma4_service,
             video_generation_status: Arc::new(tokio::sync::Mutex::new(
                 std::collections::HashMap::new(),
             )),
@@ -151,6 +155,7 @@ impl StartupManager {
         let clustering_service = Arc::new(ClusteringService::new(
             sqlite_service.get_database_service(),
         ));
+        let gemma4_service = Arc::new(Gemma4Service::new());
 
         let app_state = AppState {
             audio_service,
@@ -163,6 +168,7 @@ impl StartupManager {
             drive_service,
             watched_folder_service,
             clustering_service,
+            gemma4_service,
             video_generation_status: Arc::new(tokio::sync::Mutex::new(
                 std::collections::HashMap::new(),
             )),
@@ -632,6 +638,7 @@ impl Clone for AppState {
             drive_service: self.drive_service.clone(),
             watched_folder_service: self.watched_folder_service.clone(),
             clustering_service: self.clustering_service.clone(),
+            gemma4_service: self.gemma4_service.clone(),
             video_generation_status: self.video_generation_status.clone(),
         }
     }
