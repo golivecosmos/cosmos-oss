@@ -662,6 +662,7 @@ pub async fn index_directory(
         };
 
     let walker = walkdir::WalkDir::new(&path)
+        .max_depth(20) // Prevent pathological recursion into deeply nested trees
         .follow_links(false) // Prevent symlink loops on systems like macOS with /System links
         .into_iter()
         .filter_entry(|entry| {
@@ -725,7 +726,31 @@ pub async fn index_directory(
             continue;
         }
 
+        // Skip files larger than 500MB to prevent OOM during embedding
+        const MAX_FILE_SIZE: u64 = 500 * 1024 * 1024;
+        if let Ok(meta) = entry.metadata() {
+            if meta.len() > MAX_FILE_SIZE {
+                app_log_warn!(
+                    "⚠️ QUEUE INDEX: Skipping oversized file ({} MB): {}",
+                    meta.len() / (1024 * 1024),
+                    file_path
+                );
+                continue;
+            }
+        }
+
         total_files += 1;
+
+        // Emit scan progress every 500 files so the UI shows feedback during walk
+        if total_files % 500 == 0 {
+            let _ = app_handle.emit(
+                "scan_progress",
+                serde_json::json!({
+                    "files_found": total_files,
+                    "jobs_created": created_jobs,
+                }),
+            );
+        }
 
         // Check against pre-loaded set (O(1) lookup instead of DB query per file)
         if indexed_paths.contains(&file_path) {
