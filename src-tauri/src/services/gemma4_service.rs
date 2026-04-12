@@ -117,18 +117,18 @@ impl Gemma4Service {
     }
 
     /// Lazy-load the model on first use. Disables service on failure.
+    /// Holds the lock through the entire load to prevent concurrent loads.
     pub fn ensure_loaded(&self) -> Result<()> {
         if self.disabled.load(Ordering::Relaxed) {
             return Err(anyhow!("Gemma 4 disabled for this session"));
         }
 
-        {
-            let guard = self.loaded.lock().unwrap_or_else(|e| e.into_inner());
-            if guard.is_some() {
-                return Ok(());
-            }
+        let mut guard = self.loaded.lock().unwrap_or_else(|e| e.into_inner());
+        if guard.is_some() {
+            return Ok(());
         }
 
+        // Still holding the lock — no other thread can load concurrently
         if let Err(e) = self.check_memory() {
             app_log_warn!("⚠️ GEMMA4: {}", e);
             self.disabled.store(true, Ordering::Relaxed);
@@ -154,7 +154,6 @@ impl Gemma4Service {
         match LlamaModel::load_from_file(&backend, &model_path, &model_params) {
             Ok(model) => {
                 app_log_info!("✅ GEMMA4: Model loaded successfully");
-                let mut guard = self.loaded.lock().unwrap_or_else(|e| e.into_inner());
                 *guard = Some(LoadedModel { backend, model });
                 Ok(())
             }
@@ -254,7 +253,7 @@ impl Gemma4Service {
             return None;
         }
 
-        let preview = &content_preview[..content_preview.len().min(2000)];
+        let preview: String = content_preview.chars().take(2000).collect();
         let prompt = format!(
             "<start_of_turn>user\nDescribe this file in 1-2 sentences. What is it about? What type of content does it contain?\n\nFilename: {}\nContent preview:\n{}\n<end_of_turn>\n<start_of_turn>model\n",
             file_name, preview
