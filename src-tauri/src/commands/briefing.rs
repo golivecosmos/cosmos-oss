@@ -56,7 +56,13 @@ pub async fn generate_briefing(
 
     if gemma_available {
         app_log_info!("🧠 BRIEFING: Gemma 4 available, generating LLM insights");
-        used_llm = true;
+
+        // Ensure model is loaded before inference
+        if let Err(e) = state.gemma4_service.ensure_loaded() {
+            app_log_warn!("⚠️ BRIEFING: Failed to load Gemma 4: {}, falling back to TF-IDF", e);
+        } else {
+            used_llm = true;
+        }
 
         // Generate per-cluster insights
         for cluster in &clusters {
@@ -90,7 +96,7 @@ pub async fn generate_briefing(
                 file_summary, cluster.file_count, cluster.name
             );
 
-            if let Some(response) = state.gemma4_service.describe_file("cluster", &prompt) {
+            if let Some(response) = state.gemma4_service.infer(&prompt, 256) {
                 let (name, insight) = parse_cluster_response(&response, cluster);
                 insights.push(ClusterInsight {
                     cluster_id: cluster.cluster_id,
@@ -130,7 +136,7 @@ pub async fn generate_briefing(
             cluster_summary
         );
 
-        if let Some(response) = state.gemma4_service.describe_file("notices", &notices_prompt) {
+        if let Some(response) = state.gemma4_service.infer(&notices_prompt, 512) {
             notices = parse_notices(&response);
         }
 

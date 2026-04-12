@@ -117,7 +117,7 @@ impl Gemma4Service {
     }
 
     /// Lazy-load the model on first use. Disables service on failure.
-    fn ensure_loaded(&self) -> Result<()> {
+    pub fn ensure_loaded(&self) -> Result<()> {
         if self.disabled.load(Ordering::Relaxed) {
             return Err(anyhow!("Gemma 4 disabled for this session"));
         }
@@ -166,8 +166,9 @@ impl Gemma4Service {
         }
     }
 
-    /// Run inference with the given prompt and token limit.
-    fn infer(&self, prompt: &str, max_tokens: usize) -> Option<String> {
+    /// Run raw inference with the given prompt and token limit.
+    /// Use this for custom prompts (briefings, cluster naming) instead of describe_file().
+    pub fn infer(&self, prompt: &str, max_tokens: usize) -> Option<String> {
         let guard = self.loaded.lock().unwrap_or_else(|e| e.into_inner());
         let loaded = guard.as_ref()?;
 
