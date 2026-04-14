@@ -828,16 +828,24 @@ pub async fn transcribe_file(
         return Err("File not found".to_string());
     }
 
-    // Check if file has audio content
+    // Check if file type supports audio
     let extension = path.split('.').last().unwrap_or_default().to_lowercase();
-    let has_audio = [
+    let has_audio_extension = [
         "wav", "mp3", "m4a", "flac", "ogg", "aac", "wma", "mp4", "mov", "avi", "webm", "mkv",
         "flv", "wmv", "m4v",
     ]
     .contains(&extension.as_str());
 
-    if !has_audio {
-        return Err("File does not contain audio content".to_string());
+    if !has_audio_extension {
+        return Err("File type does not support audio".to_string());
+    }
+
+    // For video files, check for actual audio track (many videos have no audio)
+    let video_extensions = ["mp4", "mov", "avi", "webm", "mkv", "flv", "wmv", "m4v"];
+    if video_extensions.contains(&extension.as_str()) {
+        if !crate::services::audio_service::AudioService::has_audio_track(std::path::Path::new(&path)) {
+            return Err("This video has no audio track. Video frames are already indexed.".to_string());
+        }
     }
 
     // Create transcription job
@@ -1507,28 +1515,14 @@ pub async fn persistent_queue_worker(
                         }
                     }
 
-                    // Always enqueue transcript processing for newly indexed videos.
-                    match sqlite_service.create_job("transcription", file_path, Some(1)) {
-                        Ok(transcription_job_id) => {
-                            app_log_info!(
-                                "🎤 WORKER {}: Enqueued transcription job {} for video {}",
-                                worker_id,
-                                transcription_job_id,
-                                file_name
-                            );
-                            if let Ok(job_data) = sqlite_service.get_job_by_id(&transcription_job_id) {
-                                emit_event_with_retry(&app_handle, "job_created", &job_data).await;
-                            }
-                        }
-                        Err(e) => {
-                            app_log_warn!(
-                                "⚠️ WORKER {}: Failed to enqueue transcription job for {}: {}",
-                                worker_id,
-                                file_name,
-                                e
-                            );
-                        }
-                    }
+                    // Transcription is user-controlled, not auto-enqueued.
+                    // Users can right-click a video to transcribe on demand.
+                    // This prevents failures on videos without audio tracks.
+                    app_log_debug!(
+                        "📹 WORKER {}: Video frames indexed for {}. Transcription available on demand.",
+                        worker_id,
+                        file_name
+                    );
                 }
                 Err(e) => {
                     consecutive_errors += 1;
