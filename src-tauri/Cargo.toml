@@ -1,6 +1,6 @@
 [package]
 name = "cosmos"
-version = "0.1.8"
+version = "0.1.9"
 description = "Cosmos OSS – a local-first, multimodal file browser"
 authors = ["Cosmos OSS Contributors"]
 license = "MIT"
