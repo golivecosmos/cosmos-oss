@@ -126,6 +126,43 @@ impl AudioService {
         Ok(result)
     }
 
+    /// Check if a media file contains an audio track without loading it fully.
+    pub fn has_audio_track(file_path: &Path) -> bool {
+        use std::fs::File;
+        use symphonia::core::codecs::CODEC_TYPE_NULL;
+        use symphonia::core::formats::FormatOptions;
+        use symphonia::core::io::MediaSourceStream;
+        use symphonia::core::meta::MetadataOptions;
+        use symphonia::core::probe::Hint;
+
+        let file = match File::open(file_path) {
+            Ok(f) => f,
+            Err(_) => return false,
+        };
+        let mss = MediaSourceStream::new(Box::new(file), Default::default());
+
+        let mut hint = Hint::new();
+        if let Some(ext) = file_path.extension().and_then(|e| e.to_str()) {
+            hint.with_extension(ext);
+        }
+
+        let probed = match symphonia::default::get_probe().format(
+            &hint,
+            mss,
+            &FormatOptions::default(),
+            &MetadataOptions::default(),
+        ) {
+            Ok(p) => p,
+            Err(_) => return false,
+        };
+
+        probed
+            .format
+            .tracks()
+            .iter()
+            .any(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+    }
+
     /// Load audio data from file (supports multiple formats via Symphonia)
     fn load_audio_data(&self, file_path: &Path) -> Result<Vec<f32>> {
         app_log_debug!("🔧 Loading audio data from: {:?}", file_path);
