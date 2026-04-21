@@ -23,6 +23,49 @@ pub struct DatabaseService {
 }
 
 impl DatabaseService {
+    fn is_in_memory_database(&self) -> bool {
+        self.db_path.read().unwrap().as_os_str() == ":memory:"
+    }
+
+    fn uses_isolated_runtime_connections(&self) -> bool {
+        self.is_encrypted && !self.is_in_memory_database()
+    }
+
+    fn configure_plain_connection(connection: &Connection) -> Result<()> {
+        connection.execute_batch("PRAGMA journal_mode = WAL")?;
+        connection.execute_batch("PRAGMA busy_timeout = 5000")?;
+
+        unsafe {
+            sqlite3_auto_extension(Some(std::mem::transmute(sqlite3_vec_init as *const ())));
+        }
+
+        Ok(())
+    }
+
+    fn open_runtime_connection(&self) -> Result<Connection> {
+        if self.is_encrypted {
+            let db_key = self.encryption_service.get_database_key()?;
+            let db_path = self.db_path.read().unwrap().clone();
+            let connection = Connection::open(&db_path)?;
+
+            connection.execute_batch(&format!("PRAGMA key = '{}'", db_key))?;
+            connection.execute_batch("PRAGMA cipher_compatibility = 3")?;
+            connection.execute_batch("PRAGMA journal_mode = WAL")?;
+            connection.execute_batch("PRAGMA busy_timeout = 5000")?;
+
+            unsafe {
+                sqlite3_auto_extension(Some(std::mem::transmute(sqlite3_vec_init as *const ())));
+            }
+
+            Ok(connection)
+        } else {
+            let db_path = self.db_path.read().unwrap().clone();
+            let connection = Connection::open(&db_path)?;
+            Self::configure_plain_connection(&connection)?;
+            Ok(connection)
+        }
+    }
+
     /// Create an in-memory database service for testing
     #[cfg(test)]
     pub fn new_in_memory() -> Result<Self> {
@@ -397,28 +440,28 @@ impl DatabaseService {
     /// Run a WAL checkpoint to keep the WAL file small and reduce corruption risk.
     /// Call this periodically (e.g., every 5 minutes from a maintenance cycle).
     pub fn wal_checkpoint(&self) -> Result<()> {
-        let db = self.get_safe_lock();
-        db.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")?;
+        if self.uses_isolated_runtime_connections() {
+            let connection = self.open_runtime_connection()?;
+            connection.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")?;
+        } else {
+            let db = self.get_safe_lock();
+            db.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")?;
+        }
         app_log_info!("✅ DB: WAL checkpoint completed");
         Ok(())
     }
 
     /// Get the database connection
     pub fn get_connection(&self) -> Arc<Mutex<Connection>> {
-        // Check if the database is actually encrypted
-        let is_actually_encrypted = self.is_database_encrypted();
-
-        // If our internal state doesn't match the actual database state, update it
-        if is_actually_encrypted != self.is_encrypted {
-            app_log_info!("🔐 Database encryption state changed, updating connection");
-
-            // Try to create a new connection with encryption
-            let new_connection = self.get_encrypted_connection();
-
-            if let Ok(conn) = new_connection {
-                let mut db = self.db.lock().unwrap();
-                *db = conn;
-                app_log_info!("✅ Successfully updated connection to match database state");
+        if self.uses_isolated_runtime_connections() {
+            match self.open_runtime_connection() {
+                Ok(connection) => return Arc::new(Mutex::new(connection)),
+                Err(e) => {
+                    app_log_warn!(
+                        "⚠️ DB: Failed to open isolated runtime connection, falling back to shared handle: {}",
+                        e
+                    );
+                }
             }
         }
 

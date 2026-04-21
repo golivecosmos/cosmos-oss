@@ -117,6 +117,7 @@ export function PreviewContainer({
   isLoadingFiles,
   onDirectorySelect,
   indexingPaths,
+  transcribingPaths,
   onToggleWatch,
   onAddToIndex,
   onTranscribeFile,
@@ -267,6 +268,7 @@ export function PreviewContainer({
             onFileSelect={handleFileSelect}
             isLoading={isLoadingFiles}
             indexingPaths={indexingPaths}
+            transcribingPaths={transcribingPaths}
             onToggleWatch={onToggleWatch}
             onAddToIndex={handleAddToIndex}
             onTranscribeFile={onTranscribeFile}
@@ -281,6 +283,7 @@ export function PreviewContainer({
             files={filteredFiles}
             onFileSelect={handleFileSelect}
             indexingPaths={indexingPaths}
+            transcribingPaths={transcribingPaths}
             onAddToIndex={handleAddToIndex}
             onTranscribeFile={onTranscribeFile}
             isIndexingDisabled={isIndexingDisabled}

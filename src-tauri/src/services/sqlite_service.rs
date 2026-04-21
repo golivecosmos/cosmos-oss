@@ -379,6 +379,11 @@ impl SqliteVectorService {
         self.job_queue_service.get_job_by_id(job_id)
     }
 
+    /// Get the live status for a job ID, if it still exists.
+    pub fn get_job_status(&self, job_id: &str) -> Result<Option<String>> {
+        self.job_queue_service.get_job_status(job_id)
+    }
+
     /// Recover orphaned "running" jobs that have been stuck for too long
     pub fn recover_orphaned_jobs(&self, timeout_seconds: i64) -> Result<usize> {
         self.job_queue_service
@@ -417,7 +422,8 @@ impl SqliteVectorService {
     /// Get all indexed file paths as a Vec for batch dedup checks.
     /// Returns file paths from both image_vectors and text_chunks tables.
     pub fn get_all_indexed_file_paths(&self) -> Result<Vec<String>> {
-        let db = self.db_service.get_safe_lock();
+        let connection = self.db_service.get_connection();
+        let db = connection.lock().unwrap();
         let mut paths = Vec::new();
         let mut stmt = db.prepare(
             "SELECT DISTINCT file_path FROM images UNION SELECT DISTINCT file_path FROM text_chunks",
@@ -429,6 +435,14 @@ impl SqliteVectorService {
             }
         }
         Ok(paths)
+    }
+
+    pub fn purge_indexed_data_for_file(&self, file_path: &str) -> Result<usize> {
+        let mut deleted = self.vector_service.delete_indexed_data_for_file(file_path)?;
+        deleted += self
+            .transcription_service
+            .delete_transcription_by_path(file_path)?;
+        Ok(deleted)
     }
 
     /// Run a WAL checkpoint to keep the WAL file small.

@@ -15,6 +15,7 @@ interface GridViewProps {
   onFileSelect: (file: MediaFile) => void;
   isLoading?: boolean;
   indexingPaths?: Set<string>;
+  transcribingPaths?: Set<string>;
   onToggleWatch?: (path: string) => void;
   onAddToIndex?: (path: string) => void;
   onTranscribeFile?: (path: string) => void;
@@ -282,6 +283,7 @@ export const GridView = React.memo(
     onFileSelect,
     isLoading,
     indexingPaths,
+    transcribingPaths,
     onToggleWatch,
     onAddToIndex,
     onTranscribeFile,
@@ -394,6 +396,7 @@ export const GridView = React.memo(
                   onAddToIndex={onAddToIndex}
                   onTranscribeFile={onTranscribeFile}
                   indexingPaths={indexingPaths}
+                  transcribingPaths={transcribingPaths}
                   isFromSearch={file.metadata.score !== undefined && file.metadata.score > 0}
                 >
                   <div

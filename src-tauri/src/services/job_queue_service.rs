@@ -402,6 +402,27 @@ impl JobQueueService {
         Ok(job)
     }
 
+    /// Get the current status for a job ID.
+    pub fn get_job_status(&self, job_id: &str) -> Result<Option<String>> {
+        let connection = self.db_service.get_connection();
+        let db = connection.lock().unwrap();
+
+        if !self.schema_service.jobs_table_exists(&db) {
+            self.schema_service.ensure_jobs_table_exists(&db)?;
+            return Ok(None);
+        }
+
+        let status = db
+            .query_row(
+                "SELECT status FROM jobs WHERE id = ?",
+                rusqlite::params![job_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+
+        Ok(status)
+    }
+
     /// **NEW: Mark job for automatic retry with exponential backoff**
     pub fn schedule_job_retry(&self, job_id: &str, error_message: &str) -> Result<()> {
         let connection = self.db_service.get_connection();

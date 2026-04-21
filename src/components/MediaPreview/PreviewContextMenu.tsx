@@ -187,6 +187,11 @@ export function PreviewContextMenu({
     onViewTranscription(cleanPath);
   };
 
+  const handleTranscribe = () => {
+    if (!onTranscribeFile) return;
+    onTranscribeFile(normalizeFilePath(file.path));
+  };
+
   const handleSendToStudio = async () => {
     const cleanPath = toFilesystemPath(file.path);
     const params = new URLSearchParams();
@@ -264,6 +269,15 @@ export function PreviewContextMenu({
     }
   };
 
+  const canTranscribe = isTranscribableFile(file.name) && !!onTranscribeFile;
+  const canViewTranscription = isTranscribableFile(file.name) && !!onViewTranscription;
+  const canAddToIndex =
+    !isAlreadyIndexed &&
+    !isIndexing &&
+    file.type !== 'directory' &&
+    !!onAddToIndex &&
+    file.type !== 'audio';
+
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
@@ -286,15 +300,22 @@ export function PreviewContextMenu({
 
         <ContextMenuSeparator />
 
+        {canTranscribe && (
+          <ContextMenuItem onClick={handleTranscribe} disabled={isTranscribing}>
+            <BookOpen className="h-4 w-4 mr-2" />
+            {isTranscribing ? 'Transcribing...' : 'Transcribe'}
+          </ContextMenuItem>
+        )}
+
         {/* View Transcription for transcribable files */}
-        {isTranscribableFile(file.name) && onViewTranscription && (
+        {canViewTranscription && (
           <ContextMenuItem onClick={handleViewTranscription}>
             <BookOpen className="h-4 w-4 mr-2" />
             View Transcription
           </ContextMenuItem>
         )}
 
-        {isTranscribableFile(file.name) && onViewTranscription && <ContextMenuSeparator />}
+        {(canTranscribe || canViewTranscription) && <ContextMenuSeparator />}
 
         <ContextMenuItem onClick={handleSendToStudio}>
           <Video className="h-4 w-4 mr-2" />
@@ -338,17 +359,13 @@ export function PreviewContextMenu({
         )}
 
         {/* Indexing and Transcription Actions - Only show if not already indexed */}
-        {!isAlreadyIndexed && !isIndexing && file.type !== 'directory' && (
+        {canAddToIndex && (
           <>
             <ContextMenuSeparator />
-            {/* Regular indexing option */}
-            {onAddToIndex && (
-              <ContextMenuItem onClick={() => onAddToIndex(file.path)}>
-                <FileText className="h-4 w-4 mr-2" />
-                Add to Search Index
-              </ContextMenuItem>
-            )}
-
+            <ContextMenuItem onClick={() => onAddToIndex?.(file.path)}>
+              <FileText className="h-4 w-4 mr-2" />
+              Add to Search Index
+            </ContextMenuItem>
           </>
         )}
 

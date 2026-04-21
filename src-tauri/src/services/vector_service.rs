@@ -741,6 +741,39 @@ impl VectorService {
         Ok(())
     }
 
+    pub fn delete_indexed_data_for_file(&self, file_path: &str) -> Result<usize> {
+        let connection = self.db_service.get_connection();
+        let mut db = connection.lock().unwrap();
+        let tx = db.transaction()?;
+
+        let deleted_images = tx.execute(
+            "DELETE FROM images WHERE file_path = ?1",
+            rusqlite::params![file_path],
+        )?;
+        tx.execute(
+            "DELETE FROM vec_text_chunks
+             WHERE rowid IN (SELECT rowid FROM text_chunks WHERE file_path = ?1)",
+            rusqlite::params![file_path],
+        )?;
+        let deleted_text_chunks = tx.execute(
+            "DELETE FROM text_chunks WHERE file_path = ?1",
+            rusqlite::params![file_path],
+        )?;
+
+        tx.commit()?;
+
+        let deleted_total = deleted_images + deleted_text_chunks;
+        if deleted_total > 0 {
+            app_log_info!(
+                "🧹 SQLITE: Removed {} indexed rows for {}",
+                deleted_total,
+                file_path
+            );
+        }
+
+        Ok(deleted_total)
+    }
+
     pub fn clear_index(&self) -> Result<()> {
         let connection = self.db_service.get_connection();
         let db = connection.lock().unwrap();

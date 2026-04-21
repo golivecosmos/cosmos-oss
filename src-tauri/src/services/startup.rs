@@ -311,6 +311,18 @@ impl StartupManager {
                     }
                 }
 
+                match service.recover_orphaned_jobs(0) {
+                    Ok(0) => app_log_info!("✅ STARTUP: No interrupted jobs needed recovery"),
+                    Ok(recovered) => app_log_info!(
+                        "🔄 STARTUP: Recovered {} interrupted jobs back to pending",
+                        recovered
+                    ),
+                    Err(e) => app_log_warn!(
+                        "⚠️ STARTUP: Failed to recover interrupted jobs during startup: {}",
+                        e
+                    ),
+                }
+
                 // Test the vector functionality
                 if let Err(e) = service.test_vector_functionality() {
                     app_log_warn!("⚠️ SQLite vector functionality test failed: {}", e);

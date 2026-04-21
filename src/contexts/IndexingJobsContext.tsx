@@ -98,7 +98,9 @@ export function IndexingJobsProvider({ children }: IndexingJobsProviderProps) {
 
   usePeriodicJobSync({ indexingJobs, loadJobs });
 
-  const hasActiveJobs = indexingJobs.some((job) => job.status === "running");
+  const hasActiveJobs = indexingJobs.some(
+    (job) => job.status === "pending" || job.status === "running"
+  );
   const hasFailedJobs = indexingJobs.some((job) => job.status === "failed");
 
   return (

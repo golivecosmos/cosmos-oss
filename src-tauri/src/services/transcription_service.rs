@@ -118,6 +118,16 @@ impl TranscriptionService {
 
         Ok(result)
     }
+
+    pub fn delete_transcription_by_path(&self, file_path: &str) -> Result<usize> {
+        let connection = self.db_service.get_connection();
+        let db = connection.lock().unwrap();
+        let deleted = db.execute(
+            "DELETE FROM transcriptions WHERE file_path = ?",
+            rusqlite::params![file_path],
+        )?;
+        Ok(deleted)
+    }
 }
 
 #[cfg(test)]
