@@ -25,6 +25,27 @@
 - **Effort:** L (human) / M (CC)
 - **Added:** 2026-04-05 via /plan-ceo-review
 
+## P2 — HN Readiness Follow-ups
+
+### Failed-state UI for jobs
+- **What:** Failed indexing/transcription jobs are invisible outside logs. Add red badge on file cards (Grid/List views), "Retry" in context menu, failed count in sidebar.
+- **Why:** Today users think the app is broken when jobs silently fail. After PR1 the backend logs and marks jobs as failed; the UI just doesn't surface it.
+- **Effort:** M (human: ~3h) / S (CC)
+- **Added:** 2026-04-21 via /plan-eng-review (HN readiness follow-up)
+
+### `main.rs` command-registration dedup
+- **What:** Two full `tauri::Builder::default().invoke_handler(...)` blocks — one for `#[cfg(debug_assertions)]`, one for release. Every new command must be added to both manually and they drift.
+- **Why:** Every recent PR has had to add the same command twice (most recently `recover_interrupted_jobs` in this plan). A small declarative macro or shared handler list closes the class of bug.
+- **Effort:** S (human: ~30min) / S (CC)
+- **Added:** 2026-04-21 via /plan-eng-review
+
+### `cluster_members` in `purge_indexed_data_for_file`
+- **What:** When Phase 2 clustering wires up (`compute_clusters` / `get_clusters` commands exist in `clustering.rs` per earlier work), `sqlite_service::purge_indexed_data_for_file` must also `DELETE FROM cluster_members WHERE file_path = ?`. Currently the purge covers images, text_chunks, vec_text_chunks, transcriptions only.
+- **Why:** Cancel-and-purge contract silently breaks when clustering ships. Cheaper to document now than to chase orphaned cluster rows later.
+- **Blocked by:** Phase 2 clustering UI wiring. Table exists, commands exist, no UI consumer yet.
+- **Effort:** XS (human: ~15min) / XS (CC)
+- **Added:** 2026-04-21 via /plan-eng-review
+
 ## P3 — Future
 
 ### Model hot-swap for custom GGUF models

@@ -100,6 +100,18 @@ For deeper diagrams, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 | `docs/THIRD_PARTY_NOTICES.md` | Third-party binary/model attribution guidance |
 | `scripts/` | *(intentionally empty—release scripts lived in the private repo)* |
 
+## Platform support
+
+| Platform | Status | Distribution |
+| -------- | ------ | ------------ |
+| macOS 10.13+ | Signed, notarized, auto-updating | DMG via GitHub Releases |
+| Windows 10+ | Builds from source, untested — contributions welcome | None yet |
+| Linux | Builds from source, untested — contributions welcome | None yet |
+
+macOS is the primary supported platform today. Windows and Linux share the same Rust/React codebase and typically compile cleanly, but we do not currently QA them per release. If you are running Cosmos on Windows or Linux and hit an issue, please open one — fixes are very welcome.
+
+On macOS, Cosmos asks for Full Disk Access when it detects that protected folders (like `~/Library`) are unreadable. Granting access is optional but recommended if you want to index content under those folders. Cosmos never prompts for Full Disk Access preemptively — it only surfaces a banner when it has reason to believe the permission is missing.
+
 ## Run Cosmos
 
 Today there are only two supported ways to use Cosmos OSS:
