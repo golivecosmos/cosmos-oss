@@ -15,3 +15,6 @@ mod sqlite_drive_tests;
 
 #[cfg(test)]
 mod audio_service_tests;
+
+#[cfg(test)]
+mod cancellation_consistency_tests;
