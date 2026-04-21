@@ -11,6 +11,29 @@ use crate::services::vector_service::{ImageVectorBulkData, TextChunkBulkData};
 use crate::services::video_service::VideoService;
 use crate::{app_log_debug, app_log_error, app_log_info, app_log_warn};
 use anyhow::Result;
+
+/// Sentinel error raised when a job is cancelled or removed from the queue
+/// mid-flight. Callers match on this via downcast to distinguish cancellation
+/// from real failures without relying on error-message string matching.
+#[derive(Debug, Clone)]
+pub struct JobCancelled {
+    pub job_id: Option<String>,
+}
+
+impl std::fmt::Display for JobCancelled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.job_id {
+            Some(job_id) => write!(f, "Job {} cancelled or removed from queue", job_id),
+            None => write!(f, "Job cancelled or removed from queue"),
+        }
+    }
+}
+
+impl std::error::Error for JobCancelled {}
+
+pub fn is_job_cancellation(err: &anyhow::Error) -> bool {
+    err.downcast_ref::<JobCancelled>().is_some()
+}
 use image::{DynamicImage, GenericImageView};
 use serde_json::{json, Value as JsonValue};
 use std::fs;
@@ -101,10 +124,9 @@ impl EmbeddingService {
     }
 
     fn cancelled_job_error(&self, job_id: Option<&str>) -> anyhow::Error {
-        match job_id {
-            Some(job_id) => anyhow::anyhow!("Job {} cancelled or removed from queue", job_id),
-            None => anyhow::anyhow!("Job cancelled or removed from queue"),
-        }
+        anyhow::Error::from(JobCancelled {
+            job_id: job_id.map(|id| id.to_string()),
+        })
     }
 
     fn ensure_job_should_continue(&self, job_id: Option<&str>) -> Result<()> {
@@ -506,18 +528,10 @@ impl EmbeddingService {
                 if let Some(ref job_id) = job_id_for_callback {
                     match sqlite_service.get_job_status(job_id) {
                         Ok(Some(status)) if status == "running" => {}
-                        Ok(Some(status)) => {
-                            return Err(anyhow::anyhow!(
-                                "Job {} cancelled or removed from queue (status: {})",
-                                job_id,
-                                status
-                            ));
-                        }
-                        Ok(None) => {
-                            return Err(anyhow::anyhow!(
-                                "Job {} cancelled or removed from queue",
-                                job_id
-                            ));
+                        Ok(Some(_)) | Ok(None) => {
+                            return Err(anyhow::Error::from(JobCancelled {
+                                job_id: Some(job_id.clone()),
+                            }));
                         }
                         Err(e) => {
                             app_log_warn!(
@@ -889,11 +903,13 @@ impl EmbeddingService {
             });
         }
 
-        self.ensure_job_should_continue(job_id)?;
-        self.sqlite_service.delete_text_chunks_for_file(file_path)?;
+        // Atomic replace: delete old chunks + insert new ones in a single
+        // transaction. If cancellation or any error lands mid-replacement,
+        // the old chunks survive rather than being wiped with nothing to
+        // replace them.
         self.ensure_job_should_continue(job_id)?;
         self.sqlite_service
-            .store_text_chunk_vectors_bulk(chunk_rows)?;
+            .replace_text_chunks_for_file(file_path, chunk_rows)?;
         Ok(format!("text-indexed:{}", file_path))
     }
 
@@ -1002,12 +1018,10 @@ impl EmbeddingService {
             });
         }
 
+        // Atomic replace: same cancel-safety invariant as document chunks.
         self.ensure_job_should_continue(job_id)?;
         self.sqlite_service
-            .delete_transcript_chunks_for_file(media_path)?;
-        self.ensure_job_should_continue(job_id)?;
-        self.sqlite_service
-            .store_text_chunk_vectors_bulk(chunk_rows)
+            .replace_transcript_chunks_for_file(media_path, chunk_rows)
     }
 
     fn extract_text_content(&self, file_path: &str) -> Result<String> {
@@ -1236,7 +1250,12 @@ impl EmbeddingService {
         let mut failed_files = Vec::new();
         let mut failed_details: Vec<(String, String)> = Vec::new();
 
-        // Process each file and collect embeddings
+        // Process each file and collect embeddings. One pre-encode status
+        // check per file (skips wasted inference on cancelled jobs) and one
+        // batch-wide retain just before bulk store (safety net). The
+        // previously-redundant post-encode check on each match branch is
+        // dropped; the final retain below covers the same cases with one
+        // SQL round trip instead of N.
         for (job_id, file_path) in job_file_paths {
             if !self.job_should_continue(Some(&job_id)) {
                 app_log_info!(
@@ -1249,15 +1268,7 @@ impl EmbeddingService {
 
             match self.process_single_file_for_batch(&file_path).await {
                 Ok(data) => {
-                    if self.job_should_continue(Some(&job_id)) {
-                        batch_data.push((job_id, data));
-                    } else {
-                        app_log_info!(
-                            "⏭️ BATCH INDEX: Dropping generated embedding for cancelled/cleared job {} ({})",
-                            job_id,
-                            file_path
-                        );
-                    }
+                    batch_data.push((job_id, data));
                 }
                 Err(e) => {
                     let error_msg = format!("Failed to process {}: {}", file_path, e);

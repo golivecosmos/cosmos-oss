@@ -716,6 +716,34 @@ impl JobQueueService {
         Ok(deleted)
     }
 
+    /// Minimum grace period for user-invocable stale-job recovery. Prevents a
+    /// racing "recover" click from resetting a job a worker claimed seconds
+    /// ago. Startup uses [`recover_stale_jobs_at_startup`] which has no
+    /// grace since no workers are running yet.
+    pub const MIN_RECOVER_GRACE_SECONDS: i64 = 30;
+
+    /// Recover orphaned jobs at startup without any grace period. Safe
+    /// because workers have not started yet, so any job still marked
+    /// `running` in the database is stale by definition.
+    pub fn recover_stale_jobs_at_startup(&self) -> Result<usize> {
+        self.recover_orphaned_jobs(0)
+    }
+
+    /// Recover orphaned jobs invoked while workers may be live. Clamps the
+    /// grace period to [`MIN_RECOVER_GRACE_SECONDS`] so a "recover" click
+    /// from the UI cannot clobber a freshly-claimed running job.
+    pub fn recover_stale_running_jobs(&self, grace_seconds: i64) -> Result<usize> {
+        let effective = grace_seconds.max(Self::MIN_RECOVER_GRACE_SECONDS);
+        if effective != grace_seconds {
+            app_log_warn!(
+                "⚠️ RECOVERY: clamping grace period from {}s to minimum {}s to avoid racing live workers",
+                grace_seconds,
+                effective
+            );
+        }
+        self.recover_orphaned_jobs(effective)
+    }
+
     /// Recover orphaned jobs that have been stuck for too long.
     /// Includes:
     /// - running jobs with stale updated_at

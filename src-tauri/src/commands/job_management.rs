@@ -83,7 +83,9 @@ pub async fn get_jobs(
 pub async fn recover_interrupted_jobs(
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
-    match state.sqlite_service.recover_orphaned_jobs(0) {
+    // Use the graced variant so a rapid click from the UI can't clobber a
+    // job a worker legitimately claimed a moment ago.
+    match state.sqlite_service.recover_stale_running_jobs(30) {
         Ok(recovered_count) => {
             app_log_info!(
                 "🔄 JOBS: Recovered {} interrupted jobs back to pending",

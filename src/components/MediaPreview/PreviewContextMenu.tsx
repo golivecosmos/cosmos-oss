@@ -23,12 +23,9 @@ import { normalizeFilePath } from '../../lib/utils';
 import { toast } from 'sonner';
 import { useLocation, useNavigate } from 'react-router-dom';
 
-// Helper function to check if a file can be transcribed (audio or video)
-const isTranscribableFile = (fileName: string): boolean => {
-  const transcribableExtensions = ['wav', 'mp3', 'mp4', 'm4a', 'flac', 'ogg', 'mov', 'avi', 'mkv', 'webm'];
-  const ext = fileName.toLowerCase().split('.').pop();
-  return ext ? transcribableExtensions.includes(ext) : false;
-};
+import { isTranscribable } from '../../lib/fileTypes';
+
+const isTranscribableFile = (fileName: string): boolean => isTranscribable(fileName);
 
 interface PreviewContextMenuProps {
   file: MediaFile;

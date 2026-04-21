@@ -311,7 +311,7 @@ impl StartupManager {
                     }
                 }
 
-                match service.recover_orphaned_jobs(0) {
+                match service.recover_stale_jobs_at_startup() {
                     Ok(0) => app_log_info!("✅ STARTUP: No interrupted jobs needed recovery"),
                     Ok(recovered) => app_log_info!(
                         "🔄 STARTUP: Recovered {} interrupted jobs back to pending",

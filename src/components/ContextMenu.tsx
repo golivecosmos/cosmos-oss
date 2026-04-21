@@ -25,6 +25,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { getErrorMessage } from "../utils/errorMessage";
 import { normalizeFilePath } from "../lib/utils";
+import { PURE_AUDIO_EXTENSIONS, TRANSCRIBABLE_EXTENSIONS } from "../lib/fileTypes";
 
 interface WatchedFolder {
   id: string;
@@ -42,16 +43,6 @@ interface WatchedFolder {
 const normalizeWatchedPath = (path: string): string => {
   return path.replace(/\/+$/, "").toLowerCase();
 };
-
-const PURE_AUDIO_EXTENSIONS = new Set(["wav", "mp3", "m4a", "flac", "ogg", "aac", "wma"]);
-const TRANSCRIBABLE_EXTENSIONS = new Set([
-  ...PURE_AUDIO_EXTENSIONS,
-  "mp4",
-  "mov",
-  "avi",
-  "mkv",
-  "webm",
-]);
 
 interface FileContextMenuProps {
   children: React.ReactNode;

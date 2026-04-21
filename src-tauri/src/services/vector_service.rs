@@ -842,6 +842,143 @@ impl VectorService {
         Ok(())
     }
 
+    /// Atomically replace all text chunks for a file path. Old chunks are
+    /// deleted and new chunks are inserted in a single BEGIN IMMEDIATE
+    /// transaction, so a crash or cancel between delete and insert cannot
+    /// leave the file with zero indexed chunks.
+    pub fn replace_text_chunks_for_file(
+        &self,
+        file_path: &str,
+        chunks: Vec<TextChunkBulkData>,
+    ) -> Result<usize> {
+        let connection = self.db_service.get_connection();
+        let mut db = connection.lock().unwrap();
+        let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+
+        Self::delete_text_chunks_for_file_in_tx(&tx, file_path)?;
+        let inserted = Self::insert_text_chunks_in_tx(&tx, chunks)?;
+
+        tx.commit()?;
+        Ok(inserted)
+    }
+
+    /// Atomically replace all transcript-sourced text chunks for a media
+    /// file path. Only rows with `metadata.source_type = 'transcript_chunk'`
+    /// are removed, preserving any non-transcript chunks for the same path.
+    pub fn replace_transcript_chunks_for_file(
+        &self,
+        file_path: &str,
+        chunks: Vec<TextChunkBulkData>,
+    ) -> Result<usize> {
+        let connection = self.db_service.get_connection();
+        let mut db = connection.lock().unwrap();
+        let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+
+        Self::delete_transcript_chunks_for_file_in_tx(&tx, file_path)?;
+        let inserted = Self::insert_text_chunks_in_tx(&tx, chunks)?;
+
+        tx.commit()?;
+        Ok(inserted)
+    }
+
+    fn delete_text_chunks_for_file_in_tx(
+        tx: &rusqlite::Transaction,
+        file_path: &str,
+    ) -> Result<()> {
+        tx.execute(
+            "DELETE FROM vec_text_chunks
+             WHERE rowid IN (SELECT rowid FROM text_chunks WHERE file_path = ?1)",
+            rusqlite::params![file_path],
+        )?;
+        tx.execute(
+            "DELETE FROM text_chunks WHERE file_path = ?1",
+            rusqlite::params![file_path],
+        )?;
+        Ok(())
+    }
+
+    fn delete_transcript_chunks_for_file_in_tx(
+        tx: &rusqlite::Transaction,
+        file_path: &str,
+    ) -> Result<()> {
+        tx.execute(
+            "DELETE FROM vec_text_chunks
+             WHERE rowid IN (
+                SELECT rowid FROM text_chunks
+                WHERE file_path = ?1
+                  AND json_extract(metadata, '$.source_type') = 'transcript_chunk'
+             )",
+            rusqlite::params![file_path],
+        )?;
+        tx.execute(
+            "DELETE FROM text_chunks
+             WHERE file_path = ?1
+               AND json_extract(metadata, '$.source_type') = 'transcript_chunk'",
+            rusqlite::params![file_path],
+        )?;
+        Ok(())
+    }
+
+    fn insert_text_chunks_in_tx(
+        tx: &rusqlite::Transaction,
+        chunks: Vec<TextChunkBulkData>,
+    ) -> Result<usize> {
+        if chunks.is_empty() {
+            return Ok(0);
+        }
+
+        let mut main_stmt = tx.prepare(
+            "INSERT OR REPLACE INTO text_chunks (
+                id, file_path, parent_file_path, file_name, mime_type,
+                chunk_index, chunk_text, char_start, char_end, token_estimate,
+                metadata, embedding, drive_uuid, created_at, updated_at, last_indexed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )?;
+        let mut vec_stmt =
+            tx.prepare("INSERT OR REPLACE INTO vec_text_chunks(rowid, embedding) VALUES (?, ?)")?;
+        let now = chrono::Utc::now().to_rfc3339();
+        let mut success_count = 0usize;
+
+        for chunk in chunks {
+            if chunk.embedding.len() != 768 {
+                return Err(anyhow!(
+                    "Invalid text chunk embedding dimensions for {}: expected 768, got {}",
+                    chunk.file_path,
+                    chunk.embedding.len()
+                ));
+            }
+
+            main_stmt.execute(rusqlite::params![
+                &chunk.id,
+                &chunk.file_path,
+                &chunk.parent_file_path,
+                &chunk.file_name,
+                &chunk.mime_type,
+                chunk.chunk_index,
+                &chunk.chunk_text,
+                chunk.char_start,
+                chunk.char_end,
+                chunk.token_estimate,
+                chunk.metadata.to_string(),
+                chunk.embedding.as_bytes(),
+                chunk.drive_uuid,
+                &now,
+                &now,
+                &now,
+            ])?;
+
+            let rowid: i64 = tx.query_row(
+                "SELECT rowid FROM text_chunks WHERE id = ?1",
+                rusqlite::params![&chunk.id],
+                |row| row.get(0),
+            )?;
+            vec_stmt.execute(rusqlite::params![rowid, chunk.embedding.as_bytes()])?;
+            success_count += 1;
+        }
+
+        Ok(success_count)
+    }
+
     pub fn store_text_chunk_vectors_bulk(&self, chunks: Vec<TextChunkBulkData>) -> Result<usize> {
         let connection = self.db_service.get_connection();
         let mut db = connection.lock().unwrap();
