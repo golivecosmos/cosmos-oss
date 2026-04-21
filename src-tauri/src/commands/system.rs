@@ -204,6 +204,21 @@ pub fn is_ffmpeg_available(state: State<'_, AppState>) -> Result<bool, String> {
     Ok(state.video_service.is_ffmpeg_available())
 }
 
+/// Check macOS Full Disk Access. Returns `Some(true)` if granted, `Some(false)`
+/// if denied, `None` if the check could not be performed (unknown state). On
+/// non-macOS platforms returns `Some(true)` since there is no equivalent
+/// permission gate.
+#[tauri::command]
+pub fn check_full_disk_access() -> Result<Option<bool>, String> {
+    match crate::services::fda_probe_service::has_full_disk_access() {
+        Ok(granted) => Ok(Some(granted)),
+        Err(e) => {
+            app_log_info!("FDA probe indeterminate: {}", e);
+            Ok(None)
+        }
+    }
+}
+
 /// Get system information (internal function)
 #[tauri::command]
 pub async fn get_system_info(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
