@@ -72,7 +72,7 @@ impl GenerationsService {
         let connection = self.db_service.get_connection();
         let db = connection.lock().unwrap();
 
-        let generation_id = format!("gen_{}", chrono::Utc::now().timestamp_millis());
+        let generation_id = format!("gen_{}", uuid::Uuid::new_v4().simple());
         let now = chrono::Utc::now();
 
         db.execute(
