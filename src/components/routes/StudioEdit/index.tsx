@@ -91,21 +91,19 @@ export const StudioEdit = () => {
         }
     }, [transcribingPaths, file?.path]);
 
-    // Arrow-key navigation through the sibling file list stashed by whatever
-    // view the user came from (grid, list, search results). The previous view
-    // is responsible for writing the list into `sessionStorage['studio.navigation']`
-    // right before navigating here; if it's missing we no-op gracefully.
+    // Keyboard shortcuts in the preview:
+    //   ← / ↑      previous file
+    //   → / ↓      next file
+    //   Space      play/pause the visible video or audio element
+    //
+    // Arrow navigation uses the sibling file list stashed by whatever view
+    // the user came from (grid, list, search results). The previous view is
+    // responsible for writing the list into `sessionStorage['studio.navigation']`
+    // right before navigating here; if it's missing, arrow keys no-op.
     useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (
-                e.key !== 'ArrowLeft' &&
-                e.key !== 'ArrowRight' &&
-                e.key !== 'ArrowUp' &&
-                e.key !== 'ArrowDown'
-            ) {
-                return;
-            }
+        const navKeys = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']);
 
+        const handleKeyDown = (e: KeyboardEvent) => {
             const target = e.target as HTMLElement | null;
             if (
                 target &&
@@ -118,6 +116,25 @@ export const StudioEdit = () => {
             }
 
             if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+            // Space → play/pause whatever media element is on the page.
+            // Matches <video> first (StudioEdit renders VideoPlayerWithTrim)
+            // and falls back to <audio> (AudioPreview).
+            if (e.key === ' ' || e.code === 'Space') {
+                const media = document.querySelector<HTMLMediaElement>('video, audio');
+                if (!media) return;
+                e.preventDefault();
+                if (media.paused) {
+                    media.play().catch((err) => {
+                        console.warn('Failed to play media:', err);
+                    });
+                } else {
+                    media.pause();
+                }
+                return;
+            }
+
+            if (!navKeys.has(e.key)) return;
 
             const raw = sessionStorage.getItem('studio.navigation');
             if (!raw) return;
