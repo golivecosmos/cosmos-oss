@@ -13,7 +13,6 @@ export function VideoThumbnail({ file, onClick }: VideoThumbnailProps) {
   const [isLoading, setIsLoading] = useState(true);
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  // Use the same path logic as VideoPreview
   const videoPath = file.path;
 
   // Handle initial frame display
