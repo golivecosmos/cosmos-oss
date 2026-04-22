@@ -196,20 +196,20 @@ export function VideoPreview({ file, initialTimestamp, lazy = true, showControls
     }
   };
 
-  // NEW: Better video interaction - double-click to play, single click for controls
+  // Single click: show controls temporarily and focus for keyboard control.
+  // Double click: toggle play/pause via the browser's native `dblclick`
+  // event. The prior implementation tracked timestamps manually inside a
+  // useCallback, which raced React's render cycle — the second click in a
+  // fast pair saw a stale `lastClickTime` and the play toggle never fired.
   const [showControlsTemporarily, setShowControlsTemporarily] = useState(false);
   const [controlsTimeout, setControlsTimeout] = useState<NodeJS.Timeout | null>(null);
-  const [lastClickTime, setLastClickTime] = useState(0);
 
   const handleVideoClick = useCallback((e: React.MouseEvent) => {
-    // Don't handle clicks if we're dragging the scrub bar
     if (isDragging) return;
 
-    // Don't trigger if clicking on the control areas
     if (scrubBarRef.current) {
       const scrubBarRect = scrubBarRef.current.getBoundingClientRect();
-      const clickY = e.clientY;
-      if (clickY >= scrubBarRect.top && clickY <= scrubBarRect.bottom) {
+      if (e.clientY >= scrubBarRect.top && e.clientY <= scrubBarRect.bottom) {
         return;
       }
     }
@@ -217,26 +217,13 @@ export function VideoPreview({ file, initialTimestamp, lazy = true, showControls
     e.preventDefault();
     e.stopPropagation();
 
-    const now = Date.now();
-    const timeSinceLastClick = now - lastClickTime;
-    setLastClickTime(now);
-
-    // Double-click to play/pause
-    if (timeSinceLastClick < 300) {
-      handlePlayPause();
-      return;
-    }
-
-    // Single click: show controls temporarily and focus for keyboard control
     setShowControlsTemporarily(true);
     containerRef.current?.focus();
 
-    // Clear existing timeout
     if (controlsTimeout) {
       clearTimeout(controlsTimeout);
     }
 
-    // Hide controls after 3 seconds if not playing
     const timeout = setTimeout(() => {
       if (!isPlaying) {
         setShowControlsTemporarily(false);
@@ -244,7 +231,22 @@ export function VideoPreview({ file, initialTimestamp, lazy = true, showControls
     }, 3000);
 
     setControlsTimeout(timeout);
-  }, [isDragging, handlePlayPause, lastClickTime, controlsTimeout, isPlaying]);
+  }, [isDragging, controlsTimeout, isPlaying]);
+
+  const handleVideoDoubleClick = useCallback((e: React.MouseEvent) => {
+    if (isDragging) return;
+
+    if (scrubBarRef.current) {
+      const scrubBarRect = scrubBarRef.current.getBoundingClientRect();
+      if (e.clientY >= scrubBarRect.top && e.clientY <= scrubBarRect.bottom) {
+        return;
+      }
+    }
+
+    e.preventDefault();
+    e.stopPropagation();
+    handlePlayPause();
+  }, [isDragging, handlePlayPause]);
 
   // Clear controls timeout when component unmounts
   useEffect(() => {
@@ -525,6 +527,7 @@ export function VideoPreview({ file, initialTimestamp, lazy = true, showControls
                 onMouseEnter={handleMouseEnter}
                 onMouseLeave={handleMouseLeave}
                 onClick={handleVideoClick}
+                onDoubleClick={handleVideoDoubleClick}
               >
                 <video
                   ref={videoRef}
