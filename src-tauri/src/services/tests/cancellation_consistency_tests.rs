@@ -10,7 +10,7 @@
 //!   repeated invocation.
 
 use crate::services::sqlite_service::SqliteVectorService;
-use crate::services::vector_service::TextChunkBulkData;
+use crate::services::vector_service::{ImageVectorBulkData, TextChunkBulkData};
 
 fn make_chunk(file_path: &str, idx: i64, text: &str) -> TextChunkBulkData {
     TextChunkBulkData {
@@ -205,6 +205,79 @@ fn replace_with_invalid_embedding_leaves_prior_data_intact() {
         text, "original content",
         "original chunk must survive failed replace"
     );
+}
+
+fn count_images(service: &SqliteVectorService, file_path: &str) -> i64 {
+    let db = service.get_database_service();
+    let conn = db.get_connection();
+    let db = conn.lock().unwrap();
+    db.query_row(
+        "SELECT COUNT(*) FROM images WHERE file_path = ?1",
+        rusqlite::params![file_path],
+        |row| row.get(0),
+    )
+    .unwrap_or(0)
+}
+
+fn count_vec_image_rows_for_file(service: &SqliteVectorService, file_path: &str) -> i64 {
+    let db = service.get_database_service();
+    let conn = db.get_connection();
+    let db = conn.lock().unwrap();
+    db.query_row(
+        "SELECT COUNT(*) FROM vec_images
+         WHERE rowid IN (SELECT rowid FROM images WHERE file_path = ?1)",
+        rusqlite::params![file_path],
+        |row| row.get(0),
+    )
+    .unwrap_or(0)
+}
+
+fn make_image_row(file_path: &str, unique_id: &str) -> ImageVectorBulkData {
+    ImageVectorBulkData {
+        id: unique_id.to_string(),
+        file_path: file_path.to_string(),
+        parent_file_path: None,
+        file_name: file_path.rsplit('/').next().unwrap_or(file_path).to_string(),
+        mime_type: Some("image/jpeg".to_string()),
+        embedding: vec![0.02_f32; 768],
+        metadata: serde_json::json!({}),
+        drive_uuid: None,
+    }
+}
+
+/// Regression for the re-index failure mode surfaced by the cancel flow:
+/// purge used to clear `images` but not `vec_images`. The orphaned vec rows
+/// remained, and when a re-index hit a recycled rowid, sqlite-vec's vec0
+/// tables (which do not honor ON CONFLICT REPLACE) returned a UNIQUE
+/// constraint error. This test proves both halves of the fix: purge now
+/// clears `vec_images`, and the insert path is tolerant of any stragglers.
+#[test]
+fn reindex_after_purge_does_not_collide_on_recycled_rowid() {
+    let service = SqliteVectorService::new_in_memory().expect("in-memory service");
+    let file_path = "/test/movie.mov";
+
+    // First pass: seed one image, purge everything for the path.
+    service
+        .store_image_vectors_bulk(vec![make_image_row(file_path, "movie:frame:0001")])
+        .expect("initial store");
+    assert_eq!(count_images(&service, file_path), 1);
+    assert_eq!(count_vec_image_rows_for_file(&service, file_path), 1);
+
+    let purged = service
+        .purge_indexed_data_for_file(file_path)
+        .expect("purge");
+    assert!(purged >= 1);
+    assert_eq!(count_images(&service, file_path), 0);
+    assert_eq!(count_vec_image_rows_for_file(&service, file_path), 0);
+
+    // Second pass: re-index with a different id. Must succeed — even if
+    // SQLite happens to recycle the rowid from the purged row, the insert
+    // now clears any stale vec row first.
+    service
+        .store_image_vectors_bulk(vec![make_image_row(file_path, "movie:frame:0001:v2")])
+        .expect("reindex after purge must not UNIQUE-constraint");
+    assert_eq!(count_images(&service, file_path), 1);
+    assert_eq!(count_vec_image_rows_for_file(&service, file_path), 1);
 }
 
 #[test]

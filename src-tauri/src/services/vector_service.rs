@@ -124,8 +124,17 @@ impl VectorService {
             rusqlite::params![&id],
             |row| row.get(0),
         )?;
+        // sqlite-vec's vec0 virtual tables do not honor ON CONFLICT REPLACE,
+        // so we clear any existing row at this rowid before inserting. This
+        // also recovers from orphaned vec_images rows left by earlier bugs
+        // where a cancelled indexing run cleared the images row but not the
+        // vec_images row — the recycled rowid would otherwise collide.
         tx.execute(
-            "INSERT OR REPLACE INTO vec_images(rowid, embedding) VALUES (?, ?)",
+            "DELETE FROM vec_images WHERE rowid = ?1",
+            rusqlite::params![rowid],
+        )?;
+        tx.execute(
+            "INSERT INTO vec_images(rowid, embedding) VALUES (?, ?)",
             rusqlite::params![rowid, embedding.as_bytes()],
         )
         .map_err(|e| {
@@ -161,8 +170,13 @@ impl VectorService {
                 created_at, updated_at, last_indexed_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )?;
+        // sqlite-vec's vec0 tables don't honor ON CONFLICT REPLACE; explicit
+        // DELETE + INSERT avoids the UNIQUE constraint on rowid recycled
+        // from an earlier purge.
+        let mut vec_delete_stmt =
+            tx.prepare("DELETE FROM vec_images WHERE rowid = ?1")?;
         let mut vec_stmt =
-            tx.prepare("INSERT OR REPLACE INTO vec_images(rowid, embedding) VALUES (?, ?)")?;
+            tx.prepare("INSERT INTO vec_images(rowid, embedding) VALUES (?, ?)")?;
         let now = chrono::Utc::now().to_rfc3339();
         let mut success_count = 0;
         for vector in vectors {
@@ -247,6 +261,16 @@ impl VectorService {
             ).map_err(|e| {
                 anyhow!("Failed to get rowid for {}: {}", file_path_for_error, e)
             })?;
+            vec_delete_stmt
+                .execute(rusqlite::params![rowid])
+                .map_err(|e| {
+                    anyhow!(
+                        "Failed to clear prior vector row for {} (rowid {}): {}",
+                        file_path_for_error,
+                        rowid,
+                        e
+                    )
+                })?;
             vec_stmt
                 .execute(rusqlite::params![rowid, vector.embedding.as_bytes()])
                 .map_err(|e| {
@@ -261,6 +285,7 @@ impl VectorService {
             success_count += 1;
         }
         drop(main_stmt);
+        drop(vec_delete_stmt);
         drop(vec_stmt);
         tx.commit()?;
         app_log_info!(
@@ -746,6 +771,16 @@ impl VectorService {
         let mut db = connection.lock().unwrap();
         let tx = db.transaction()?;
 
+        // Clear vec_images first while the images row still exists, so we
+        // can join on file_path to find the rowids. sqlite-vec's vec0 tables
+        // do not honor ON CONFLICT REPLACE, so leaving these rows orphaned
+        // causes UNIQUE constraint failures on the next re-index when
+        // SQLite recycles the same rowid for a fresh images row.
+        tx.execute(
+            "DELETE FROM vec_images
+             WHERE rowid IN (SELECT rowid FROM images WHERE file_path = ?1)",
+            rusqlite::params![file_path],
+        )?;
         let deleted_images = tx.execute(
             "DELETE FROM images WHERE file_path = ?1",
             rusqlite::params![file_path],
@@ -934,8 +969,10 @@ impl VectorService {
                 metadata, embedding, drive_uuid, created_at, updated_at, last_indexed_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )?;
+        let mut vec_delete_stmt =
+            tx.prepare("DELETE FROM vec_text_chunks WHERE rowid = ?1")?;
         let mut vec_stmt =
-            tx.prepare("INSERT OR REPLACE INTO vec_text_chunks(rowid, embedding) VALUES (?, ?)")?;
+            tx.prepare("INSERT INTO vec_text_chunks(rowid, embedding) VALUES (?, ?)")?;
         let now = chrono::Utc::now().to_rfc3339();
         let mut success_count = 0usize;
 
@@ -972,6 +1009,8 @@ impl VectorService {
                 rusqlite::params![&chunk.id],
                 |row| row.get(0),
             )?;
+            // vec0 tables don't honor ON CONFLICT REPLACE; clear + insert.
+            vec_delete_stmt.execute(rusqlite::params![rowid])?;
             vec_stmt.execute(rusqlite::params![rowid, chunk.embedding.as_bytes()])?;
             success_count += 1;
         }
@@ -994,8 +1033,12 @@ impl VectorService {
                 metadata, embedding, drive_uuid, created_at, updated_at, last_indexed_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )?;
+        // vec0 tables ignore ON CONFLICT REPLACE; clear any stale row at
+        // this rowid before inserting.
+        let mut vec_delete_stmt =
+            tx.prepare("DELETE FROM vec_text_chunks WHERE rowid = ?1")?;
         let mut vec_stmt =
-            tx.prepare("INSERT OR REPLACE INTO vec_text_chunks(rowid, embedding) VALUES (?, ?)")?;
+            tx.prepare("INSERT INTO vec_text_chunks(rowid, embedding) VALUES (?, ?)")?;
         let now = chrono::Utc::now().to_rfc3339();
         let mut success_count = 0usize;
 
@@ -1032,11 +1075,13 @@ impl VectorService {
                 rusqlite::params![&chunk.id],
                 |row| row.get(0),
             )?;
+            vec_delete_stmt.execute(rusqlite::params![rowid])?;
             vec_stmt.execute(rusqlite::params![rowid, chunk.embedding.as_bytes()])?;
             success_count += 1;
         }
 
         drop(main_stmt);
+        drop(vec_delete_stmt);
         drop(vec_stmt);
         tx.commit()?;
         Ok(success_count)
