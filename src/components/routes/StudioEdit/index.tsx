@@ -31,6 +31,14 @@ export const StudioEdit = () => {
     const [transcriptionRefreshCounter, setTranscriptionRefreshCounter] = useState(0);
     const contentPreviewRef = useRef<ContentPreviewRef>(null);
     const dragStateRef = useRef({
+        // `armed` means we've seen a pointerdown but haven't yet decided
+        // whether this gesture is a click or a drag. Only once the pointer
+        // moves past the threshold do we claim it, capture it, and start
+        // panning. This keeps click events reaching the underlying <video>
+        // or <img>, which is what `togglePlayPause` and similar handlers
+        // rely on — `setPointerCapture` on pointerdown would divert pointerup
+        // and cancel the synthesized click entirely.
+        armed: false,
         isDragging: false,
         pointerId: -1,
         startX: 0,
@@ -38,6 +46,8 @@ export const StudioEdit = () => {
         startOffsetX: 0,
         startOffsetY: 0,
     });
+
+    const DRAG_THRESHOLD_PX = 5;
 
     const handleBack = () => {
         const returnTo = searchParams.get('returnTo');
@@ -156,23 +166,35 @@ export const StudioEdit = () => {
 
     const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
         if (!isPannablePreview) return;
+        if (event.button !== 0) return; // primary button only
         dragStateRef.current = {
-            isDragging: true,
+            armed: true,
+            isDragging: false,
             pointerId: event.pointerId,
             startX: event.clientX,
             startY: event.clientY,
             startOffsetX: panOffset.x,
             startOffsetY: panOffset.y,
         };
-        event.currentTarget.setPointerCapture(event.pointerId);
     };
 
     const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
         const dragState = dragStateRef.current;
-        if (!dragState.isDragging || dragState.pointerId !== event.pointerId) return;
+        if (dragState.pointerId !== event.pointerId) return;
 
         const deltaX = event.clientX - dragState.startX;
         const deltaY = event.clientY - dragState.startY;
+
+        if (!dragState.isDragging) {
+            if (!dragState.armed) return;
+            if (deltaX * deltaX + deltaY * deltaY < DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) {
+                return;
+            }
+            dragState.isDragging = true;
+            dragState.armed = false;
+            event.currentTarget.setPointerCapture(event.pointerId);
+        }
+
         setPanOffset({
             x: dragState.startOffsetX + deltaX,
             y: dragState.startOffsetY + deltaY,
@@ -180,13 +202,14 @@ export const StudioEdit = () => {
     };
 
     const handlePointerEnd = (event: PointerEvent<HTMLDivElement>) => {
-        if (dragStateRef.current.pointerId === event.pointerId) {
-            dragStateRef.current.isDragging = false;
-            dragStateRef.current.pointerId = -1;
-            if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-                event.currentTarget.releasePointerCapture(event.pointerId);
-            }
+        const dragState = dragStateRef.current;
+        if (dragState.pointerId !== event.pointerId) return;
+        if (dragState.isDragging && event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
         }
+        dragState.armed = false;
+        dragState.isDragging = false;
+        dragState.pointerId = -1;
     };
 
     const getTransformMatrix = (scale: number) => `translate3d(${panOffset.x}px, ${panOffset.y}px, 0) scale(${scale})`
