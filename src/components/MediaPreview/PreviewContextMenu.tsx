@@ -23,12 +23,9 @@ import { normalizeFilePath } from '../../lib/utils';
 import { toast } from 'sonner';
 import { useLocation, useNavigate } from 'react-router-dom';
 
-// Helper function to check if a file can be transcribed (audio or video)
-const isTranscribableFile = (fileName: string): boolean => {
-  const transcribableExtensions = ['wav', 'mp3', 'mp4', 'm4a', 'flac', 'ogg', 'mov', 'avi', 'mkv', 'webm'];
-  const ext = fileName.toLowerCase().split('.').pop();
-  return ext ? transcribableExtensions.includes(ext) : false;
-};
+import { isTranscribable } from '../../lib/fileTypes';
+
+const isTranscribableFile = (fileName: string): boolean => isTranscribable(fileName);
 
 interface PreviewContextMenuProps {
   file: MediaFile;
@@ -187,6 +184,11 @@ export function PreviewContextMenu({
     onViewTranscription(cleanPath);
   };
 
+  const handleTranscribe = () => {
+    if (!onTranscribeFile) return;
+    onTranscribeFile(normalizeFilePath(file.path));
+  };
+
   const handleSendToStudio = async () => {
     const cleanPath = toFilesystemPath(file.path);
     const params = new URLSearchParams();
@@ -264,6 +266,15 @@ export function PreviewContextMenu({
     }
   };
 
+  const canTranscribe = isTranscribableFile(file.name) && !!onTranscribeFile;
+  const canViewTranscription = isTranscribableFile(file.name) && !!onViewTranscription;
+  const canAddToIndex =
+    !isAlreadyIndexed &&
+    !isIndexing &&
+    file.type !== 'directory' &&
+    !!onAddToIndex &&
+    file.type !== 'audio';
+
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
@@ -286,15 +297,22 @@ export function PreviewContextMenu({
 
         <ContextMenuSeparator />
 
+        {canTranscribe && (
+          <ContextMenuItem onClick={handleTranscribe} disabled={isTranscribing}>
+            <BookOpen className="h-4 w-4 mr-2" />
+            {isTranscribing ? 'Transcribing...' : 'Transcribe'}
+          </ContextMenuItem>
+        )}
+
         {/* View Transcription for transcribable files */}
-        {isTranscribableFile(file.name) && onViewTranscription && (
+        {canViewTranscription && (
           <ContextMenuItem onClick={handleViewTranscription}>
             <BookOpen className="h-4 w-4 mr-2" />
             View Transcription
           </ContextMenuItem>
         )}
 
-        {isTranscribableFile(file.name) && onViewTranscription && <ContextMenuSeparator />}
+        {(canTranscribe || canViewTranscription) && <ContextMenuSeparator />}
 
         <ContextMenuItem onClick={handleSendToStudio}>
           <Video className="h-4 w-4 mr-2" />
@@ -338,17 +356,13 @@ export function PreviewContextMenu({
         )}
 
         {/* Indexing and Transcription Actions - Only show if not already indexed */}
-        {!isAlreadyIndexed && !isIndexing && file.type !== 'directory' && (
+        {canAddToIndex && (
           <>
             <ContextMenuSeparator />
-            {/* Regular indexing option */}
-            {onAddToIndex && (
-              <ContextMenuItem onClick={() => onAddToIndex(file.path)}>
-                <FileText className="h-4 w-4 mr-2" />
-                Add to Search Index
-              </ContextMenuItem>
-            )}
-
+            <ContextMenuItem onClick={() => onAddToIndex?.(file.path)}>
+              <FileText className="h-4 w-4 mr-2" />
+              Add to Search Index
+            </ContextMenuItem>
           </>
         )}
 

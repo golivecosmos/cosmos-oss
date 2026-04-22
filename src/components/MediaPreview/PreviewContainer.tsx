@@ -117,6 +117,7 @@ export function PreviewContainer({
   isLoadingFiles,
   onDirectorySelect,
   indexingPaths,
+  transcribingPaths,
   onToggleWatch,
   onAddToIndex,
   onTranscribeFile,
@@ -211,6 +212,22 @@ export function PreviewContainer({
       if (hasTimestamp) {
         params.set("timestamp", `${timestamp}`);
       }
+
+      // Stash the sibling file list so StudioEdit can arrow-key navigate
+      // through them without a round-trip back to this view. Normalized
+      // the same way as `targetPath` above so lookups match.
+      try {
+        const siblings = filteredFiles
+          .filter((f) => f.type !== 'directory')
+          .map((f) => safeNormalizePath(f.path) || f.path);
+        sessionStorage.setItem(
+          'studio.navigation',
+          JSON.stringify({ paths: siblings })
+        );
+      } catch (err) {
+        console.warn('Failed to stash studio navigation list', err);
+      }
+
       navigate(`/studio/edit?${params.toString()}`);
     }
   };
@@ -267,6 +284,7 @@ export function PreviewContainer({
             onFileSelect={handleFileSelect}
             isLoading={isLoadingFiles}
             indexingPaths={indexingPaths}
+            transcribingPaths={transcribingPaths}
             onToggleWatch={onToggleWatch}
             onAddToIndex={handleAddToIndex}
             onTranscribeFile={onTranscribeFile}
@@ -281,6 +299,7 @@ export function PreviewContainer({
             files={filteredFiles}
             onFileSelect={handleFileSelect}
             indexingPaths={indexingPaths}
+            transcribingPaths={transcribingPaths}
             onAddToIndex={handleAddToIndex}
             onTranscribeFile={onTranscribeFile}
             isIndexingDisabled={isIndexingDisabled}

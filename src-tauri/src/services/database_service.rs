@@ -8,8 +8,20 @@ use sqlite_vec::sqlite3_vec_init;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use zerocopy::AsBytes;
+
+/// Register the sqlite-vec loadable extension exactly once per process.
+/// `sqlite3_auto_extension` is a global hook in SQLite, so repeated
+/// invocation is both wasteful and unnecessary. The transmute is confined
+/// to this single spot instead of being duplicated at every connection
+/// open site.
+fn ensure_vec_extension_registered() {
+    static VEC_EXTENSION_INIT: OnceLock<()> = OnceLock::new();
+    VEC_EXTENSION_INIT.get_or_init(|| unsafe {
+        sqlite3_auto_extension(Some(std::mem::transmute(sqlite3_vec_init as *const ())));
+    });
+}
 
 /// Core database management service
 /// Handles database connection, initialization, and path management
@@ -23,13 +35,43 @@ pub struct DatabaseService {
 }
 
 impl DatabaseService {
+    fn is_in_memory_database(&self) -> bool {
+        self.db_path.read().unwrap().as_os_str() == ":memory:"
+    }
+
+    fn uses_isolated_runtime_connections(&self) -> bool {
+        self.is_encrypted && !self.is_in_memory_database()
+    }
+
+    fn configure_plain_connection(connection: &Connection) -> Result<()> {
+        ensure_vec_extension_registered();
+        connection.pragma_update(None, "journal_mode", "WAL")?;
+        connection.pragma_update(None, "busy_timeout", 5000)?;
+        Ok(())
+    }
+
+    fn open_runtime_connection(&self) -> Result<Connection> {
+        ensure_vec_extension_registered();
+
+        let db_path = self.db_path.read().unwrap().clone();
+        let connection = Connection::open(&db_path)?;
+
+        if self.is_encrypted {
+            let db_key = self.encryption_service.get_database_key()?;
+            connection.pragma_update(None, "key", &db_key)?;
+            connection.pragma_update(None, "cipher_compatibility", 3)?;
+        }
+
+        connection.pragma_update(None, "journal_mode", "WAL")?;
+        connection.pragma_update(None, "busy_timeout", 5000)?;
+
+        Ok(connection)
+    }
+
     /// Create an in-memory database service for testing
     #[cfg(test)]
     pub fn new_in_memory() -> Result<Self> {
-        // Register sqlite-vec extension
-        unsafe {
-            sqlite3_auto_extension(Some(std::mem::transmute(sqlite3_vec_init as *const ())));
-        }
+        ensure_vec_extension_registered();
 
         // Create in-memory index database
         let index_db = Connection::open(":memory:")?;
@@ -89,10 +131,7 @@ impl DatabaseService {
             index_db_path.display()
         );
 
-        // Register sqlite-vec extension
-        unsafe {
-            sqlite3_auto_extension(Some(std::mem::transmute(sqlite3_vec_init as *const ())));
-        }
+        ensure_vec_extension_registered();
 
         // Only create directory if we're not in a migration scenario
         if !path_utils::is_migration_needed() {
@@ -397,28 +436,28 @@ impl DatabaseService {
     /// Run a WAL checkpoint to keep the WAL file small and reduce corruption risk.
     /// Call this periodically (e.g., every 5 minutes from a maintenance cycle).
     pub fn wal_checkpoint(&self) -> Result<()> {
-        let db = self.get_safe_lock();
-        db.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")?;
+        if self.uses_isolated_runtime_connections() {
+            let connection = self.open_runtime_connection()?;
+            connection.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")?;
+        } else {
+            let db = self.get_safe_lock();
+            db.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")?;
+        }
         app_log_info!("✅ DB: WAL checkpoint completed");
         Ok(())
     }
 
     /// Get the database connection
     pub fn get_connection(&self) -> Arc<Mutex<Connection>> {
-        // Check if the database is actually encrypted
-        let is_actually_encrypted = self.is_database_encrypted();
-
-        // If our internal state doesn't match the actual database state, update it
-        if is_actually_encrypted != self.is_encrypted {
-            app_log_info!("🔐 Database encryption state changed, updating connection");
-
-            // Try to create a new connection with encryption
-            let new_connection = self.get_encrypted_connection();
-
-            if let Ok(conn) = new_connection {
-                let mut db = self.db.lock().unwrap();
-                *db = conn;
-                app_log_info!("✅ Successfully updated connection to match database state");
+        if self.uses_isolated_runtime_connections() {
+            match self.open_runtime_connection() {
+                Ok(connection) => return Arc::new(Mutex::new(connection)),
+                Err(e) => {
+                    app_log_warn!(
+                        "⚠️ DB: Failed to open isolated runtime connection, falling back to shared handle: {}",
+                        e
+                    );
+                }
             }
         }
 
@@ -549,16 +588,13 @@ impl DatabaseService {
 
         let connection = Connection::open(&db_path)?;
 
-        // Configure SQLCipher
-        connection.execute_batch(&format!("PRAGMA key = '{}'", db_key))?;
-        connection.execute_batch("PRAGMA cipher_compatibility = 3")?;
-        connection.execute_batch("PRAGMA journal_mode = WAL")?;
-        connection.execute_batch("PRAGMA busy_timeout = 5000")?;
+        // Configure SQLCipher via typed pragma calls.
+        connection.pragma_update(None, "key", &db_key)?;
+        connection.pragma_update(None, "cipher_compatibility", 3)?;
+        connection.pragma_update(None, "journal_mode", "WAL")?;
+        connection.pragma_update(None, "busy_timeout", 5000)?;
 
-        // Load sqlite-vec extension
-        unsafe {
-            sqlite3_auto_extension(Some(std::mem::transmute(sqlite3_vec_init as *const ())));
-        }
+        ensure_vec_extension_registered();
 
         app_log_info!("✅ Created new encrypted database with sqlite-vec extension");
 
@@ -579,20 +615,13 @@ impl DatabaseService {
         let connection = Connection::open(&db_path)?;
         app_log_info!("✅ Successfully opened database file");
 
-        // Configure SQLCipher
-        connection.execute_batch(&format!("PRAGMA key = '{}'", db_key))?;
+        // Configure SQLCipher via typed pragma calls.
+        connection.pragma_update(None, "key", &db_key)?;
+        connection.pragma_update(None, "cipher_compatibility", 3)?;
+        connection.pragma_update(None, "journal_mode", "WAL")?;
+        connection.pragma_update(None, "busy_timeout", 5000)?;
 
-        // Set basic SQLCipher settings for maximum compatibility
-        connection.execute_batch("PRAGMA cipher_compatibility = 3")?;
-
-        // Ensure the database is writable
-        connection.execute_batch("PRAGMA journal_mode = WAL")?;
-        connection.execute_batch("PRAGMA busy_timeout = 5000")?;
-
-        // Load sqlite-vec extension for vector search functions
-        unsafe {
-            sqlite3_auto_extension(Some(std::mem::transmute(sqlite3_vec_init as *const ())));
-        }
+        ensure_vec_extension_registered();
 
         // Verify the key is correct by attempting to read from the database
         let _count: i64 =

@@ -9,8 +9,31 @@ use crate::services::model_service::ModelService;
 use crate::services::sqlite_service::SqliteVectorService;
 use crate::services::vector_service::{ImageVectorBulkData, TextChunkBulkData};
 use crate::services::video_service::VideoService;
-use crate::{app_log_debug, app_log_error, app_log_info};
+use crate::{app_log_debug, app_log_error, app_log_info, app_log_warn};
 use anyhow::Result;
+
+/// Sentinel error raised when a job is cancelled or removed from the queue
+/// mid-flight. Callers match on this via downcast to distinguish cancellation
+/// from real failures without relying on error-message string matching.
+#[derive(Debug, Clone)]
+pub struct JobCancelled {
+    pub job_id: Option<String>,
+}
+
+impl std::fmt::Display for JobCancelled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.job_id {
+            Some(job_id) => write!(f, "Job {} cancelled or removed from queue", job_id),
+            None => write!(f, "Job cancelled or removed from queue"),
+        }
+    }
+}
+
+impl std::error::Error for JobCancelled {}
+
+pub fn is_job_cancellation(err: &anyhow::Error) -> bool {
+    err.downcast_ref::<JobCancelled>().is_some()
+}
 use image::{DynamicImage, GenericImageView};
 use serde_json::{json, Value as JsonValue};
 use std::fs;
@@ -81,6 +104,39 @@ impl EmbeddingService {
         }
     }
 
+    fn job_should_continue(&self, job_id: Option<&str>) -> bool {
+        let Some(job_id) = job_id else {
+            return true;
+        };
+
+        match self.sqlite_service.get_job_status(job_id) {
+            Ok(Some(status)) => status == "running",
+            Ok(None) => false,
+            Err(e) => {
+                app_log_warn!(
+                    "⚠️ JOB CHECK: Failed to read live job status for {}: {}. Continuing work.",
+                    job_id,
+                    e
+                );
+                true
+            }
+        }
+    }
+
+    fn cancelled_job_error(&self, job_id: Option<&str>) -> anyhow::Error {
+        anyhow::Error::from(JobCancelled {
+            job_id: job_id.map(|id| id.to_string()),
+        })
+    }
+
+    fn ensure_job_should_continue(&self, job_id: Option<&str>) -> Result<()> {
+        if self.job_should_continue(job_id) {
+            Ok(())
+        } else {
+            Err(self.cancelled_job_error(job_id))
+        }
+    }
+
     /// Check if semantic search is available (models are loaded)
     pub fn is_semantic_search_available(&self) -> bool {
         self.model_service.is_model_loaded()
@@ -128,8 +184,18 @@ impl EmbeddingService {
 impl EmbeddingService {
     /// Index an image file by generating and storing its embedding
     pub async fn index_image_file(&self, file_path: &str) -> Result<String> {
+        self.index_image_file_for_job(file_path, None).await
+    }
+
+    pub async fn index_image_file_for_job(
+        &self,
+        file_path: &str,
+        job_id: Option<&str>,
+    ) -> Result<String> {
         let total_start = std::time::Instant::now();
         app_log_debug!("🔄 TIMING: Starting indexing for file: {}", file_path);
+
+        self.ensure_job_should_continue(job_id)?;
 
         let path = Path::new(file_path);
         if path.is_dir() {
@@ -150,11 +216,13 @@ impl EmbeddingService {
                     "FFmpeg not available, cannot process video"
                 ));
             }
-            return self.index_video_file(file_path).await;
+            return self
+                .index_video_file_with_mode_for_job(file_path, None, true, None, job_id)
+                .await;
         }
 
         if is_supported_text_extension(&extension) {
-            return self.index_text_file(file_path).await;
+            return self.index_text_file_for_job(file_path, job_id).await;
         }
 
         if !is_supported_image_extension(&extension) {
@@ -208,6 +276,8 @@ impl EmbeddingService {
             file_path,
             embedding.len()
         );
+
+        self.ensure_job_should_continue(job_id)?;
 
         let enhanced_metadata = if let Ok(fs_metadata) = fs::metadata(file_path) {
             let created = fs_metadata.created().ok().map(|t| {
@@ -310,8 +380,8 @@ impl EmbeddingService {
 
     /// Index a video file by extracting frames and generating embeddings
     pub async fn index_video_file(&self, video_path: &str) -> Result<String> {
-        self.index_video_file_with_mode(video_path, None, true, None)
-            .await // Default to fast mode
+        self.index_video_file_with_mode_for_job(video_path, None, true, None, None)
+            .await
     }
 
     /// Index a video file with specified performance mode and optional progress reporting (In-Memory)
@@ -322,7 +392,21 @@ impl EmbeddingService {
         fast_mode: bool,
         app_handle: Option<AppHandle>,
     ) -> Result<String> {
+        self.index_video_file_with_mode_for_job(video_path, fps, fast_mode, app_handle, None)
+            .await
+    }
+
+    pub async fn index_video_file_with_mode_for_job(
+        &self,
+        video_path: &str,
+        fps: Option<f32>,
+        fast_mode: bool,
+        app_handle: Option<AppHandle>,
+        job_id: Option<&str>,
+    ) -> Result<String> {
         app_log_info!("🎬 Starting in-memory video indexing for: {}", video_path);
+
+        self.ensure_job_should_continue(job_id)?;
 
         // Check if FFmpeg is available
         if !self.video_service.is_ffmpeg_available() {
@@ -435,11 +519,30 @@ impl EmbeddingService {
         // Initialize counters for processing
         let embedding_service = self.model_service.clone();
         let sqlite_service = self.sqlite_service.clone();
+        let job_id_for_callback = job_id.map(|value| value.to_string());
 
         // Create frame processing callback for in-memory processing
         let video_path_for_callback = video_path.to_string();
         let frame_callback =
             move |frame: image::DynamicImage, metadata: VideoFrameMetadata| -> Result<()> {
+                if let Some(ref job_id) = job_id_for_callback {
+                    match sqlite_service.get_job_status(job_id) {
+                        Ok(Some(status)) if status == "running" => {}
+                        Ok(Some(_)) | Ok(None) => {
+                            return Err(anyhow::Error::from(JobCancelled {
+                                job_id: Some(job_id.clone()),
+                            }));
+                        }
+                        Err(e) => {
+                            app_log_warn!(
+                                "⚠️ VIDEO JOB CHECK: Failed to read live job status for {}: {}. Continuing frame processing.",
+                                job_id,
+                                e
+                            );
+                        }
+                    }
+                }
+
                 // Create unique ID for this frame within the video
                 let unique_frame_id = format!(
                     "{}:frame:{:06}",
@@ -535,6 +638,8 @@ impl EmbeddingService {
                 progress_callback,
             )
             .await?;
+
+        self.ensure_job_should_continue(job_id)?;
 
         let successful_embeds = total_frames;
 
@@ -689,6 +794,16 @@ impl EmbeddingService {
 
     /// Index a text document by extracting deterministic chunks and storing chunk embeddings.
     pub async fn index_text_file(&self, file_path: &str) -> Result<String> {
+        self.index_text_file_for_job(file_path, None).await
+    }
+
+    pub async fn index_text_file_for_job(
+        &self,
+        file_path: &str,
+        job_id: Option<&str>,
+    ) -> Result<String> {
+        self.ensure_job_should_continue(job_id)?;
+
         let path = Path::new(file_path);
         if path.is_dir() {
             return Err(anyhow::anyhow!(
@@ -732,8 +847,6 @@ impl EmbeddingService {
             ));
         }
 
-        self.sqlite_service.delete_text_chunks_for_file(file_path)?;
-
         let drive_uuid = self
             .drive_service
             .get_drive_for_path(file_path)
@@ -742,6 +855,8 @@ impl EmbeddingService {
 
         let mut chunk_rows = Vec::with_capacity(chunks.len());
         for chunk in chunks {
+            self.ensure_job_should_continue(job_id)?;
+
             let enhanced_chunk = self.model_service.format_document_text(&chunk.chunk_text);
             let embedding = self.model_service.encode_text(&enhanced_chunk)?;
             if embedding.len() != 768 {
@@ -788,8 +903,13 @@ impl EmbeddingService {
             });
         }
 
+        // Atomic replace: delete old chunks + insert new ones in a single
+        // transaction. If cancellation or any error lands mid-replacement,
+        // the old chunks survive rather than being wiped with nothing to
+        // replace them.
+        self.ensure_job_should_continue(job_id)?;
         self.sqlite_service
-            .store_text_chunk_vectors_bulk(chunk_rows)?;
+            .replace_text_chunks_for_file(file_path, chunk_rows)?;
         Ok(format!("text-indexed:{}", file_path))
     }
 
@@ -799,6 +919,18 @@ impl EmbeddingService {
         media_path: &str,
         transcription_result: &crate::services::audio_service::TranscriptionResult,
     ) -> Result<usize> {
+        self.index_transcript_for_media_for_job(media_path, transcription_result, None)
+            .await
+    }
+
+    pub async fn index_transcript_for_media_for_job(
+        &self,
+        media_path: &str,
+        transcription_result: &crate::services::audio_service::TranscriptionResult,
+        job_id: Option<&str>,
+    ) -> Result<usize> {
+        self.ensure_job_should_continue(job_id)?;
+
         let path = Path::new(media_path);
         if path.is_dir() {
             return Err(anyhow::anyhow!(
@@ -829,8 +961,6 @@ impl EmbeddingService {
             ));
         }
 
-        self.sqlite_service.delete_transcript_chunks_for_file(media_path)?;
-
         let drive_uuid = self
             .drive_service
             .get_drive_for_path(media_path)
@@ -839,6 +969,8 @@ impl EmbeddingService {
 
         let mut chunk_rows = Vec::with_capacity(chunks.len());
         for chunk in chunks {
+            self.ensure_job_should_continue(job_id)?;
+
             let enhanced_chunk = self.model_service.format_document_text(&chunk.chunk_text);
             let embedding = self.model_service.encode_text(&enhanced_chunk)?;
             if embedding.len() != 768 {
@@ -886,8 +1018,10 @@ impl EmbeddingService {
             });
         }
 
+        // Atomic replace: same cancel-safety invariant as document chunks.
+        self.ensure_job_should_continue(job_id)?;
         self.sqlite_service
-            .store_text_chunk_vectors_bulk(chunk_rows)
+            .replace_transcript_chunks_for_file(media_path, chunk_rows)
     }
 
     fn extract_text_content(&self, file_path: &str) -> Result<String> {
@@ -1097,9 +1231,9 @@ impl EmbeddingService {
     /// **NEW: Batch index multiple image files at once**
     pub async fn index_image_files_batch(
         &self,
-        file_paths: Vec<String>,
+        job_file_paths: Vec<(String, String)>,
     ) -> Result<BatchIndexResult> {
-        if file_paths.is_empty() {
+        if job_file_paths.is_empty() {
             return Ok(BatchIndexResult {
                 successful: 0,
                 failed: 0,
@@ -1109,18 +1243,32 @@ impl EmbeddingService {
 
         app_log_info!(
             "🚀 BATCH INDEX: Processing batch of {} files",
-            file_paths.len()
+            job_file_paths.len()
         );
 
-        let mut batch_data = Vec::new();
+        let mut batch_data: Vec<(String, ImageVectorBulkData)> = Vec::new();
         let mut failed_files = Vec::new();
         let mut failed_details: Vec<(String, String)> = Vec::new();
 
-        // Process each file and collect embeddings
-        for file_path in file_paths {
+        // Process each file and collect embeddings. One pre-encode status
+        // check per file (skips wasted inference on cancelled jobs) and one
+        // batch-wide retain just before bulk store (safety net). The
+        // previously-redundant post-encode check on each match branch is
+        // dropped; the final retain below covers the same cases with one
+        // SQL round trip instead of N.
+        for (job_id, file_path) in job_file_paths {
+            if !self.job_should_continue(Some(&job_id)) {
+                app_log_info!(
+                    "⏭️ BATCH INDEX: Skipping cancelled/cleared image job {} for {}",
+                    job_id,
+                    file_path
+                );
+                continue;
+            }
+
             match self.process_single_file_for_batch(&file_path).await {
                 Ok(data) => {
-                    batch_data.push(data);
+                    batch_data.push((job_id, data));
                 }
                 Err(e) => {
                     let error_msg = format!("Failed to process {}: {}", file_path, e);
@@ -1144,13 +1292,17 @@ impl EmbeddingService {
             }
         }
 
+        batch_data.retain(|(job_id, _)| self.job_should_continue(Some(job_id.as_str())));
+
         let successful_embeddings = batch_data.len();
 
         // Bulk insert all successful embeddings
         if !batch_data.is_empty() {
+            let bulk_rows: Vec<ImageVectorBulkData> =
+                batch_data.iter().map(|(_, item)| item.clone()).collect();
             match self
                 .sqlite_service
-                .store_image_vectors_bulk(batch_data.clone())
+                .store_image_vectors_bulk(bulk_rows)
             {
                 Ok(stored_count) => {
                     app_log_info!(
@@ -1177,7 +1329,16 @@ impl EmbeddingService {
                     // Fall back to individual storage to avoid losing generated embeddings.
 
                     let mut individually_stored = 0usize;
-                    for item in batch_data {
+                    for (job_id, item) in batch_data {
+                        if !self.job_should_continue(Some(job_id.as_str())) {
+                            app_log_info!(
+                                "⏭️ BATCH INDEX: Skipping fallback store for cancelled/cleared job {} ({})",
+                                job_id,
+                                item.file_path
+                            );
+                            continue;
+                        }
+
                         let item_file_path = item.file_path.clone();
                         match self.sqlite_service.store_image_vector_with_drive(
                             item.id,

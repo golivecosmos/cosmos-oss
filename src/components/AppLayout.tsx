@@ -9,6 +9,7 @@ import { UpdateNotification } from "./UpdateNotification";
 import { ErrorReporting } from "./ErrorReporting";
 import { QuickMenu } from "./QuickMenu";
 import { IndexStatusSheet } from "./IndexStatusSheet";
+import { FullDiskAccessBanner } from "./FullDiskAccessBanner";
 import { TooltipProvider } from "./ui/tooltip";
 
 import { Download, AlertCircle } from "lucide-react";
@@ -288,6 +289,7 @@ export const AppLayout = () => {
   return (
     <TooltipProvider>
       <div className="h-screen flex flex-col overflow-hidden">
+        <FullDiskAccessBanner />
         <div className="flex-1 min-h-0 flex">
           <Sidebar
             onCreateFolder={handleCreateFolder}

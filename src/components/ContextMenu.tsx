@@ -18,12 +18,14 @@ import {
   Download,
   Database,
   FolderSearch,
+  FileText,
 } from "lucide-react";
 import { FileItem } from "./FileTree";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { getErrorMessage } from "../utils/errorMessage";
 import { normalizeFilePath } from "../lib/utils";
+import { PURE_AUDIO_EXTENSIONS, TRANSCRIBABLE_EXTENSIONS } from "../lib/fileTypes";
 
 interface WatchedFolder {
   id: string;
@@ -79,6 +81,12 @@ export function FileContextMenu({
     () => normalizeFilePath(item.path),
     [item.path]
   );
+  const fileExtension = useMemo(
+    () => item.name.split(".").pop()?.toLowerCase() ?? "",
+    [item.name]
+  );
+  const isAudioOnlyFile = !item.is_dir && PURE_AUDIO_EXTENSIONS.has(fileExtension);
+  const isTranscribableFile = !item.is_dir && TRANSCRIBABLE_EXTENSIONS.has(fileExtension);
 
   const refreshWatchedFolderState = useCallback(async () => {
     if (!item.is_dir) {
@@ -115,6 +123,18 @@ export function FileContextMenu({
     } catch (error) {
       console.error("Failed to index file:", error);
       toast.error(`Failed to index file: ${getErrorMessage(error)}`);
+    }
+  };
+
+  const handleTranscribeFile = async () => {
+    try {
+      await invoke("transcribe_file", {
+        path: normalizedItemPath,
+      });
+      toast.success("Added transcription job to queue");
+    } catch (error) {
+      console.error("Failed to transcribe file:", error);
+      toast.error(`Failed to transcribe file: ${getErrorMessage(error)}`);
     }
   };
 
@@ -183,16 +203,23 @@ export function FileContextMenu({
       <ContextMenuContent>
         {!item.is_dir && (
           <>
-            {/* Regular indexing option */}
-            {isIndexingDisabled ? (
-              <ContextMenuItem disabled>
-                <Database className="mr-2 h-4 w-4" />
-                Add to Index
-              </ContextMenuItem>
-            ) : (
-              <ContextMenuItem onClick={handleIndexFile}>
-                <Database className="mr-2 h-4 w-4" />
-                Add to Index
+            {!isAudioOnlyFile &&
+              (isIndexingDisabled ? (
+                <ContextMenuItem disabled>
+                  <Database className="mr-2 h-4 w-4" />
+                  Add to Index
+                </ContextMenuItem>
+              ) : (
+                <ContextMenuItem onClick={handleIndexFile}>
+                  <Database className="mr-2 h-4 w-4" />
+                  Add to Index
+                </ContextMenuItem>
+              ))}
+
+            {isTranscribableFile && (
+              <ContextMenuItem onClick={handleTranscribeFile}>
+                <FileText className="mr-2 h-4 w-4" />
+                Transcribe
               </ContextMenuItem>
             )}
 

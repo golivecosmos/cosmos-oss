@@ -17,6 +17,7 @@ interface ListViewProps {
   files: MediaFile[];
   onFileSelect: (file: MediaFile) => void;
   indexingPaths?: Set<string>;
+  transcribingPaths?: Set<string>;
   onAddToIndex?: (path: string) => void;
   onTranscribeFile?: (path: string) => void;
   isIndexingDisabled?: boolean;
@@ -39,6 +40,7 @@ export function ListView({
   files, 
   onFileSelect, 
   indexingPaths,
+  transcribingPaths,
   onAddToIndex,
   onTranscribeFile,
   isIndexingDisabled,
@@ -184,6 +186,7 @@ export function ListView({
               onAddToIndex={onAddToIndex}
               onTranscribeFile={onTranscribeFile}
               indexingPaths={indexingPaths}
+              transcribingPaths={transcribingPaths}
               isFromSearch={file.metadata.score !== undefined && file.metadata.score > 0}
             >
               <tr

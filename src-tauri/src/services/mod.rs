@@ -8,6 +8,7 @@ pub mod download_service;
 pub mod drive_service;
 pub mod embedding_service;
 pub mod encryption_key_service;
+pub mod fda_probe_service;
 pub mod file_service;
 pub mod generations_service;
 pub mod job_queue_service;

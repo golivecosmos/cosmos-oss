@@ -177,6 +177,131 @@ async fn test_orphaned_job_recovery() {
     );
 }
 
+/// T2 regression: user-invocable recover must not clobber a job the worker
+/// legitimately claimed seconds ago. A rapid "recover interrupted" click
+/// should leave fresh `running` jobs alone.
+#[tokio::test]
+async fn recover_stale_running_jobs_leaves_fresh_jobs_alone() {
+    let sqlite_service = create_test_sqlite_service();
+
+    let job_id = sqlite_service
+        .create_job("file", "/test/fresh_job.jpg", Some(1))
+        .expect("create job");
+
+    // Mark the job as running (simulating a worker that just claimed it).
+    sqlite_service
+        .update_job_progress(&job_id, "running", Some("Processing..."), None, None, None)
+        .expect("mark running");
+
+    // Small sleep then attempt graced recovery. Job has `updated_at` within
+    // the last millisecond, so clamped 30s grace must skip it.
+    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+    let recovered = sqlite_service
+        .recover_stale_running_jobs(0)
+        .expect("graced recovery");
+    assert_eq!(
+        recovered, 0,
+        "graced recover must leave fresh running jobs alone even if caller passes 0"
+    );
+
+    let job = sqlite_service.get_job_by_id(&job_id).expect("fetch job");
+    assert_eq!(
+        job["status"], "running",
+        "job status must remain running after graced recovery attempt"
+    );
+}
+
+/// T2: the startup variant has no grace period by contract, safe because
+/// no workers are live yet. Every running job must come back as pending.
+#[tokio::test]
+async fn recover_stale_jobs_at_startup_is_unconditional() {
+    let sqlite_service = create_test_sqlite_service();
+
+    let job_id = sqlite_service
+        .create_job("file", "/test/crashed_job.jpg", Some(1))
+        .expect("create job");
+    sqlite_service
+        .update_job_progress(&job_id, "running", Some("Processing..."), None, None, None)
+        .expect("mark running");
+
+    let recovered = sqlite_service
+        .recover_stale_jobs_at_startup()
+        .expect("startup recovery");
+    assert_eq!(recovered, 1, "startup recovery must reset all running jobs");
+
+    let job = sqlite_service.get_job_by_id(&job_id).expect("fetch job");
+    assert_eq!(
+        job["status"], "pending",
+        "running job must be reset to pending at startup"
+    );
+}
+
+/// T2: when the caller passes a grace larger than the safety minimum, only
+/// jobs actually older than that grace are reset. Jobs younger than the
+/// caller-supplied grace are left alone.
+#[tokio::test]
+async fn recover_stale_running_jobs_respects_grace_when_above_minimum() {
+    let sqlite_service = create_test_sqlite_service();
+
+    let fresh_job = sqlite_service
+        .create_job("file", "/test/fresh.jpg", Some(1))
+        .expect("create fresh job");
+    sqlite_service
+        .update_job_progress(
+            &fresh_job,
+            "running",
+            Some("Processing..."),
+            None,
+            None,
+            None,
+        )
+        .expect("mark fresh running");
+
+    let stale_job = sqlite_service
+        .create_job("file", "/test/stale.jpg", Some(1))
+        .expect("create stale job");
+    sqlite_service
+        .update_job_progress(
+            &stale_job,
+            "running",
+            Some("Processing..."),
+            None,
+            None,
+            None,
+        )
+        .expect("mark stale running");
+
+    // Manually backdate the stale job's updated_at well past any realistic
+    // grace window. This simulates a worker that claimed the job before a
+    // crash and never updated again.
+    {
+        let db_service = sqlite_service.get_database_service();
+        let conn = db_service.get_connection();
+        let db = conn.lock().unwrap();
+        db.execute(
+            "UPDATE jobs SET updated_at = ? WHERE id = ?",
+            rusqlite::params![
+                (chrono::Utc::now() - chrono::Duration::hours(1)).to_rfc3339(),
+                stale_job
+            ],
+        )
+        .expect("backdate stale job");
+    }
+
+    let recovered = sqlite_service
+        .recover_stale_running_jobs(60)
+        .expect("graced recovery");
+    assert_eq!(
+        recovered, 1,
+        "only the truly stale job should be recovered; fresh job must remain"
+    );
+
+    let fresh = sqlite_service.get_job_by_id(&fresh_job).expect("fetch fresh");
+    let stale = sqlite_service.get_job_by_id(&stale_job).expect("fetch stale");
+    assert_eq!(fresh["status"], "running", "fresh job untouched");
+    assert_eq!(stale["status"], "pending", "stale job reset to pending");
+}
+
 #[tokio::test]
 async fn test_no_jobs_available_returns_empty() {
     let sqlite_service = create_test_sqlite_service();

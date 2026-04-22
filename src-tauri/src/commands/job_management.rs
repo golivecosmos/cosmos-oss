@@ -79,6 +79,29 @@ pub async fn get_jobs(
     }
 }
 
+#[tauri::command]
+pub async fn recover_interrupted_jobs(
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    // Use the graced variant so a rapid click from the UI can't clobber a
+    // job a worker legitimately claimed a moment ago.
+    match state.sqlite_service.recover_stale_running_jobs(30) {
+        Ok(recovered_count) => {
+            app_log_info!(
+                "🔄 JOBS: Recovered {} interrupted jobs back to pending",
+                recovered_count
+            );
+            Ok(serde_json::json!({
+                "recovered_count": recovered_count
+            }))
+        }
+        Err(e) => {
+            app_log_error!("❌ JOBS: Failed to recover interrupted jobs: {}", e);
+            Err(format!("Failed to recover interrupted jobs: {}", e))
+        }
+    }
+}
+
 /// Simplified job queue management (no user-facing retry complexity)
 #[tauri::command]
 pub async fn manage_job_queue(

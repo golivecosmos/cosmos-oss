@@ -31,6 +31,14 @@ export const StudioEdit = () => {
     const [transcriptionRefreshCounter, setTranscriptionRefreshCounter] = useState(0);
     const contentPreviewRef = useRef<ContentPreviewRef>(null);
     const dragStateRef = useRef({
+        // `armed` means we've seen a pointerdown but haven't yet decided
+        // whether this gesture is a click or a drag. Only once the pointer
+        // moves past the threshold do we claim it, capture it, and start
+        // panning. This keeps click events reaching the underlying <video>
+        // or <img>, which is what `togglePlayPause` and similar handlers
+        // rely on — `setPointerCapture` on pointerdown would divert pointerup
+        // and cancel the synthesized click entirely.
+        armed: false,
         isDragging: false,
         pointerId: -1,
         startX: 0,
@@ -38,6 +46,8 @@ export const StudioEdit = () => {
         startOffsetX: 0,
         startOffsetY: 0,
     });
+
+    const DRAG_THRESHOLD_PX = 5;
 
     const handleBack = () => {
         const returnTo = searchParams.get('returnTo');
@@ -81,6 +91,87 @@ export const StudioEdit = () => {
         }
     }, [transcribingPaths, file?.path]);
 
+    // Keyboard shortcuts in the preview:
+    //   ← / ↑      previous file
+    //   → / ↓      next file
+    //   Space      play/pause the visible video or audio element
+    //
+    // Arrow navigation uses the sibling file list stashed by whatever view
+    // the user came from (grid, list, search results). The previous view is
+    // responsible for writing the list into `sessionStorage['studio.navigation']`
+    // right before navigating here; if it's missing, arrow keys no-op.
+    useEffect(() => {
+        const navKeys = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']);
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            const target = e.target as HTMLElement | null;
+            if (
+                target &&
+                (target.tagName === 'INPUT' ||
+                    target.tagName === 'TEXTAREA' ||
+                    target.tagName === 'SELECT' ||
+                    target.isContentEditable)
+            ) {
+                return;
+            }
+
+            if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+            // Space → play/pause whatever media element is on the page.
+            // Matches <video> first (StudioEdit renders VideoPlayerWithTrim)
+            // and falls back to <audio> (AudioPreview).
+            if (e.key === ' ' || e.code === 'Space') {
+                const media = document.querySelector<HTMLMediaElement>('video, audio');
+                if (!media) return;
+                e.preventDefault();
+                if (media.paused) {
+                    media.play().catch((err) => {
+                        console.warn('Failed to play media:', err);
+                    });
+                } else {
+                    media.pause();
+                }
+                return;
+            }
+
+            if (!navKeys.has(e.key)) return;
+
+            const raw = sessionStorage.getItem('studio.navigation');
+            if (!raw) return;
+
+            let paths: string[] | undefined;
+            try {
+                const parsed = JSON.parse(raw) as { paths?: string[] };
+                paths = Array.isArray(parsed.paths) ? parsed.paths : undefined;
+            } catch {
+                return;
+            }
+            if (!paths || paths.length < 2) return;
+
+            const currentPath = searchParams.get('path');
+            if (!currentPath) return;
+
+            const idx = paths.indexOf(currentPath);
+            if (idx === -1) return;
+
+            const delta = e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 1;
+            const nextIdx = idx + delta;
+            if (nextIdx < 0 || nextIdx >= paths.length) return;
+
+            e.preventDefault();
+
+            const nextPath = paths[nextIdx];
+            const params = new URLSearchParams();
+            params.set('path', nextPath);
+            const returnTo = searchParams.get('returnTo');
+            if (returnTo) params.set('returnTo', returnTo);
+            navigate(`/studio/edit?${params.toString()}`);
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [searchParams, navigate]);
+
     const fileExtension = file?.path?.split(".").pop()?.toLowerCase() || "";
     const isPannablePreview = isSupportedImageExtension(fileExtension) || isSupportedVideoExtension(fileExtension);
     const isPanActive = isPannablePreview;
@@ -92,23 +183,35 @@ export const StudioEdit = () => {
 
     const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
         if (!isPannablePreview) return;
+        if (event.button !== 0) return; // primary button only
         dragStateRef.current = {
-            isDragging: true,
+            armed: true,
+            isDragging: false,
             pointerId: event.pointerId,
             startX: event.clientX,
             startY: event.clientY,
             startOffsetX: panOffset.x,
             startOffsetY: panOffset.y,
         };
-        event.currentTarget.setPointerCapture(event.pointerId);
     };
 
     const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
         const dragState = dragStateRef.current;
-        if (!dragState.isDragging || dragState.pointerId !== event.pointerId) return;
+        if (dragState.pointerId !== event.pointerId) return;
 
         const deltaX = event.clientX - dragState.startX;
         const deltaY = event.clientY - dragState.startY;
+
+        if (!dragState.isDragging) {
+            if (!dragState.armed) return;
+            if (deltaX * deltaX + deltaY * deltaY < DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) {
+                return;
+            }
+            dragState.isDragging = true;
+            dragState.armed = false;
+            event.currentTarget.setPointerCapture(event.pointerId);
+        }
+
         setPanOffset({
             x: dragState.startOffsetX + deltaX,
             y: dragState.startOffsetY + deltaY,
@@ -116,13 +219,14 @@ export const StudioEdit = () => {
     };
 
     const handlePointerEnd = (event: PointerEvent<HTMLDivElement>) => {
-        if (dragStateRef.current.pointerId === event.pointerId) {
-            dragStateRef.current.isDragging = false;
-            dragStateRef.current.pointerId = -1;
-            if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-                event.currentTarget.releasePointerCapture(event.pointerId);
-            }
+        const dragState = dragStateRef.current;
+        if (dragState.pointerId !== event.pointerId) return;
+        if (dragState.isDragging && event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
         }
+        dragState.armed = false;
+        dragState.isDragging = false;
+        dragState.pointerId = -1;
     };
 
     const getTransformMatrix = (scale: number) => `translate3d(${panOffset.x}px, ${panOffset.y}px, 0) scale(${scale})`

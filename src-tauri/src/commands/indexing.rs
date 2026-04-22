@@ -6,7 +6,7 @@ use crate::constants::{
     is_supported_image_extension, is_supported_media_extension, is_supported_text_extension,
     is_supported_video_extension,
 };
-use crate::services::embedding_service::EmbeddingService;
+use crate::services::embedding_service::{is_job_cancellation, EmbeddingService};
 use crate::services::sqlite_service::SqliteVectorService;
 use crate::services::video_service::VideoService;
 use crate::AppState;
@@ -38,6 +38,8 @@ pub const MAX_PENDING_JOBS: usize = 50_000;
 /// Maximum files discovered per single scan operation. Safety net to prevent
 /// runaway scans from consuming all memory or taking hours.
 pub const MAX_FILES_PER_SCAN: usize = 100_000;
+// Keep in sync with src/lib/fileTypes.ts::PURE_AUDIO_EXTENSIONS.
+const PURE_AUDIO_EXTENSIONS: &[&str] = &["wav", "mp3", "m4a", "flac", "ogg", "aac", "wma"];
 
 // **GLOBAL CONCURRENT LIMITS**
 static VIDEO_SEMAPHORE: OnceLock<Arc<Semaphore>> = OnceLock::new();
@@ -357,6 +359,76 @@ pub async fn is_file_already_indexed(
     }
 }
 
+fn is_pure_audio_extension(extension: &str) -> bool {
+    PURE_AUDIO_EXTENSIONS.contains(&extension)
+}
+
+fn job_should_continue_live(
+    sqlite_service: &Arc<SqliteVectorService>,
+    worker_id: usize,
+    job_id: &str,
+) -> bool {
+    match sqlite_service.get_job_status(job_id) {
+        Ok(Some(status)) if status == "running" => true,
+        Ok(Some(status)) => {
+            app_log_info!(
+                "⏭️ WORKER {}: Job {} changed to status '{}' while processing",
+                worker_id,
+                job_id,
+                status
+            );
+            false
+        }
+        Ok(None) => {
+            app_log_info!(
+                "⏭️ WORKER {}: Job {} was removed from the queue while processing",
+                worker_id,
+                job_id
+            );
+            false
+        }
+        Err(e) => {
+            app_log_warn!(
+                "⚠️ WORKER {}: Failed to read live status for job {}: {}. Continuing work.",
+                worker_id,
+                job_id,
+                e
+            );
+            true
+        }
+    }
+}
+
+
+async fn purge_job_outputs(
+    sqlite_service: &Arc<SqliteVectorService>,
+    worker_id: usize,
+    job_id: &str,
+    file_path: &str,
+) {
+    match sqlite_service.purge_indexed_data_for_file(file_path) {
+        Ok(deleted) if deleted > 0 => {
+            app_log_info!(
+                "🧹 WORKER {}: Purged {} partial records for cancelled/cleared job {} ({})",
+                worker_id,
+                deleted,
+                job_id,
+                file_path
+            );
+        }
+        Ok(_) => {}
+        Err(e) => {
+            app_log_error!(
+                "❌ WORKER {}: Failed to purge partial records for job {} ({}): {}",
+                worker_id,
+                job_id,
+                file_path,
+                e
+            );
+        }
+    }
+}
+
 // **INDEXING COMMANDS**
 
 /// Index a single image file
@@ -427,32 +499,50 @@ pub async fn index_file(
     let mut errors = Vec::new();
     let mut failed_files = Vec::new();
 
-    let result = if is_supported_video_extension(&extension) {
-        // Index as video if FFmpeg is available
+    let typed_result: Result<String, anyhow::Error> = if is_supported_video_extension(&extension) {
         if state.video_service.is_ffmpeg_available() {
             state
                 .embedding_service
-                .index_video_file_with_mode(&path, None, true, Some(app_handle.clone()))
+                .index_video_file_with_mode_for_job(
+                    &path,
+                    None,
+                    true,
+                    Some(app_handle.clone()),
+                    Some(&job_id),
+                )
                 .await
-                .map_err(|e| e.to_string())
         } else {
             app_log_warn!("Skipping video file {} - FFmpeg not available", path);
-            Err("FFmpeg not available for video processing".to_string())
+            Err(anyhow::anyhow!("FFmpeg not available for video processing"))
         }
     } else if is_supported_text_extension(&extension) {
         state
             .embedding_service
-            .index_text_file(&path)
+            .index_text_file_for_job(&path, Some(&job_id))
             .await
-            .map_err(|e| e.to_string())
+    } else if is_pure_audio_extension(&extension) {
+        Err(anyhow::anyhow!(
+            "Audio files are not added to the search index directly. Use Transcribe instead."
+        ))
     } else {
-        // Index as image
         state
             .embedding_service
-            .index_image_file(&path)
+            .index_image_file_for_job(&path, Some(&job_id))
             .await
-            .map_err(|e| e.to_string())
     };
+
+    if typed_result
+        .as_ref()
+        .err()
+        .map(is_job_cancellation)
+        .unwrap_or(false)
+        || !job_should_continue_live(&state.sqlite_service, 0, &job_id)
+    {
+        purge_job_outputs(&state.sqlite_service, 0, &job_id, &path).await;
+        return Err("Job cancelled or removed from queue".to_string());
+    }
+
+    let result: Result<String, String> = typed_result.map_err(|e| e.to_string());
 
     let processed = match result {
         Ok(_) => {
@@ -721,6 +811,11 @@ pub async fn index_directory(
             .to_lowercase();
 
         if !is_supported_media_extension(&extension) {
+            continue;
+        }
+
+        if is_pure_audio_extension(&extension) {
+            skipped_files += 1;
             continue;
         }
 
@@ -1065,8 +1160,9 @@ pub async fn persistent_queue_worker(
             let file_path = job["target_path"].as_str().unwrap_or("");
             let job_type = job["job_type"].as_str().unwrap_or("file");
 
-            // Double check job status - it might have been cancelled
-            if job["status"] != "running" {
+            // Double check job status - it might have been cancelled or cleared after claim.
+            if job["status"] != "running" || !job_should_continue_live(&sqlite_service, worker_id, job_id)
+            {
                 app_log_warn!(
                     "⏭️ WORKER {}: Skipping job {} because status is {}",
                     worker_id,
@@ -1083,6 +1179,9 @@ pub async fn persistent_queue_worker(
                     file_path
                 );
                 app_log_warn!("⚠️ WORKER {}: {}", worker_id, missing_msg);
+                if !job_should_continue_live(&sqlite_service, worker_id, job_id) {
+                    continue;
+                }
                 if let Err(retry_err) = sqlite_service.schedule_job_retry(job_id, &missing_msg) {
                     app_log_error!(
                         "❌ WORKER {}: Failed to schedule retry for missing path: {}",
@@ -1115,20 +1214,31 @@ pub async fn persistent_queue_worker(
             } else if is_supported_video_extension(&extension) {
                 // Video files for indexing go to video processing
                 video_jobs.push((job_id.to_string(), file_path.to_string()));
-            } else if ["wav", "mp3", "m4a", "flac", "ogg", "aac", "wma"]
-                .contains(&extension.as_str())
-            {
-                // Pure audio files for indexing would go to audio processing, but we don't index audio files directly yet
-                // For now, skip audio-only files that aren't transcription jobs
-                app_log_warn!("⏭️ WORKER {}: Skipping pure audio file {} - audio indexing not implemented yet", worker_id, file_name);
-                let _ = sqlite_service.update_job_progress(
+            } else if is_pure_audio_extension(&extension) {
+                let message =
+                    "Audio files are not added to the search index directly. Use Transcribe instead."
+                        .to_string();
+                app_log_warn!(
+                    "⏭️ WORKER {}: Rejecting audio indexing job {} for {}",
+                    worker_id,
                     job_id,
-                    "completed",
-                    Some("Skipped - audio indexing not implemented"),
-                    None,
-                    None,
-                    None,
+                    file_name
                 );
+                if let Err(e) = sqlite_service.update_job_progress(
+                    job_id,
+                    "failed",
+                    Some(&message),
+                    Some(0),
+                    Some(&vec![message.clone()]),
+                    None,
+                ) {
+                    app_log_error!(
+                        "❌ WORKER {}: Failed to mark audio job {} as rejected: {}",
+                        worker_id,
+                        job_id,
+                        e
+                    );
+                }
             } else if is_supported_text_extension(&extension) {
                 text_jobs.push((job_id.to_string(), file_path.to_string()));
             } else if is_supported_image_extension(&extension) {
@@ -1239,7 +1349,7 @@ pub async fn persistent_queue_worker(
 
             // Process batch using GPU-accelerated embedding service
             match embedding_service
-                .index_image_files_batch(batch_jobs.iter().map(|(_, path)| path.clone()).collect())
+                .index_image_files_batch(batch_jobs.clone())
                 .await
             {
                 Ok(batch_result) => {
@@ -1261,6 +1371,11 @@ pub async fn persistent_queue_worker(
 
                     // Update each job based on file-path keyed failures rather than positional assumptions.
                     for (job_id, file_path) in &batch_jobs {
+                        if !job_should_continue_live(&sqlite_service, worker_id, job_id) {
+                            purge_job_outputs(&sqlite_service, worker_id, job_id, file_path).await;
+                            continue;
+                        }
+
                         if !failed_paths.contains(file_path) {
                             if let Err(e) = sqlite_service.update_job_progress(
                                 job_id,
@@ -1287,6 +1402,14 @@ pub async fn persistent_queue_worker(
                             .cloned()
                             .unwrap_or_else(|| "Unknown batch processing error".to_string());
                         let error_msg = &error_msg_owned;
+
+                        // Batch path surfaces errors as strings; cancellations at this
+                        // stage are detected via the job-status check (no live anyhow
+                        // error to downcast). If the job is no longer running, purge.
+                        if !job_should_continue_live(&sqlite_service, worker_id, job_id) {
+                            purge_job_outputs(&sqlite_service, worker_id, job_id, file_path).await;
+                            continue;
+                        }
 
                         let error_type = categorize_error(error_msg);
                         if error_type == "temporary" {
@@ -1330,15 +1453,24 @@ pub async fn persistent_queue_worker(
                 Err(e) => {
                     app_log_error!("❌ WORKER {}: Batch processing failed: {}", worker_id, e);
                     consecutive_errors += 1;
+                    let batch_cancelled = is_job_cancellation(&e);
+                    let batch_error = e.to_string();
 
                     // Mark all jobs as failed
-                    for (job_id, _) in &batch_jobs {
+                    for (job_id, file_path) in &batch_jobs {
+                        if batch_cancelled
+                            || !job_should_continue_live(&sqlite_service, worker_id, job_id)
+                        {
+                            purge_job_outputs(&sqlite_service, worker_id, job_id, file_path).await;
+                            continue;
+                        }
+
                         if let Err(e) = sqlite_service.update_job_progress(
                             job_id,
                             "failed",
-                            Some(&format!("Batch processing failed: {}", e)),
+                            Some(&format!("Batch processing failed: {}", batch_error)),
                             Some(0),
-                            Some(&vec![e.to_string()]),
+                            Some(&vec![batch_error.clone()]),
                             None,
                         ) {
                             app_log_error!(
@@ -1361,12 +1493,16 @@ pub async fn persistent_queue_worker(
                 file_name
             );
 
-            let result = embedding_service
-                .index_text_file(file_path)
-                .await
-                .map_err(|e| e.to_string());
-            match result {
+            let typed_result = embedding_service
+                .index_text_file_for_job(file_path, Some(job_id.as_str()))
+                .await;
+            match typed_result {
                 Ok(_) => {
+                    if !job_should_continue_live(&sqlite_service, worker_id, job_id) {
+                        purge_job_outputs(&sqlite_service, worker_id, job_id, file_path).await;
+                        continue;
+                    }
+
                     if let Err(e) = sqlite_service.update_job_progress(
                         job_id,
                         "completed",
@@ -1384,7 +1520,15 @@ pub async fn persistent_queue_worker(
                         emit_event_with_retry(&app_handle, "job_completed", &job_data).await;
                     }
                 }
-                Err(e) => {
+                Err(err) => {
+                    if is_job_cancellation(&err)
+                        || !job_should_continue_live(&sqlite_service, worker_id, job_id)
+                    {
+                        purge_job_outputs(&sqlite_service, worker_id, job_id, file_path).await;
+                        continue;
+                    }
+
+                    let e = err.to_string();
                     let error_type = categorize_error(&e);
                     if error_type == "temporary" {
                         if let Err(retry_err) = sqlite_service.schedule_job_retry(job_id, &e) {
@@ -1433,6 +1577,10 @@ pub async fn persistent_queue_worker(
                 file_name
             );
 
+            if !job_should_continue_live(&sqlite_service, worker_id, job_id) {
+                continue;
+            }
+
             // **FIXED: Use global semaphore to limit concurrent video processing**
             let video_semaphore = get_video_semaphore();
             let _permit = match video_semaphore.acquire().await {
@@ -1467,6 +1615,10 @@ pub async fn persistent_queue_worker(
                 MAX_CONCURRENT_VIDEOS
             );
 
+            if !job_should_continue_live(&sqlite_service, worker_id, job_id) {
+                continue;
+            }
+
             let video_start = std::time::Instant::now();
 
             app_log_info!(
@@ -1475,13 +1627,18 @@ pub async fn persistent_queue_worker(
                 file_name
             );
 
-            let result = if video_service.is_ffmpeg_available() {
+            let typed_result: Result<String, anyhow::Error> = if video_service.is_ffmpeg_available() {
                 embedding_service
-                    .index_video_file_with_mode(file_path, None, true, Some(app_handle.clone()))
+                    .index_video_file_with_mode_for_job(
+                        file_path,
+                        None,
+                        true,
+                        Some(app_handle.clone()),
+                        Some(job_id.as_str()),
+                    )
                     .await
-                    .map_err(|e| e.to_string())
             } else {
-                Err("FFmpeg not available for video processing".to_string())
+                Err(anyhow::anyhow!("FFmpeg not available for video processing"))
             };
 
             let video_time = video_start.elapsed();
@@ -1493,9 +1650,14 @@ pub async fn persistent_queue_worker(
             );
 
             // Update video job result
-            match result {
+            match typed_result {
                 Ok(_) => {
                     consecutive_errors = 0; // Reset on success
+                    if !job_should_continue_live(&sqlite_service, worker_id, job_id) {
+                        purge_job_outputs(&sqlite_service, worker_id, job_id, file_path).await;
+                        continue;
+                    }
+
                     if let Err(e) = sqlite_service.update_job_progress(
                         job_id,
                         "completed",
@@ -1524,7 +1686,15 @@ pub async fn persistent_queue_worker(
                         file_name
                     );
                 }
-                Err(e) => {
+                Err(err) => {
+                    if is_job_cancellation(&err)
+                        || !job_should_continue_live(&sqlite_service, worker_id, job_id)
+                    {
+                        purge_job_outputs(&sqlite_service, worker_id, job_id, file_path).await;
+                        continue;
+                    }
+
+                    let e = err.to_string();
                     consecutive_errors += 1;
 
                     // **NEW: Check if error is retryable and schedule automatic retry**
@@ -1583,6 +1753,10 @@ pub async fn persistent_queue_worker(
                 file_name
             );
 
+            if !job_should_continue_live(&sqlite_service, worker_id, job_id) {
+                continue;
+            }
+
             // **Use global semaphore to limit concurrent transcription processing**
             let transcription_semaphore = get_transcription_semaphore();
             let _permit = match transcription_semaphore.acquire().await {
@@ -1616,6 +1790,10 @@ pub async fn persistent_queue_worker(
                 MAX_CONCURRENT_TRANSCRIPTIONS - transcription_semaphore.available_permits(),
                 MAX_CONCURRENT_TRANSCRIPTIONS
             );
+
+            if !job_should_continue_live(&sqlite_service, worker_id, job_id) {
+                continue;
+            }
 
             let transcription_start = std::time::Instant::now();
 
@@ -1759,6 +1937,11 @@ pub async fn persistent_queue_worker(
                         transcription_result.language
                     );
 
+                    if !job_should_continue_live(&sqlite_service, worker_id, job_id) {
+                        purge_job_outputs(&sqlite_service, worker_id, job_id, file_path).await;
+                        continue;
+                    }
+
                     // Persist full transcription document.
                     if let Err(store_err) =
                         sqlite_service.store_transcription(&transcription_result, file_path)
@@ -1785,11 +1968,27 @@ pub async fn persistent_queue_worker(
                         continue;
                     }
 
+                    if !job_should_continue_live(&sqlite_service, worker_id, job_id) {
+                        purge_job_outputs(&sqlite_service, worker_id, job_id, file_path).await;
+                        continue;
+                    }
+
                     // Index transcript chunks so semantic search can return timestamp-aware hits.
                     if let Err(embed_err) = embedding_service
-                        .index_transcript_for_media(file_path, &transcription_result)
+                        .index_transcript_for_media_for_job(
+                            file_path,
+                            &transcription_result,
+                            Some(job_id.as_str()),
+                        )
                         .await
                     {
+                        if is_job_cancellation(&embed_err)
+                            || !job_should_continue_live(&sqlite_service, worker_id, job_id)
+                        {
+                            purge_job_outputs(&sqlite_service, worker_id, job_id, file_path).await;
+                            continue;
+                        }
+
                         app_log_error!(
                             "❌ WORKER {}: Failed to embed transcript for {}: {}",
                             worker_id,
@@ -1809,6 +2008,11 @@ pub async fn persistent_queue_worker(
                         if let Ok(job_data) = sqlite_service.get_job_by_id(job_id) {
                             emit_event_with_retry(&app_handle, "job_updated", &job_data).await;
                         }
+                        continue;
+                    }
+
+                    if !job_should_continue_live(&sqlite_service, worker_id, job_id) {
+                        purge_job_outputs(&sqlite_service, worker_id, job_id, file_path).await;
                         continue;
                     }
 
@@ -1832,6 +2036,14 @@ pub async fn persistent_queue_worker(
                     }
                 }
                 Err(e) => {
+                    // Transcription errors originate from audio_service::transcribe_file which
+                    // is not cancellation-aware, so the only cancel signal here is the
+                    // job-status check.
+                    if !job_should_continue_live(&sqlite_service, worker_id, job_id) {
+                        purge_job_outputs(&sqlite_service, worker_id, job_id, file_path).await;
+                        continue;
+                    }
+
                     consecutive_errors += 1;
 
                     app_log_error!(

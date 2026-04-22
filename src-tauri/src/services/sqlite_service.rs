@@ -262,7 +262,28 @@ impl SqliteVectorService {
         self.vector_service.store_text_chunk_vectors_bulk(chunks)
     }
 
-    /// Delete all text chunks for a single file
+    /// Atomically replace all text chunks for a single file.
+    pub fn replace_text_chunks_for_file(
+        &self,
+        file_path: &str,
+        chunks: Vec<TextChunkBulkData>,
+    ) -> Result<usize> {
+        self.vector_service
+            .replace_text_chunks_for_file(file_path, chunks)
+    }
+
+    /// Atomically replace transcript-sourced text chunks for a media file,
+    /// preserving any non-transcript chunks at the same path.
+    pub fn replace_transcript_chunks_for_file(
+        &self,
+        file_path: &str,
+        chunks: Vec<TextChunkBulkData>,
+    ) -> Result<usize> {
+        self.vector_service
+            .replace_transcript_chunks_for_file(file_path, chunks)
+    }
+
+    /// Delete all text chunks for a single file.
     pub fn delete_text_chunks_for_file(&self, file_path: &str) -> Result<()> {
         self.vector_service.delete_text_chunks_for_file(file_path)
     }
@@ -379,10 +400,32 @@ impl SqliteVectorService {
         self.job_queue_service.get_job_by_id(job_id)
     }
 
-    /// Recover orphaned "running" jobs that have been stuck for too long
+    /// Get the live status for a job ID, if it still exists.
+    pub fn get_job_status(&self, job_id: &str) -> Result<Option<String>> {
+        self.job_queue_service.get_job_status(job_id)
+    }
+
+    /// Recover orphaned "running" jobs that have been stuck for too long.
+    /// Prefer [`recover_stale_jobs_at_startup`] or
+    /// [`recover_stale_running_jobs`] which encode their own safety on
+    /// grace periods.
     pub fn recover_orphaned_jobs(&self, timeout_seconds: i64) -> Result<usize> {
         self.job_queue_service
             .recover_orphaned_jobs(timeout_seconds)
+    }
+
+    /// Recover orphaned jobs at startup without grace. Safe because workers
+    /// are not live yet.
+    pub fn recover_stale_jobs_at_startup(&self) -> Result<usize> {
+        self.job_queue_service.recover_stale_jobs_at_startup()
+    }
+
+    /// Recover orphaned jobs while workers may be live. Grace is clamped to
+    /// the service-level minimum so a rapid "recover" click can't clobber a
+    /// just-claimed job.
+    pub fn recover_stale_running_jobs(&self, grace_seconds: i64) -> Result<usize> {
+        self.job_queue_service
+            .recover_stale_running_jobs(grace_seconds)
     }
 
     /// Get aggregate queue health metrics
@@ -417,7 +460,8 @@ impl SqliteVectorService {
     /// Get all indexed file paths as a Vec for batch dedup checks.
     /// Returns file paths from both image_vectors and text_chunks tables.
     pub fn get_all_indexed_file_paths(&self) -> Result<Vec<String>> {
-        let db = self.db_service.get_safe_lock();
+        let connection = self.db_service.get_connection();
+        let db = connection.lock().unwrap();
         let mut paths = Vec::new();
         let mut stmt = db.prepare(
             "SELECT DISTINCT file_path FROM images UNION SELECT DISTINCT file_path FROM text_chunks",
@@ -429,6 +473,14 @@ impl SqliteVectorService {
             }
         }
         Ok(paths)
+    }
+
+    pub fn purge_indexed_data_for_file(&self, file_path: &str) -> Result<usize> {
+        let mut deleted = self.vector_service.delete_indexed_data_for_file(file_path)?;
+        deleted += self
+            .transcription_service
+            .delete_transcription_by_path(file_path)?;
+        Ok(deleted)
     }
 
     /// Run a WAL checkpoint to keep the WAL file small.
