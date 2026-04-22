@@ -81,6 +81,70 @@ export const StudioEdit = () => {
         }
     }, [transcribingPaths, file?.path]);
 
+    // Arrow-key navigation through the sibling file list stashed by whatever
+    // view the user came from (grid, list, search results). The previous view
+    // is responsible for writing the list into `sessionStorage['studio.navigation']`
+    // right before navigating here; if it's missing we no-op gracefully.
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (
+                e.key !== 'ArrowLeft' &&
+                e.key !== 'ArrowRight' &&
+                e.key !== 'ArrowUp' &&
+                e.key !== 'ArrowDown'
+            ) {
+                return;
+            }
+
+            const target = e.target as HTMLElement | null;
+            if (
+                target &&
+                (target.tagName === 'INPUT' ||
+                    target.tagName === 'TEXTAREA' ||
+                    target.tagName === 'SELECT' ||
+                    target.isContentEditable)
+            ) {
+                return;
+            }
+
+            if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+            const raw = sessionStorage.getItem('studio.navigation');
+            if (!raw) return;
+
+            let paths: string[] | undefined;
+            try {
+                const parsed = JSON.parse(raw) as { paths?: string[] };
+                paths = Array.isArray(parsed.paths) ? parsed.paths : undefined;
+            } catch {
+                return;
+            }
+            if (!paths || paths.length < 2) return;
+
+            const currentPath = searchParams.get('path');
+            if (!currentPath) return;
+
+            const idx = paths.indexOf(currentPath);
+            if (idx === -1) return;
+
+            const delta = e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 1;
+            const nextIdx = idx + delta;
+            if (nextIdx < 0 || nextIdx >= paths.length) return;
+
+            e.preventDefault();
+
+            const nextPath = paths[nextIdx];
+            const params = new URLSearchParams();
+            params.set('path', nextPath);
+            const returnTo = searchParams.get('returnTo');
+            if (returnTo) params.set('returnTo', returnTo);
+            navigate(`/studio/edit?${params.toString()}`);
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [searchParams, navigate]);
+
     const fileExtension = file?.path?.split(".").pop()?.toLowerCase() || "";
     const isPannablePreview = isSupportedImageExtension(fileExtension) || isSupportedVideoExtension(fileExtension);
     const isPanActive = isPannablePreview;
